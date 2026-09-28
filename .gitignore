@@ -1,0 +1,35 @@
+# ============================================================
+#  Second_Project_Demo 忽略规则
+# ============================================================
+
+# ---- Keil 编译产物（可重新生成，不入库）----
+Objects/
+Listings/
+*.uvguix.*
+*.Administrator
+*.dep
+*.lnp
+*.axf
+*.crf
+*.o
+*.d
+*.htm
+JLinkSettings.ini
+build_verify.log
+
+# ---- Qt 构建产物 ----
+build/
+.qtcreator/
+*.pro.user*
+
+# ---- 巡检报告（由 project_check.ps1 生成）----
+检查报告.md
+
+# ---- 临时参考夹（库更新对比用，用完即删，不入库）----
+S_N_sys/Project_2_数据通信端/Project/0001_标准模板库/
+
+# ---- 大文件：芯片参考手册（本地保留，不入库）----
+1-STM32F4xx中文参考手册1.pdf
+
+# ---- Qt 工程内旧仓库的备份元数据（改名为 .git_bak 保留在本地）----
+S_N_sys/QT_project/SerialMonitor/.git_bak/

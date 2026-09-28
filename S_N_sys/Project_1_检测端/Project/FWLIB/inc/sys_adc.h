@@ -1,0 +1,215 @@
+#ifndef __FWLIB_SYS_ADC_H
+#define __FWLIB_SYS_ADC_H
+
+#include "stm32f4xx.h"
+
+/* ================================================================
+ *  sys_adc.h —— 【系统】ADC 模数转换模块  头文件
+ * ================================================================
+ *  设计定位 : 标准外设库 ADC 的"薄封装"—— 覆盖三种典型用法:
+ *      ① 单次转换   SYS_ADC_Read()        —— 用一次测一次（测电压/光敏）
+ *      ② 连续转换   SYS_ADC_ContInit()    —— 后台不停转换，随时取最新值
+ *      ③ DMA 采集   SYS_ADC_DmaInit()     —— 数据自动进内存缓冲
+ *                      （单通道或多通道扫描，见区块 3）
+ *  标准库关键词 : ADC_CommonInit / ADC_Init / ADC_RegularChannelConfig / ADC_Cmd /
+ *                 ADC_SoftwareStartConv / ADC_GetFlagStatus / ADC_GetConversionValue / ADC_DMACmd
+ *
+ *  本板资源（对照 GEC-M4 原理图确认）:
+ *      光敏电阻分压 → PF7 = ADC3_IN5（区块 1 有现成宏）
+ *      ⚠ 板载 DHT11 温湿度是"单总线"器件，不归 ADC/I2C 管
+ *
+ *  基础概念（切换引脚时看这里）:
+ *      · 分辨率 12 位：读数 0 ~ 4095，对应电压 0 ~ VREF
+ *       · 换算：电压(mV) = 读数 × 3300 / 4095（SYS_ADC_ToMilliVolt）
+ *       · 采样时间越长越抗干扰（高阻抗源如光敏/热敏电阻用长采样）
+ *       · F407 单次转换耗时 ≈ (采样周期 + 12) / 21MHz，
+ *         用 480 周期采样时约 23µs —— 单次读也很快
+ *       · 引脚必须配置为"模拟输入(AIN)"，此时施密特触发器关闭
+ *
+ *  使用方式 :
+ *      SYS_ADC_Init(SYS_ADC_LIGHT_ADC, SYS_ADC_LIGHT_CH,
+ *                   SYS_ADC_LIGHT_PORT, SYS_ADC_LIGHT_PIN);
+ *      uint16_t raw = SYS_ADC_Read(SYS_ADC_LIGHT_ADC, SYS_ADC_LIGHT_CH);
+ *      uint32_t mv  = SYS_ADC_ToMilliVolt(raw);
+ * ================================================================ */
+
+
+/* ================================================================
+ *                    区块 1：定义与宏定义区（换板子只改这里）
+ * ================================================================ */
+/* 参考电压（mV）：默认 VDDA = 3300；板上有 VREF 跳线、或换板后
+ * 实测过参考电压的话改这里，SYS_ADC_ToMilliVolt 会跟着变准 */
+#define SYS_ADC_VREF_MV         3300UL
+
+/* 采样时间：越大越稳、越慢
+ *   ADC_SampleTime_3Cycles   ~ 最快，适合低阻抗源（运放输出）
+ *   ADC_SampleTime_84Cycles  ~ 通用
+ *   ADC_SampleTime_480Cycles ~ 最慢最稳（默认，适合光敏等高阻源） */
+#define SYS_ADC_SAMPLE_TIME     ADC_SampleTime_480Cycles
+
+/* SYS_ADC_ReadAvg 不传次数时的默认平均次数 */
+#define SYS_ADC_AVG_TIMES       8
+
+/* -------------------- 板载光敏（示例） -------------------- */
+#define SYS_ADC_LIGHT_ADC       ADC3
+#define SYS_ADC_LIGHT_CH        ADC_Channel_5      /* PF7 = ADC3_IN5 */
+#define SYS_ADC_LIGHT_PORT      GPIOF
+#define SYS_ADC_LIGHT_PIN       GPIO_Pin_7
+
+
+/* ================================================================
+ *                    区块 2：基础功能
+ * ================================================================ */
+/* 初始化（单次转换,ADC_ContinuousConvMode = DISABLE）：时钟 / 引脚(模拟输入) / 参数 / 校准
+ *
+ * 标准库调用链（库内部依次调用，可对照学习）:
+ *   ① RCC_APB2PeriphClockCmd     开 ADC1/2/3 时钟（均挂 APB2）
+ *   ② GPIO_Init                  引脚配为模拟输入(AIN)
+ *   ③ ADC_CommonInit             公共分频（ADCCLK 不超 21MHz）
+ *   ④ ADC_StructInit + ADC_Init  分辨率 12 位 / 软件触发
+ *   ⑤ ADC_RegularChannelConfig   规则通道 + 采样时间
+ *   ⑥ ADC_Cmd + 校准             使能;校准为寄存器直写（CR2 的 CAL 位）
+ *
+ * 参数 : adc —— ADC 编号，三选一: ADC1 / ADC2 / ADC3
+ *        channel —— 通道号，取值 ADC_Channel_0 ~ ADC_Channel_18
+ *                    （标准库宏，与引脚绑定见数据手册;如 PF7=ADC_Channel_5）
+ *        port/pin —— 对应引脚（换引脚时此处与 channel 必须匹配！）
+ * 说明 : 可对同一 ADC 初始化多个通道，之后用 SYS_ADC_Read 选通道读取
+ * 示例 : SYS_ADC_Init(SYS_ADC_LIGHT_ADC, SYS_ADC_LIGHT_CH,      // 板载光敏
+ *                     SYS_ADC_LIGHT_PORT, SYS_ADC_LIGHT_PIN);   // PF7=ADC3_IN5
+ *        SYS_ADC_Init(ADC1, ADC_Channel_0, GPIOA, GPIO_Pin_0);  // 自接电位器 */
+void SYS_ADC_Init(ADC_TypeDef *adc, uint8_t channel,
+                  GPIO_TypeDef *port, uint16_t pin);
+
+/* 单次转换：启动 → 等转换完成 → 返回 12 位读数（0~4095）
+ * 说明 : 阻塞约几十 µs；完成后 EOC 标志由硬件自动清
+ * 标准库 : ADC_RegularChannelConfig + ADC_SoftwareStartConv +
+ *          ADC_GetFlagStatus(EOC) + ADC_GetConversionValue
+ * 示例 : uint16_t raw = SYS_ADC_Read(ADC3, ADC_Channel_5);
+ *        uint32_t mv  = SYS_ADC_ToMilliVolt(raw);      // 读数 → 毫伏 */
+uint16_t SYS_ADC_Read(ADC_TypeDef *adc, uint8_t channel);
+
+/* 连续采样 times 次求平均（降低随机噪声）
+ * 参数 : times —— 次数（0 = 使用默认 SYS_ADC_AVG_TIMES 次）
+ * 示例 : uint16_t v = SYS_ADC_ReadAvg(ADC3, ADC_Channel_5, 16);   // 平均 16 次 */
+uint16_t SYS_ADC_ReadAvg(ADC_TypeDef *adc, uint8_t channel, uint16_t times);
+
+/* 读数 → 毫伏电压（按区块 1 的 SYS_ADC_VREF_MV 换算）
+ * 示例 : uint32_t mv = SYS_ADC_ToMilliVolt(raw);   // raw=2048 → 约 1650mV */
+uint32_t SYS_ADC_ToMilliVolt(uint16_t raw);
+
+
+/* ================================================================
+ *                    区块 3：扩展功能
+ * ================================================================ */
+/* ---- 连续转换（后台自由跑，随时读最新值） ---- */
+
+/* 连续转换(ADC_ContinuousConvMode = ENABLE)初始化并启动：转换完一个立刻自动开始下一个
+ * 用途 : 求平均值、做信号观察（比每次软件触发快得多）
+ * 示例 : SYS_ADC_ContInit(ADC3, ADC_Channel_5, GPIOF, GPIO_Pin_7);   // 参数同 Init */
+void SYS_ADC_ContInit(ADC_TypeDef *adc, uint8_t channel,
+                      GPIO_TypeDef *port, uint16_t pin);
+
+/* 读连续转换的"最新结果"（读走数据寄存器，不停转换）
+ * 示例 : uint16_t now = SYS_ADC_ContValue(ADC3);   // 随时取最新采样 */
+uint16_t SYS_ADC_ContValue(ADC_TypeDef *adc);
+
+/* 停止连续转换（关 ADC 使能位）
+ * 示例 : SYS_ADC_ContStop(ADC3); */
+void SYS_ADC_ContStop(ADC_TypeDef *adc);
+
+/* ---- DMA 采集（数据自动搬运进内存，CPU 完全不参与） ---- */
+
+/* 通道描述（多通道扫描用）：通道号 + 对应引脚 */
+typedef struct {
+    uint8_t       channel;      /* ADC_Channel_x */
+    GPIO_TypeDef *port;         /* 引脚端口 */
+    uint16_t      pin;          /* 引脚掩码 */
+} SysAdcCh_t;
+
+/* 单通道 DMA 采集：转换结果自动写入 buf（循环模式 DMA_Mode_Circular，一直刷新）
+ * 参数 : buf —— 数据缓冲；len —— 缓冲长度（uint16 个数）
+ * 用法 : 调用后 buf[] 会被持续刷新，读 buf[任意下标] 即最新采样
+ * 标准库 : ADC_DMACmd（打开 ADC→DMA 请求）+ 经 sys_dma → DMA_Init 系列
+ *          （ADC 参数部分与 SYS_ADC_Init 同一套调用链）*/
+void SYS_ADC_DmaInit(ADC_TypeDef *adc, uint8_t channel,
+                     GPIO_TypeDef *port, uint16_t pin,
+                     uint16_t *buf, uint16_t len);
+
+/* 多通道扫描 + DMA 采集（教学重点：扫描序列）
+ * 参数 : chs   —— 通道描述数组（每项含 channel/port/pin）
+ *        count —— 通道个数（≤16，按数组顺序轮流转换）
+ *        buf   —— 数据缓冲；len —— 缓冲长度
+ * 说明 : 循环模式(DMA_Mode_Circular)下 buf[0..count-1] 依次为 通道0..通道count-1 的结果，
+ *        按 count 个一组滚动刷新
+ * 示例 : static const SysAdcCh_t chs[2] = {
+ *            { ADC_Channel_5, GPIOF, GPIO_Pin_7 },    // 光敏
+ *            { ADC_Channel_4, GPIOF, GPIO_Pin_6 } };  // 按实际接线填
+ *        uint16_t adcbuf[2];
+ *        SYS_ADC_DmaScanInit(ADC3, chs, 2, adcbuf, 2); */
+void SYS_ADC_DmaScanInit(ADC_TypeDef *adc, const SysAdcCh_t *chs,
+                         uint8_t count, uint16_t *buf, uint16_t len);
+
+/* 定时器触发 + 扫描 + DMA：固定采样率的"自动数据流"
+ * 原理 : 触发源定时器(TIM2/3/8 的 TRGO,先用 SYS_TIM_TrgoInit 配好)
+ *        每周期产生一个事件 → ADC 自动启动一轮扫描 → DMA 按序把结果
+ *        搬进缓冲——采样时刻由硬件对齐,比软件延时准得多
+ * 参数 : ext_trig —— 外部触发源常量（标准库宏）;
+ *        与 SYS_TIM_TrgoInit 的定时器配对选:
+ *          TIM2 → ADC_ExternalTrigConv_T2_TRGO
+ *          TIM3 → ADC_ExternalTrigConv_T3_TRGO
+ *          TIM8 → ADC_ExternalTrigConv_T8_TRGO
+ *        （另支持 T1/T2/T3/T5/T8 的 CCx 等触发点,完整表见
+ *          stm32f4xx_adc.h 的 ADC_ExternalTrigConv_ 宏;选错源 = 永远
+ *          不触发——现象是缓冲纹丝不动）
+ *        chs/count/buf/len —— 同 SYS_ADC_DmaScanInit（通道表/个数/缓冲/长度）
+ * 说明 : 调用后不需要任何"启动转换"——触发事件一到就自动采样;
+ *        想停: SYS_TIM_Stop(触发源) 或 SYS_ADC_DmaStop
+ * 示例 : SYS_TIM_TrgoInit(SYS_TIM_3, 10000);      // 采样率 10kHz
+ *        static const SysAdcCh_t chs[2] = {
+ *            { ADC_Channel_5, GPIOF, GPIO_Pin_7 },   // 光敏
+ *            { ADC_Channel_4, GPIOF, GPIO_Pin_6 } };
+ *        uint16_t wbuf[200];
+ *        SYS_ADC_ExtTrigScanInit(ADC3, ADC_ExternalTrigConv_T3_TRGO, chs, 2, wbuf, 200); */
+void SYS_ADC_ExtTrigScanInit(ADC_TypeDef *adc, uint32_t ext_trig,
+                             const SysAdcCh_t *chs, uint8_t count,
+                             uint16_t *buf, uint16_t len);
+
+/* 停止 DMA 采集（单通道/多通道通用）
+ * 示例 : SYS_ADC_DmaStop(ADC3); */
+void SYS_ADC_DmaStop(ADC_TypeDef *adc);
+
+/* 一站式读电压（mV）：单次转换 + 按 VREF 换算，一步到位
+ * 等价：SYS_ADC_ToMilliVolt(SYS_ADC_Read(adc, channel))
+ * 前提 : 对应通道已 SYS_ADC_Init（同 SYS_ADC_Read）
+ * 示例 : uint32_t mv = SYS_ADC_ReadMilliVolt(ADC3, ADC_Channel_5); */
+uint32_t SYS_ADC_ReadMilliVolt(ADC_TypeDef *adc, uint8_t channel);
+
+
+/* ================================================================
+ *  附:标准库结构体速查 —— ADC_TypeDef（stm32f4xx.h;每个 ADC 一套）
+ * ================================================================
+ *  成员一览（含库中用法）:
+ *    SR      状态:EOC 位(宏 ADC_FLAG_EOC) = 转换完成（SYS_ADC_Read 轮询它）
+ *    CR1     控制 1:分辨率 / 扫描模式开关（ADC_Init 写它）
+ *    CR2     控制 2:ADON(ADC_CR2_ADON) / SWSTART(ADC_CR2_SWSTART) /
+ *            CONTINUOUS(ADC_CR2_CONT) / CAL 校准位（本 DFP 未定义
+ *            ADC_CR2_CAL,库内 .c 已 #ifndef 补定义）/
+ *            DMA 使能(ADC_CR2_DMA)（ADC_Cmd、SoftwareStartConv、
+ *            寄存器直写的校准都动它）
+ *    SMPR1/2 采样时间:每通道 3 位（RegularChannelConfig 的采样时间）
+ *    JOFR1~4 注入通道偏移:未用
+ *    HTR/LTR 模拟看门狗上下限:未用
+ *    SQR1~3  规则序列:哪个通道在第几位转换（选通道写这里）
+ *    JSQR    注入序列:未用
+ *    JDR1~4  注入数据:未用
+ *    DR      规则数据:转换结果的 12 位（GetConversionValue 读它）
+ *
+ *  附:标准库结构体速查 —— ADC_Common_TypeDef（三个 ADC 共用一份）
+ *    CSR    公共状态:多 ADC 模式标志,单 ADC 少用
+ *    CCR    公共控制:ADC 时钟分频（宏 ADC_Prescaler_Div4 → 84MHz÷4 = 21MHz,
+ *           硬件上限 36MHz;ADC_CommonInit 写它）
+ *    CDR    公共数据:多 ADC 同步采时合成,库未用
+ * ================================================================ */
+
+#endif /* __FWLIB_SYS_ADC_H */
