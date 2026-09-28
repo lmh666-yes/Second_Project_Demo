@@ -33,3 +33,9 @@ S_N_sys/Project_2_数据通信端/Project/0001_标准模板库/
 
 # ---- Qt 工程内旧仓库的备份元数据（改名为 .git_bak 保留在本地）----
 S_N_sys/QT_project/SerialMonitor/.git_bak/
+
+# ---- 本地工具脚本（个人使用，不入库）----
+project_check.ps1
+project_check.bat
+push_to_github.ps1
+push_to_github.bat
