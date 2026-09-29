@@ -438,3 +438,56 @@ void SYS_ADC_DmaTimerTrigStop(ADC_TypeDef *adc, SysTimId_t tim)
     if (t != 0) TIM_Cmd(t, DISABLE);     /* 先停触发源，再停 ADC/DMA */
     SYS_ADC_DmaStop(adc);
 }
+
+/* 定时器触发 + 扫描 + DMA（与 DmaScanInit 的差别:
+ *   ① 触发源从"软件"改为外部事件(定时器 TRGO),调用后不再主动启动;
+ *   ② 其余配置完全同一套） */
+void SYS_ADC_ExtTrigScanInit(ADC_TypeDef *adc, uint32_t ext_trig,
+                             const SysAdcCh_t *chs, uint8_t count,
+                             uint16_t *buf, uint16_t len)
+{
+    DMA_Stream_TypeDef *stream;
+    ADC_InitTypeDef ai;
+    uint8_t i;
+
+    if (adc == 0 || chs == 0 || buf == 0 || len == 0U) return;
+    if (count == 0U || count > 16U) return;
+    stream = adc_dma_stream(adc);
+    if (stream == 0) return;
+
+    adc_clk_enable(adc);
+    for (i = 0; i < count; i++) {
+        adc_pin_analog(chs[i].port, chs[i].pin);
+    }
+
+    SYS_DMA_Stop(stream);
+    ADC_Cmd(adc, DISABLE);
+    adc_common_config();
+
+    /* 扫描 + 外部触发:上升沿事件到 → 自动开始一轮转换
+     * （注意:不打开 ContinuousConvMode——触发一次采一轮,采样率
+     *   完全由触发源频率决定;这才是"定时采样"的正确姿势） */
+    ADC_StructInit(&ai);
+    ai.ADC_Resolution           = ADC_Resolution_12b;
+    ai.ADC_ScanConvMode         = ENABLE;
+    ai.ADC_ContinuousConvMode   = DISABLE;
+    ai.ADC_ExternalTrigConvEdge = ADC_ExternalTrigConvEdge_Rising;
+    ai.ADC_ExternalTrigConv     = ext_trig;
+    ai.ADC_DataAlign            = ADC_DataAlign_Right;
+    ai.ADC_NbrOfConversion      = count;
+    ADC_Init(adc, &ai);
+
+    /* 排转换顺序(rank 从 1 起) */
+    for (i = 0; i < count; i++) {
+        ADC_RegularChannelConfig(adc, chs[i].channel, (uint8_t)(i + 1U),
+                                 SYS_ADC_SAMPLE_TIME);
+    }
+
+    SYS_DMA_PeriphToMem(stream, adc_dma_channel(adc),
+                        (uint32_t)&adc->DR, buf, len, 2, 1);
+    ADC_DMACmd(adc, ENABLE);
+
+    ADC_Cmd(adc, ENABLE);
+    adc_calibrate(adc);
+    /* 无需 SoftwareStartConv:等触发源第一个事件即可（外部触发已使能） */
+}

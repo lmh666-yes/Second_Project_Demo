@@ -81,5 +81,16 @@ void BEEP_KeySound(void);
  * 节拍速度由 BEEP_SOS_UNIT_MS 决定（见区块 1） */
 void BEEP_SOS(void);
 
+/* ----------------------------------------------------------------
+ * 非阻塞节拍鸣叫（与 LED_BlinkUpdate 同款引擎，适合报警场景）
+* ----------------------------------------------------------------
+ * 场景 : 报警声不能阻塞主循环——叫你的,主循环照跑;
+ * 节奏 : times 声,每声"响 on_ms / 停 off_ms"(毫秒)
+ * 驱动 : 循环里每 1ms 调 BEEP_Update();或放软定时器 1ms 任务
+ * 例 : BEEP_AsyncStart(3, 100, 200);   // 后台响三声,自动收尾静音 */
+void BEEP_AsyncStart(uint32_t times, uint32_t on_ms, uint32_t off_ms);
+void BEEP_AsyncStop (void);            /* 立即停 + 静音 */
+void BEEP_Update    (void);            /* 每 1ms 调一次 */
+
 #endif /* __FWLIB_BEEP_H */
 

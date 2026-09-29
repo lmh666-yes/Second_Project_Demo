@@ -117,3 +117,58 @@ void BEEP_SOS(void)
     Delay_ms(BEEP_SOS_UNIT_MS * 3U);        /* 结束停顿 */
 }
 
+/* ================================================================
+ *        扩展功能：非阻塞节拍引擎（报警声不阻塞主循环）
+ * ================================================================
+ * 状态机 : 响 on_ms → 停 off_ms → … 直到 times 声数完自动静音 */
+static uint32_t beep_as_times;      /* 剩余声数 */
+static uint32_t beep_as_on;         /* 响 ms */
+static uint32_t beep_as_off;        /* 停 ms */
+static uint32_t beep_as_cnt;        /* 当前相位计时 */
+static uint8_t  beep_as_phase;      /* 1 = 响应处于"响"阶段 */
+static uint8_t  beep_as_active;     /* 1 = 引擎运行中 */
+
+void BEEP_AsyncStart(uint32_t times, uint32_t on_ms, uint32_t off_ms)
+{
+    if (times == 0U || on_ms == 0U || off_ms == 0U) return;
+
+    beep_as_times  = times;
+    beep_as_on     = on_ms;
+    beep_as_off    = off_ms;
+    beep_as_cnt    = 0U;
+    beep_as_phase  = 1U;
+    beep_as_active = 1U;
+    BEEP_On();
+}
+
+void BEEP_AsyncStop(void)
+{
+    beep_as_active = 0U;
+    BEEP_Off();
+}
+
+void BEEP_Update(void)
+{
+    if (beep_as_active == 0U) return;
+
+    beep_as_cnt++;
+
+    if (beep_as_phase != 0U) {                  /* 响阶段 */
+        if (beep_as_cnt >= beep_as_on) {
+            beep_as_cnt = 0U;
+            BEEP_Off();
+            if (--beep_as_times == 0U) {        /* 最后一声响完 → 收工 */
+                beep_as_active = 0U;
+            } else {
+                beep_as_phase = 0U;
+            }
+        }
+    } else {                                    /* 停阶段 */
+        if (beep_as_cnt >= beep_as_off) {
+            beep_as_cnt   = 0U;
+            beep_as_phase = 1U;
+            BEEP_On();
+        }
+    }
+}
+

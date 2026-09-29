@@ -328,3 +328,47 @@ uint8_t SYS_CLK_SetBusDiv(uint32_t hclk_div, uint32_t pclk1_div, uint32_t pclk2_
     return SYS_CLK_OK;
 }
 
+/* ================================================================
+ *        扩展功能：LSE / LSI / RTC 时钟源（sys_rtc 的底座）
+ * ================================================================ */
+/* 启动 LSE 并等起振（超时上限同 SYS_CLK_SWITCH_TIMEOUT） */
+uint8_t SYS_CLK_LseOn(void)
+{
+    uint32_t timeout = SYS_CLK_SWITCH_TIMEOUT;
+
+    RCC_LSEConfig(RCC_LSE_ON);
+    while (RCC_GetFlagStatus(RCC_FLAG_LSERDY) == RESET) {
+        if (timeout-- == 0U) return SYS_CLK_ERR_LSE;
+    }
+    return SYS_CLK_OK;
+}
+
+uint8_t SYS_CLK_LseReady(void)
+{
+    return (RCC_GetFlagStatus(RCC_FLAG_LSERDY) != RESET) ? 1U : 0U;
+}
+
+uint8_t SYS_CLK_LsiReady(void)
+{
+    return (RCC_GetFlagStatus(RCC_FLAG_LSIRDY) != RESET) ? 1U : 0U;
+}
+
+/* 启动 LSI 并等就绪 */
+uint8_t SYS_CLK_LsiOn(void)
+{
+    uint32_t timeout = SYS_CLK_SWITCH_TIMEOUT;
+
+    RCC_LSICmd(ENABLE);
+    while (RCC_GetFlagStatus(RCC_FLAG_LSIRDY) == RESET) {
+        if (timeout-- == 0U) return SYS_CLK_ERR_LSI;
+    }
+    return SYS_CLK_OK;
+}
+
+/* 选 RTC 时钟源并启用 */
+void SYS_CLK_RtcClkSelect(uint32_t src)
+{
+    RCC_RTCCLKConfig(src);
+    RCC_RTCCLKCmd(ENABLE);
+}
+

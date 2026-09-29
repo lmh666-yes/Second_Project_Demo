@@ -1,6 +1,7 @@
 #include "sys_wdg.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include <stddef.h>     /* NULL（复位原因解码的指针判断） */
+#include "gpio_core.h"  /* 心跳掩码用其位带宏 BITBAND_SRAM（SRAM 位带原子写） */
 
 /* ================================================================
  *  sys_wdg.c —— 【系统】看门狗模块  实现文件
@@ -160,6 +161,74 @@ uint32_t SYS_WDG_ResetCauseDecode(uint32_t cause, char *buf, uint32_t size)
 
     buf[pos] = '\0';
     return pos;
+}
+
+/* ================================================================
+ *   区块 3 扩展：多任务心跳汇总喂狗（与 gpio_core 位带联动）
+ * ================================================================ */
+/* 编译期护栏：心跳任务数 0 ~ 32（0 = 不使用该功能） */
+typedef char wdg_hb_cnt_check[(SYS_WDG_HEARTBEAT_COUNT <= 32U) ? 1 : -1];
+
+/* 心跳掩码：bit id = 该任务本轮已报到（SRAM 位带原子写,任何上下文可报） */
+static volatile uint32_t wdg_hb_mask = 0U;
+
+#if   (SYS_WDG_HEARTBEAT_COUNT == 0U)
+    /* 0 = 未启用:各函数直接返回,不参与汇总 */
+#elif (SYS_WDG_HEARTBEAT_COUNT >= 32U)
+    #define WDG_HB_ALLMASK  0xFFFFFFFFUL
+#else
+    #define WDG_HB_ALLMASK  ((1UL << SYS_WDG_HEARTBEAT_COUNT) - 1UL)
+#endif
+
+/* 任务报到:置自己的位（越界忽略;未启用时空操作） */
+void SYS_WDG_Heartbeat(uint8_t id)
+{
+#if (SYS_WDG_HEARTBEAT_COUNT > 0U)
+    if (id < SYS_WDG_HEARTBEAT_COUNT) {
+        BITBAND_SRAM(&wdg_hb_mask, id) = 1U;    /* 单比特原子写,无需关中断 */
+    }
+#else
+    (void)id;
+#endif
+}
+
+/* 是否全员报到（不清掩码、不喂狗——WWDG 等自定义策略用） */
+uint8_t SYS_WDG_HeartbeatAll(void)
+{
+#if (SYS_WDG_HEARTBEAT_COUNT > 0U)
+    return (uint8_t)((wdg_hb_mask & WDG_HB_ALLMASK) == WDG_HB_ALLMASK);
+#else
+    return 0U;
+#endif
+}
+
+/* 缺位掩码:bit = 1 表示该任务本轮还没报到（0 = 全到） */
+uint32_t SYS_WDG_HeartbeatPending(void)
+{
+#if (SYS_WDG_HEARTBEAT_COUNT > 0U)
+    return (~wdg_hb_mask) & WDG_HB_ALLMASK;
+#else
+    return 0U;
+#endif
+}
+
+/* 心跳汇总喂狗:全员到 → 喂狗 + 清零（新一轮）返回 1;否则不喂返回 0 */
+uint8_t SYS_WDG_HeartbeatPoll(void)
+{
+#if (SYS_WDG_HEARTBEAT_COUNT > 0U)
+    if ((wdg_hb_mask & WDG_HB_ALLMASK) != WDG_HB_ALLMASK) return 0U;
+    SYS_WDG_Feed();
+    wdg_hb_mask = 0U;
+    return 1U;
+#else
+    return 0U;
+#endif
+}
+
+/* 手动清零掩码（配合 HeartbeatAll 自定义策略时用） */
+void SYS_WDG_HeartbeatClear(void)
+{
+    wdg_hb_mask = 0U;
 }
 
 /* 启动窗口看门狗 WWDG（超时按当前 PCLK1 自动换算） */

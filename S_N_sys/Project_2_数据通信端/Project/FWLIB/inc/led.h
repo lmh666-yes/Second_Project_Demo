@@ -103,6 +103,26 @@ void LED_AllOff (void);              /* 熄灭全部 LED */
  * 示例（本板 2 灯、正序）：0x01（01b）→ LED0 亮；0x03（11b）→ 全亮 */
 void LED_ShowHex(uint8_t value);
 
+/* 点亮"从 0 号到第 n 号"的连续 LED（n 超范围按全部处理）
+ * 例(本板 2 灯): LED_OnTo(1) → LED0/LED1 亮;LED_OnTo(0) → 只 LED0 亮
+ * 用途 : 进度条 / 电量格 / "亮几格表示第几步"
+ * 示例 : LED_OnTo(1); */
+void LED_OnTo(uint8_t n);
+
+/* ----------------------------------------------------------------
+ * 频率 + 占空比闪灯（非阻塞引擎,与定时器中断/软定时器联动）
+ * ----------------------------------------------------------------
+ * 思路 : 把"亮灭节奏"变成两个参数——周期与占空比;
+ *        循环里每 1ms 调一次 LED_BlinkUpdate() 驱动即可,不占 CPU。
+ * 关系 : 闪烁频率 = 1000 / period_ms (Hz);点亮时长 = period × duty / 1000
+ *        例:period=1000, duty=100‰ → 1Hz、亮 100ms/灭 900ms;
+ *            duty=1000 → 常亮;duty=0 → 常灭
+ * 驱动 : 主循环用 SYS_TICK 计时调用,或放进软定时器/定时器中断
+ *        （先例:sys_softimer 的 1ms 任务里调 LED_BlinkUpdate）*/
+void LED_BlinkStart(uint8_t id, uint16_t period_ms, uint16_t duty_permille);
+void LED_BlinkStop (uint8_t id);   /* 停止并熄灭 */
+void LED_BlinkUpdate(void);        /* 每 1ms 调一次 */
+
 /* ----------------------------------------------------------------
  * 位带直写版本（与区块 2 的 LED_On / LED_Off / LED_Toggle 结果相同，实现不同）
  * ----------------------------------------------------------------

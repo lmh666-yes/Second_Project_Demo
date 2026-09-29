@@ -2,6 +2,9 @@
 #define __FWLIB_SYS_RTC_H
 
 #include "stm32f4xx.h"
+/* RTC 组件未随 RTE 勾选时 stm32f4xx_conf.h 不会带进来——这里显式包含
+ * （header 自带包含守卫,后续若在 RTE 勾选 RTC 也不会重复包含） */
+#include "stm32f4xx_rtc.h"
 
 /* ================================================================
  *  sys_rtc.h —— 【系统】RTC 实时时钟（带备份域）  头文件
@@ -64,6 +67,10 @@
 /* 无纽扣晶振（或 LSE 焊坏）时是否自动用 LSI 兜底：1 = 是，0 = 直接报错
  * 注意 : LSI 精度差（±50%），只能保证"表在走"，不能当标准时间用 */
 #define SYS_RTC_LSI_FALLBACK    1
+
+/* 闹钟/秒中断的 NVIC 优先级（配合库默认 NVIC_PriorityGroup_2） */
+#define SYS_RTC_IRQ_PRE_PRIO   2
+#define SYS_RTC_IRQ_SUB_PRIO   0
 
 /* 判断"备份域是否还有效"用的魔数（写在备份寄存器里，掉电不丢） */
 #define SYS_RTC_MAGIC_REG       RTC_BKP_DR0

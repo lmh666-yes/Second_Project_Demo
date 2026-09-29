@@ -210,6 +210,31 @@ uint8_t SYS_ADC_DmaTimerTrigInit(ADC_TypeDef *adc, const SysAdcCh_t *chs,
 /* 停止"定时器触发"采集（停 ADC + DMA + 定时器） */
 void SYS_ADC_DmaTimerTrigStop(ADC_TypeDef *adc, SysTimId_t tim);
 
+/* 定时器触发 + 扫描 + DMA：固定采样率的"自动数据流"
+ * 原理 : 触发源定时器(TIM2/3/8 的 TRGO,先用 SYS_TIM_TrgoInit 配好)
+ *        每周期产生一个事件 → ADC 自动启动一轮扫描 → DMA 按序把结果
+ *        搬进缓冲——采样时刻由硬件对齐,比软件延时准得多
+ * 参数 : ext_trig —— 外部触发源常量（标准库宏）;
+ *        与 SYS_TIM_TrgoInit 的定时器配对选:
+ *          TIM2 → ADC_ExternalTrigConv_T2_TRGO
+ *          TIM3 → ADC_ExternalTrigConv_T3_TRGO
+ *          TIM8 → ADC_ExternalTrigConv_T8_TRGO
+ *        （另支持 T1/T2/T3/T5/T8 的 CCx 等触发点,完整表见
+ *          stm32f4xx_adc.h 的 ADC_ExternalTrigConv_ 宏;选错源 = 永远
+ *          不触发——现象是缓冲纹丝不动）
+ *        chs/count/buf/len —— 同 SYS_ADC_DmaScanInit（通道表/个数/缓冲/长度）
+ * 说明 : 调用后不需要任何"启动转换"——触发事件一到就自动采样;
+ *        想停: SYS_TIM_Stop(触发源) 或 SYS_ADC_DmaStop
+ * 示例 : SYS_TIM_TrgoInit(SYS_TIM_3, 10000);      // 采样率 10kHz
+ *        static const SysAdcCh_t chs[2] = {
+ *            { ADC_Channel_5, GPIOF, GPIO_Pin_7 },   // 光敏
+ *            { ADC_Channel_4, GPIOF, GPIO_Pin_6 } };
+ *        uint16_t wbuf[200];
+ *        SYS_ADC_ExtTrigScanInit(ADC3, ADC_ExternalTrigConv_T3_TRGO, chs, 2, wbuf, 200); */
+void SYS_ADC_ExtTrigScanInit(ADC_TypeDef *adc, uint32_t ext_trig,
+                             const SysAdcCh_t *chs, uint8_t count,
+                             uint16_t *buf, uint16_t len);
+
 /* 一站式读电压（mV）：单次转换 + 按 VREF 换算，一步到位
  * 等价：SYS_ADC_ToMilliVolt(SYS_ADC_Read(adc, channel))
  * 前提 : 对应通道已 SYS_ADC_Init（同 SYS_ADC_Read）
@@ -224,7 +249,8 @@ uint32_t SYS_ADC_ReadMilliVolt(ADC_TypeDef *adc, uint8_t channel);
  *    SR      状态:ADC_FLAG_EOC = 转换完成（SYS_ADC_Read 轮询它）
  *    CR1     控制 1:分辨率（ADC_Resolution_xb）/ 扫描模式（ADC_ScanConvMode;ADC_Init 写它）
  *    CR2     控制 2:ADC_CR2_ADON 使能 / _SWSTART 软件启动 / _CONT 连续 /
- *            _CAL 校准 / _DMA 使能（ADC_Cmd、SoftwareStartConv、
+ *            _CAL 校准（本 DFP 未定义 ADC_CR2_CAL,库内 .c 已 #ifndef 补定义）/
+ *            _DMA 使能（ADC_Cmd、SoftwareStartConv、
  *            寄存器直写的校准都动它）
  *    SMPR1/2 采样时间:每通道 3 位（RegularChannelConfig 的采样时间）
  *    JOFR1~4 注入通道偏移:未用

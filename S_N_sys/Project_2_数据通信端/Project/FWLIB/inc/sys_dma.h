@@ -22,7 +22,7 @@
  *      SYS_DMA_MemToPeriph(DMA1_Stream6, DMA_Channel_4,
  *                          (uint32_t)&USART2->DR,  // 外设数据口
  *                          buf, len,               // 内存源头
- *                          1, 0);                  // 字节宽/单次模式（DMA_*DataSize_Byte + DMA_Mode_Normal）
+ *                          1, 0);                  // 字节宽/单次模式
  *
  *  与库内模块的关系 :
  *      sys_usart 的 DMA 收发、sys_adc 的 DMA 采集都建立在
@@ -79,22 +79,23 @@ void SYS_DMA_SetCallback(DMA_Stream_TypeDef *stream, SysDmaCallback_t cb);
  *        periph_addr —— 外设数据寄存器地址，如 (uint32_t)&USART1->DR
  *        mem         —— 内存缓冲首地址
  *        len         —— 搬运个数（按 item_size 计数）
- *        item_size   —— 每次搬运字节数：1 = 字节（DMA_*DataSize_Byte），
- *                        2 = 半字（DMA_*DataSize_HalfWord，16 位）
- *        circular    —— 0 = DMA_Mode_Normal（搬完停），1 = DMA_Mode_Circular（搬到尾回开头）
+ *        item_size   —— 每次搬运字节数：1 = 字节（DMA_PeripheralDataSize_Byte /
+ *                       DMA_MemoryDataSize_Byte），2 = 半字（对应 _HalfWord 两个宏）
+ *        circular    —— 0 = 单次（搬完停，DMA_Mode_Normal），
+ *                       1 = 循环（搬到尾回开头，DMA_Mode_Circular）
  * 说明 : 重复调用同一数据流会先停止旧的配置再重配
  *
  * 标准库调用链（库内部依次调用，可对照学习）:
  *   ① RCC_AHB1PeriphClockCmd     开 DMA1/DMA2 时钟（按数据流自动判断）
  *   ② DMA_DeInit + DMA_StructInit  复位数据流并填默认值
- *   ③ DMA_Init                   方向(DMA_DIR_PeripheralSRC/DST)/通道/地址/数量/优先级
+ *   ③ DMA_Init                   方向(DMA_DIR_PeripheralToMemory / _MemoryToPeripheral)/通道/地址/数量/优先级
  *   ④ DMA_ITConfig(TC)           开"传输完成"中断
  *   ⑤ NVIC_Init                  使能该数据流的中断向量
  *   ⑥ DMA_Cmd                    启动搬运
  * 示例 : uint8_t rxbuf[64];
  *        SYS_DMA_PeriphToMem(DMA1_Stream1, DMA_Channel_4,    // USART3_RX 固定映射
  *                            (uint32_t)&USART3->DR, rxbuf, 64,
- *                            1, 0);              // 字节宽(DMA_*DataSize_Byte) / 单次(DMA_Mode_Normal)
+ *                            1, 0);              // 字节宽 / 单次模式
  * 扩展提示 : 想加"半传输(HT)中断"——在 .c 的 dma_start 里给 DMA_ITConfig
  *            多开 DMA_IT_HT 并在中断分发里处理;反向搬运无需重写
  *            （先例:MemToPeriph 就是本函数的现成变体）*/
@@ -142,8 +143,8 @@ uint8_t SYS_DMA_WaitDone(DMA_Stream_TypeDef *stream, uint32_t loops);
  *  附:标准库结构体速查 —— DMA_Stream_TypeDef（stm32f4xx.h;一条数据流）
  * ================================================================
  *  成员一览（含库中用法）:
- *    CR      配置:通道选择/方向(DMA_DIR_PeripheralSRC/DST)/地址增量/
- *            数据宽度/循环模式(DMA_Mode_Normal/Circular)/优先级/
+ *    CR      配置:通道选择/方向(DMA_DIR_PeripheralToMemory / _MemoryToPeripheral)/
+ *            地址增量/数据宽度/循环模式(DMA_Mode_Normal / _Circular)/优先级/
  *            中断使能位（DMA_Init、DMA_ITConfig、DMA_Cmd 全写它）
  *    NDTR    数据量:还剩多少没搬、递减到 0 完成
  *            （DMA_GetCurrDataCounter 读它——SYS_DMA_Remain 的"剩余"）

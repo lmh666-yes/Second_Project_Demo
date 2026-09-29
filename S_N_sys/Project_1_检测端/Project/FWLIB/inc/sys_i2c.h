@@ -37,6 +37,16 @@
  *      } else {
  *          printf("%s\r\n", SYS_I2C_ErrStr(err)); // ② 无应答时看提示
  *      }
+ *
+ *  工业级通信要点（本模块现状,2026-09 审查）:
+ *   ✔ 全操作超时封顶（SYS_I2C_TIMEOUT）——任何一步卡死都返回错误码,不死等;
+ *   ✔ 错误码区分 START/地址/数据/超时/总线,配 ErrStr 可定位到具体步骤;
+ *   ✔ 总线恢复 SYS_I2C_BusReset（9 时钟 + STOP + 重初始化）——从机拉死可自救;
+ *   ✔ 开漏+上拉电气形态（内部上拉 + 依赖板级 4.7k 外部上拉）;
+ *   ✔ 扫描与 16 位寄存器读写就位（Scan / ReadReg16 / WriteReg16,见区块 3）;
+ *   ⚠ 未内建（需要时自加）: SMBus PEC 校验（硬件 ENPEC 支持）、
+ *     速率自动降级重试、长线中继/隔离器场景 —— 见 .c 文件尾扩展提示;
+ *   ⚠ 建议 : 长线/强干扰环境降到 100kHz、缩短走线、必要时屏蔽线。
  * ================================================================ */
 
 
@@ -158,6 +168,21 @@ const char *SYS_I2C_ErrStr(int err);
  *            SYS_I2C_BusReset(SYS_I2C_1);   // 拉死后先救总线
  *        } */
 void SYS_I2C_BusReset(SysI2cId_t id);
+
+/* 扫描总线上的所有器件（0x08 ~ 0x77 逐个发地址探测）
+ * 返回 : 找到的器件个数（found[] 写入 7 位地址,最多 max 个,可传 0 只要计数）
+ * 用途 : 接线后"总线上到底挂了谁"——工业联调第一步
+ * 示例 : uint8_t list[16]; uint8_t n = SYS_I2C_Scan(SYS_I2C_1, list, 16); */
+uint8_t SYS_I2C_Scan(SysI2cId_t id, uint8_t *found, uint8_t max);
+
+/* 16 位寄存器地址版"连写 / 连读"（外部 EEPROM / 大寄存器图器件常用）
+ * 时序 : START → 地址W → 寄存器号高字节 → 低字节 → 数据…（读:重复START换向）
+ * 说明 : 8 位寄存器版见 WriteBytes/ReadBytes;超时/错误码/总线恢复策略相同
+ * 示例 : SYS_I2C_ReadReg16(SYS_I2C_1, 0x50, 0x0100, buf, 32); */
+int SYS_I2C_WriteReg16(SysI2cId_t id, uint8_t addr7, uint16_t reg,
+                       const uint8_t *buf, uint16_t len);
+int SYS_I2C_ReadReg16 (SysI2cId_t id, uint8_t addr7, uint16_t reg,
+                       uint8_t *buf, uint16_t len);
 
 
 /* ================================================================

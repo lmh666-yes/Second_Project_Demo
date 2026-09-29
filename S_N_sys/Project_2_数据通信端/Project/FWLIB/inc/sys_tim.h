@@ -71,13 +71,15 @@
  * 机械按键类信号建议 0x07 ~ 0x0F；干净数字信号可用 0x00（不滤） */
 #define SYS_TIM_ETR_FILTER   0x0F
 
-/* ETR 计数时钟走哪条通路（1 或 2，默认 2）——两种模式对比:
- *   TIM_ETRClockMode2Config（库默认）: SMCR 的 ECE 位置 1——"ETR 直通",F4 直截了当的做法;
- *   TIM_ETRClockMode1Config         : SMCR 的 SMS=111 + TS=ETRF——ETR 经"触发控制器"
- *                    进来（很多老教程 / F1 例程用的写法,会占用从模式选择位）。
+/* ETR 计数时钟走哪条通路（取值 1 或 2，默认 2）——两种标准库函数对比:
+ *   TIM_ETRClockMode2Config（库默认）: SMCR 的 ECE 位置 1——
+ *                    "ETR 直通",F4 直截了当的做法;
+ *   TIM_ETRClockMode1Config: SMCR 的 SMS=111 + TS=ETRF——ETR 经
+ *                    "触发控制器"进来（很多老教程 / F1 例程用的写法,
+ *                    会占用从模式选择位）。
  * 效果 : 两种都能让"ETR 引脚上的每个脉冲"驱动计数,本库场景等价;
- * 占用 : TIM_ETRClockMode1Config 占 SMS/TS 位,TIM_ETRClockMode2Config 只占 ECE 位;
- * 想对照着学:改这里的数值重新编译,观察计数行为是否一致 */
+ * 占用 : Mode1Config 占 SMS/TS 位;Mode2Config 只占 ECE 位;
+ * 想对照着学:改这里的取值重新编译,观察计数行为是否一致 */
 #define SYS_TIM_ETR_CLKMODE   2
 
 /* -------------------- 输入捕获（区块 3 使用） -------------------- */
@@ -112,7 +114,7 @@ typedef enum {
  *
  * 标准库调用链（库内部依次调用，可对照学习）:
  *   ① RCC_APB1/2PeriphClockCmd     开定时器时钟（TIM1/9 在 APB2，否则 APB1）
- *   ② GPIO_PinAFConfig + GPIO_Init 引脚复用为定时器通道输出（GPIO_Mode_AF + GPIO_OType_PP）
+ *   ② GPIO_PinAFConfig + GPIO_Init 引脚复用为定时器通道输出(GPIO_Mode_AF + GPIO_OType_PP)
  *   ③ TIM_TimeBaseInit             时基（自动换算 PSC / ARR）
  *   ④ TIM_OC1~4Init + PreloadConfig  PWM1 模式(TIM_OCMode_PWM1) + 预装载
  *   ⑤ TIM_CtrlPWMOutputs           开主输出（仅 TIM1 需要）
@@ -193,6 +195,23 @@ void SYS_TIM_InitIT(SysTimId_t id, uint32_t freq_hz, void (*callback)(void));
  * 示例 : SYS_TIM_Stop(SYS_TIM_3);   // 停止 TIM3(中断与 PWM 模式都适用) */
 void SYS_TIM_Stop(SysTimId_t id);
 
+/* ---- ADC 采样节拍（TRGO 定时触发输出）---- */
+
+/* 把定时器配成"ADC 触发源"：每个周期输出一次 TRGO(更新事件)
+ * 特点 : 不占引脚、不进中断——专给"定时器触发 ADC"当节拍器
+ *        （配 sys_adc 的 SYS_ADC_ExtTrigScanInit 使用;测波形/测频
+ *          这类"采样率要准"的场合都靠它）
+ * 说明 : 只有 TIM2 / TIM3 / TIM8 的 TRGO 接到了 ADC 触发选择器——
+ *        其它定时器调用本函数会直接返回（不做任何事）;
+ *        本函数会接管该定时器（重配时基并启动计数）,
+ *        不要再与 PWM / 中断 / 捕获等用法共用同一个定时器
+ * 标准库调用链 : 时基(PSC/ARR 直写) → TIM_SelectOutputTrigger(TIM_TRGOSource_Update)
+ *                → TIM_Cmd 启动（详细见 .c）
+ * 参数 : freq_hz —— 触发频率(Hz),即 ADC 的采样率;建议 1Hz ~ 1MHz
+ * 示例 : SYS_TIM_TrgoInit(SYS_TIM_3, 10000);   // 10kHz 采样节拍
+ *        // 配对: SYS_ADC_ExtTrigScanInit(ADC3, ADC_ExternalTrigConv_T3_TRGO, ...) */
+void SYS_TIM_TrgoInit(SysTimId_t id, uint32_t freq_hz);
+
 
 /* ================================================================
  *                    区块 3：扩展功能
@@ -222,19 +241,29 @@ void SYS_TIM_TonePlay(SysTimId_t id, uint8_t ch, uint32_t freq_hz);
  * 示例 : SYS_TIM_ToneStop(SYS_TIM_3, 1); */
 void SYS_TIM_ToneStop(SysTimId_t id, uint8_t ch);
 
+/* 播放指定频率 + 占空比（‰）——无源蜂鸣器"调音量/音色"用
+ * 说明 : 频率与占空比一把设置（= PwmSetFreq + PwmSetDuty 的组合调用）;
+ *        duty_permille 0~1000,常用 500(50%) / 100(轻) / 900(重)
+ *        （练习的 beep_set_freq/beep_set_volume 就是这两步）
+ * 参数 : freq_hz —— 目标频率(0 = 停止);duty_permille —— 占空比千分比
+ * 标准库 : TIM_SetAutoreload + TIM_SetCompareX（经 PwmSetFreq/SetDuty）
+ * 示例 : SYS_TIM_TonePlayDuty(SYS_TIM_13, 1, 2000, 500);   // 2kHz 方波 */
+void SYS_TIM_TonePlayDuty(SysTimId_t id, uint8_t ch, uint32_t freq_hz, uint16_t duty_permille);
+
 /* ---- 外部脉冲计数（ETR 外部时钟,通路由宏选）----
  * 让定时器把"指定引脚上来的每个脉冲"当作计数时钟——
  * 用途:按键次数计数 / 外部信号计数 / 低频脉冲计量
- * （计数时钟通路两种: TIM_ETRClockMode1Config / TIM_ETRClockMode2Config,
- *   由区块 1 的 SYS_TIM_ETR_CLKMODE 选） */
+ * （计数时钟通路有 TIM_ETRClockMode1Config / TIM_ETRClockMode2Config
+ *   两种,由区块 1 的 SYS_TIM_ETR_CLKMODE 选） */
 
 /* 外部脉冲计数初始化（纯计数，无中断）
  * 标准库调用链（库内部依次调用，可对照学习）:
  *   ① RCC_APB1/2PeriphClockCmd  开定时器时钟
- *   ② GPIO_PinAFConfig + GPIO_Init  引脚复用为 TIMx_ETR（GPIO_Mode_AF + GPIO_PuPd_UP，带上拉防悬空）
+ *   ② GPIO_PinAFConfig + GPIO_Init  引脚复用为 TIMx_ETR（GPIO_Mode_AF + 上拉 GPIO_PuPd_UP）
  *   ③ TIM_TimeBaseInit          时基（ARR = period_n-1,数满一轮归零）
- *   ④ TIM_ETRClockMode1/2Config ETR 外部时钟模式（由区块 1 宏
- *                               SYS_TIM_ETR_CLKMODE 选,默认 TIM_ETRClockMode2Config）+ 滤波
+ *   ④ TIM_ETRClockMode1Config / TIM_ETRClockMode2Config
+ *                              ETR 外部时钟模式（由区块 1 宏
+ *                              SYS_TIM_ETR_CLKMODE 选,默认 Mode2）+ 滤波
  *   ⑤ TIM_Cmd                   启动
  * 参数 : id       —— 定时器编号（ETR 引脚是芯片固定映射,先查数据手册）
  *        port/pin —— ETR 输入引脚（如 TIM2 用 GPIOA/GPIO_Pin_0）
@@ -273,7 +302,7 @@ void SYS_TIM_EtrReset(SysTimId_t id);
 /* 输入捕获初始化（纯轮询,无中断）
  * 标准库调用链（库内部依次调用,可对照学习）:
  *   ① RCC_APB1/2PeriphClockCmd  开定时器时钟（+ 经 gpio_core 开引脚时钟）
- *   ② GPIO_PinAFConfig + GPIO_Init  引脚复用为 TIMx_CHx 输入（GPIO_Mode_AF + GPIO_PuPd_UP，带上拉防悬空）
+ *   ② GPIO_PinAFConfig + GPIO_Init  引脚复用为 TIMx_CHx 输入（GPIO_Mode_AF + 上拉 GPIO_PuPd_UP）
  *   ③ TIM_TimeBaseInit          时基（PSC 按 tick_hz 换算;ARR = 0xFFFF 满量程）
  *   ④ TIM_ICInit                信道配成"输入捕获"（TIM_ICSelection_DirectTI / TIM_ICPSC_DIV1 + 滤波宏）
  *   ⑤ TIM_Cmd                   启动
@@ -325,8 +354,8 @@ void SYS_TIM_CaptureSetPolarity(SysTimId_t id, uint8_t ch, uint16_t polarity);
 
 /* ---- 输出比较（Output Compare，信道作输出/比较用）----
  * 原理 : CNT 数到与 CCR 相同那一刻是"匹配事件"——六种模式决定匹配时干什么:
- *        冻结(不动作,只置标志/中断) / 强置高 / 强置低 / 翻转 / PWM1 / PWM2
- *        —— 即 TIM_OCMode_Timing / _Active / _Inactive / _Toggle / _PWM1 / _PWM2。
+ *        TIM_OCMode_Timing(冻结,只置标志/中断) / _Active(强置高) /
+ *        _Inactive(强置低) / _Toggle(翻转) / _PWM1 / _PWM2。
  * 用途 : 翻转模式输出精确方波 / 冻结模式当"比较中断软定时器" /
  *        其它引脚波形实验（PWM 只是六种模式里的两种,要调占空比请用 PwmInit） */
 
@@ -392,8 +421,8 @@ void SYS_TIM_OcStop(SysTimId_t id, uint8_t ch);
  *    CR2     控制 2:一般不用
  *    SMCR    从模式控制:ETR 外部时钟开关(ECE)、触发选择(TS)、
  *            从模式(SMS)/外部分频等——SYS_TIM_EtrInit 把外部脉冲
- *            接成计数时钟就靠它（TIM_ETRClockMode1/2Config 写它:
- *            TIM_ETRClockMode2Config 置 ECE 位;TIM_ETRClockMode1Config 置 SMS=111 + TS=ETRF）
+ *            接成计数时钟就靠它（TIM_ETRClockMode2Config 置 ECE 位;
+ *            TIM_ETRClockMode1Config 置 SMS=111 + TS=ETRF）
  *    DIER    中断使能:更新/比较等中断开关（TIM_ITConfig 写它）
  *    SR      状态:位 0 UIF = 更新中断标志（TIM_GetITStatus 查它、
  *            TIM_ClearITPendingBit 清它——库代写 ISR 里"查/清"两步）
@@ -492,8 +521,9 @@ void SYS_TIM_OcStop(SysTimId_t id, uint8_t ch);
  *                     _BothEdge（写 CCER 的 CCxP/CCxNP 位）
  *                     库用:参数 polarity;运行中换沿用 CaptureSetPolarity
  *
- *    TIM_ICSelection  信号怎么接: TIM_ICSelection_DirectTI（默认:引脚直连本信道→TIx）/
- *                     TIM_ICSelection_IndirectTI（交叉到另一信道）/ TIM_ICSelection_TRC（触发用）
+ *    TIM_ICSelection  信号怎么接: TIM_ICSelection_DirectTI（默认:引脚
+ *                     直连本信道→TIx）/ _IndirectTI（交叉到另一信道）/
+ *                     _TRC（触发用）
  *                     测占空比时经 TIM_PWMIConfig 自动配成"一升一降"双信道
  *                     库用:固定 TIM_ICSelection_DirectTI
  *
@@ -522,7 +552,7 @@ void SYS_TIM_OcStop(SysTimId_t id, uint8_t ch);
  *                     TIM_OCMode_Timing（冻结:只置标志,不动引脚）/
  *                     _Active（匹配置有效电平）/ _Inactive（置无效电平）/
  *                     _Toggle（匹配翻转）/ _PWM1 / _PWM2
- *                     库用:PwmInit 固定 TIM_OCMode_PWM1;OcInit 由参数传入
+ *                     库用:PwmInit 固定 PWM1;OcInit 由参数传入
  *
  *    TIM_OutputState  主输出开关: TIM_OutputState_Enable / _Disable
  *                     库用:固定 Enable

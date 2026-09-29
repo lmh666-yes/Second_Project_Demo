@@ -419,7 +419,7 @@ uint8_t SYS_RTC_WakeUpInit(uint16_t period_s, void (*callback)(void))
     EXTI_Init(&ei);
 
     RTC_ITConfig(RTC_IT_WUT, ENABLE);
-    SYS_NVIC_SetPriority(RTC_WKUP_IRQn, 2, 0);
+    SYS_NVIC_SetPriority(RTC_WKUP_IRQn, SYS_RTC_IRQ_PRE_PRIO, SYS_RTC_IRQ_SUB_PRIO);
     SYS_NVIC_EnableIRQ(RTC_WKUP_IRQn);
 
     RTC_WakeUpCmd(ENABLE);
@@ -483,7 +483,7 @@ uint8_t SYS_RTC_AlarmSet(uint8_t hour, uint8_t minute, uint8_t second,
     EXTI_Init(&ei);
 
     RTC_ITConfig(RTC_IT_ALRA, ENABLE);
-    SYS_NVIC_SetPriority(RTC_Alarm_IRQn, 2, 0);
+    SYS_NVIC_SetPriority(RTC_Alarm_IRQn, SYS_RTC_IRQ_PRE_PRIO, SYS_RTC_IRQ_SUB_PRIO);
     SYS_NVIC_EnableIRQ(RTC_Alarm_IRQn);
 
     RTC_AlarmCmd(RTC_Alarm_A, ENABLE);
@@ -534,8 +534,9 @@ char *SYS_RTC_Format(char *buf, const SysRtc_t *t, uint8_t with_week)
  *                    中断服务（库里唯一的 RTC 向量）
  * ================================================================ */
 /* 周期唤醒：IRQ 3（向量名与启动文件逐一核对过）
- * 典型用途：Stop 模式下的定时唤醒采样 */
-void RTC_WKUP_IRQHandler(void)
+ * 典型用途：Stop 模式下的定时唤醒采样
+ * __weak: 你手写同名 RTC_WKUP_IRQHandler 时可直接覆盖本实现（二选一） */
+__weak void RTC_WKUP_IRQHandler(void)
 {
     if (RTC_GetITStatus(RTC_IT_WUT) != RESET) {
         RTC_ClearITPendingBit(RTC_IT_WUT);
@@ -547,8 +548,9 @@ void RTC_WKUP_IRQHandler(void)
     }
 }
 
-/* 闹钟 A/B：IRQ 41（共用同一向量） */
-void RTC_Alarm_IRQHandler(void)
+/* 闹钟 A/B：IRQ 41（共用同一向量）
+ * __weak: 你手写同名 RTC_Alarm_IRQHandler 时可直接覆盖本实现（二选一） */
+__weak void RTC_Alarm_IRQHandler(void)
 {
     if (RTC_GetITStatus(RTC_IT_ALRA) != RESET) {
         RTC_ClearITPendingBit(RTC_IT_ALRA);

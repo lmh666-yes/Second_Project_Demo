@@ -282,3 +282,54 @@ uint8_t LED_FlowStep(int8_t dir)
     return cur;
 }
 
+/* ================================================================
+ *        扩展功能：目标点亮 + 频率/占空比闪灯引擎（非阻塞）
+ * ================================================================ */
+/* 点亮 0 ~ n 号（n 超范围 → 全部点亮） */
+void LED_OnTo(uint8_t n)
+{
+    for (uint8_t i = 0; i < LED_COUNT; i++) {
+        if (i <= n) LED_On(i);
+        else        LED_Off(i);
+    }
+}
+
+/* 闪灯引擎状态（按 id 一路一套;数组随 LED_COUNT 自动扩） */
+static uint16_t led_bl_period[LED_COUNT];   /* 周期 ms */
+static uint16_t led_bl_on    [LED_COUNT];   /* 一个周期内"亮"的 ms */
+static uint16_t led_bl_cnt   [LED_COUNT];   /* 当前周期内计到第几 ms */
+static uint8_t  led_bl_en    [LED_COUNT];   /* 1 = 该路闪灯启用中 */
+
+/* 启动:周期 + 占空比（‰）→ 预换算"亮多久" */
+void LED_BlinkStart(uint8_t id, uint16_t period_ms, uint16_t duty_permille)
+{
+    if (id >= LED_COUNT || period_ms == 0U) return;
+    if (duty_permille > 1000U) duty_permille = 1000U;
+
+    led_bl_period[id] = period_ms;
+    led_bl_on[id]     = (uint16_t)(((uint32_t)period_ms * duty_permille) / 1000U);
+    led_bl_cnt[id]    = 0U;
+    led_bl_en[id]     = 1U;
+}
+
+/* 停止该路并熄灭（保持"停止=灭"的明确语义） */
+void LED_BlinkStop(uint8_t id)
+{
+    if (id >= LED_COUNT) return;
+    led_bl_en[id] = 0U;
+    LED_Off(id);
+}
+
+/* 每 1ms 调一次:按"亮多久/灭多久"逐路翻转,不阻塞 */
+void LED_BlinkUpdate(void)
+{
+    for (uint8_t i = 0; i < LED_COUNT; i++) {
+        if (led_bl_en[i] == 0U) continue;
+
+        led_bl_cnt[i]++;
+        if (led_bl_cnt[i] >= led_bl_period[i]) led_bl_cnt[i] = 0U;
+
+        led_write(i, (led_bl_cnt[i] < led_bl_on[i]) ? 1U : 0U);
+    }
+}
+

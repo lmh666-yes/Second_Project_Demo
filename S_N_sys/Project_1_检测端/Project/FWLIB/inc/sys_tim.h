@@ -241,6 +241,15 @@ void SYS_TIM_TonePlay(SysTimId_t id, uint8_t ch, uint32_t freq_hz);
  * 示例 : SYS_TIM_ToneStop(SYS_TIM_3, 1); */
 void SYS_TIM_ToneStop(SysTimId_t id, uint8_t ch);
 
+/* 播放指定频率 + 占空比（‰）——无源蜂鸣器"调音量/音色"用
+ * 说明 : 频率与占空比一把设置（= PwmSetFreq + PwmSetDuty 的组合调用）;
+ *        duty_permille 0~1000,常用 500(50%) / 100(轻) / 900(重)
+ *        （练习的 beep_set_freq/beep_set_volume 就是这两步）
+ * 参数 : freq_hz —— 目标频率(0 = 停止);duty_permille —— 占空比千分比
+ * 标准库 : TIM_SetAutoreload + TIM_SetCompareX（经 PwmSetFreq/SetDuty）
+ * 示例 : SYS_TIM_TonePlayDuty(SYS_TIM_13, 1, 2000, 500);   // 2kHz 方波 */
+void SYS_TIM_TonePlayDuty(SysTimId_t id, uint8_t ch, uint32_t freq_hz, uint16_t duty_permille);
+
 /* ---- 外部脉冲计数（ETR 外部时钟,通路由宏选）----
  * 让定时器把"指定引脚上来的每个脉冲"当作计数时钟——
  * 用途:按键次数计数 / 外部信号计数 / 低频脉冲计量

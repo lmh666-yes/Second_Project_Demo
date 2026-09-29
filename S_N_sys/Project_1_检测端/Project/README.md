@@ -40,6 +40,8 @@
    - [5.27 sys_modbus —— Modbus-RTU 从机](#527-sys_modbus--modbus-rtu-从机)
    - [5.28 sys_frame —— 串口自定义帧协议](#528-sys_frame--串口自定义帧协议)
    - [5.29 sys_str —— 字符串与命令解析工具](#529-sys_str--字符串与命令解析工具)
+   - [5.30 sys_rtc —— RTC 实时时钟（日历 / 闹钟 / 秒中断）](#530-sys_rtc--rtc-实时时钟日历--闹钟--秒中断)
+   - [5.31 sys_softimer —— 软定时器（模块联动引擎）](#531-sys_softimer--软定时器模块联动引擎)
 6. [可移植性配置总表](#6-可移植性配置总表)
 7. [教程 A：换引脚 / 换端口](#7-教程-a换引脚--换端口)
 8. [教程 B：换板子](#8-教程-b换板子)
@@ -112,6 +114,8 @@
 │   │   ├── sys_fault.h       【系统】CPU 故障捕获（黑匣子）
 │   │   ├── sys_flash.h       【系统】Flash 擦写与参数保存
 │   │   ├── sys_wdg.h         【系统】看门狗（IWDG / WWDG）
+│   │   ├── sys_rtc.h         【系统】RTC 实时时钟
+│   │   ├── sys_softimer.h    【系统】软定时器（联动引擎）
 │   │   ├── sys_oled.h        【外接】OLED 显示（SSD1306 I2C）
 │   │   ├── sys_mpu6050.h     【板载】六轴姿态传感器
 │   │   ├── sys_dht11.h       【板载】温湿度（单总线）
@@ -141,6 +145,8 @@
 │       ├── sys_spi.c
 │       ├── sys_adc.c
 │       ├── sys_wdg.c
+│       ├── sys_rtc.c
+│       ├── sys_softimer.c
 │       ├── sys_oled.c
 │       ├── sys_mpu6050.c
 │       ├── sys_dht11.c
@@ -1034,6 +1040,7 @@ SYS_FLASH_SaveParams(&cfg, sizeof(cfg));      /* 掉电不丢 */
 | 24、25、26、43、44、45 | TIM1/8~14 的六条共享向量 | 定时器（共享向量） | ✅ `sys_tim` | 覆盖 TIM1/8/9/10/11/12/13/14；每向量分发本库定时器的更新/捕获/比较中断 |
 | 28、29、30、50、54、55 | TIM2~5 / TIM6 / TIM7 | 通用/基本定时器 | ✅ `sys_tim` | 更新中断→回调（`SYS_TIM_InitIT`）；54 向量上 DAC 部分不动 |
 | 37、38、39 | USART1 / USART2 / USART3 | 串口 | ✅ `sys_usart` | RXNE 环形缓冲；IDLE+DMA 收帧 |
+| **3、41** | RTC_WKUP / RTC_Alarm | RTC | ✅ `sys_rtc` | 秒中断 / 闹钟中断 → 回调（`SYS_RTC_SetWakeUpCallback / SetAlarmCallback`） |
 
 > 💡 冷知识：`DMA1_Stream7` 的向量号是 **47**（ST 把它排在了 TIM8 后面），不跟 11~17 在一起——对着 IRQn 表找它时别找错了。
 
@@ -1047,7 +1054,7 @@ SYS_FLASH_SaveParams(&cfg, sizeof(cfg));      /* 掉电不丢 */
 | 61、62 | ETH / ETH_WKUP | 轮询收包版；区块 3 预留"中断收包" |
 | 48、49 | FSMC / SDIO | FSMC 屏为轮询写；SDIO 未引入 |
 | 4、5 | FLASH / RCC | 未用（Flash 操作为阻塞等待） |
-| 0~3、41 | WWDG / PVD / TAMP_STAMP / RTC_WKUP / RTC_Alarm | WWDG 未用早期唤醒中断（按复位用）；RTC/PVD 未引入 |
+| 0、1、2 | WWDG / PVD / TAMP_STAMP | WWDG 未用早期唤醒中断（按复位用）；PVD/TAMP 未引入（RTC 两条已由 `sys_rtc` 实现，见 5.30） |
 | 19~22、63~66 | CAN1 / CAN2（各 4 个） | 未引入（需要时按库风格封 `sys_can`） |
 | 42、67、74~77 | USB OTG FS / HS | 未引入 |
 | 52、53、71 | UART4 / UART5 / USART6 | 本板未引出，未封 |
@@ -1185,7 +1192,7 @@ while (1) {
 ### 5.28 sys_frame —— 串口自定义帧协议
 
 > 文件：`sys_frame.h / sys_frame.c` ｜ 帧格式：`AA | CMD | 长度 | 数据 | 异或校验 | 55`，或教材式简化帧 `AA 数据 校验 55`（宏 `SYS_FRAME_WITH_LEN` 切换）｜ 与 USART1/2/3 任一路配合
-> 覆盖：组帧、逐字节收帧状态机、帧同步（错帧自动重新找头）、校验、出错计数——全部在库内
+> 覆盖：组帧、逐字节收帧状态机、帧同步（错帧自动重新找头）、校验、出错计数、整帧检查（Build / Verify）——全部在库内
 
 | 函数 | 说明 |
 |---|---|
@@ -1196,6 +1203,8 @@ while (1) {
 | `SYS_FRAME_Get(&cmd, &payload, &len)` | 取走一帧（拷贝；简化模式数据在 cmd 里） |
 | `SYS_FRAME_Feed(byte)` | 单字节喂状态机（你自己的 ISR 用） |
 | `SYS_FRAME_Reset()` / `SYS_FRAME_ErrCount()` | 复位状态机 / 收帧出错计数（联调排查） |
+| `SYS_FRAME_Build(cmd, payload, len, out, cap)` | （区块 3）**定义数据帧**：组帧到你的缓冲区（不发送），返回帧长——先组后发/入队/统一节奏 |
+| `SYS_FRAME_Verify(buf, len)` | （区块 3）**检查数据帧**：0=合法；1 头/2 尾/3 长度不符（抓住“两帧粘接”）/4 校验错/5 参数 |
 
 ```c
 SYS_USART_InitRxIT(SYS_USART_1, 115200);          /* 中断收字节 */
@@ -1214,6 +1223,8 @@ while (1) {
 - **与《20_串口协议设置》对照**：`AA 0F A5 55` ↔ `SYS_FRAME_SendShort(SYS_USART_1, 0x0F)`；帧同步/校验/收帧状态机全在库内（教材 ISR 里的 frame_idx/frame_buf 逻辑不再需要手写）；
 - ⚠ 用库方式时**不要自己再写 `USART1_IRQHandler`**（库已定义）——想用自己的 ISR，把收到的字节喂 `SYS_FRAME_Feed()` 即可；
 - 数据字节避开 `0xAA`/`0x55`（简化帧无转义）；要更强校验（求和/CRC）——换帧尾格式并按注释里的“扩展提示”改两处代码即可。
+- 💡 **防粘包 / 半包**：多帧粘连（`AA…55 AA…55`）由状态机逐帧拆开；半包跨调用累积；丢字节由“长度+异或”拦下自动重找头。想双保险就在收整段后先 `SYS_FRAME_Verify()` 再解析——“两帧粘接”会被报 `ERR_LEN`。
+- 💡 **指定数据帧的传输设定**：用 `SYS_FRAME_Build(cmd, payload, len, buf, cap)` 先组帧到缓冲区（返回帧长），再按你的节奏统一发出（`SendBuf`/DMA/RS485 均可）——上下位机联调最稳。
 
 ---
 
@@ -1247,6 +1258,48 @@ if (SYS_STR_Find(line, "SET-DATE") && SYS_STR_Split(line, ":", a, 4) >= 2) {
 
 ---
 
+### 5.30 sys_rtc —— RTC 实时时钟（日历 / 闹钟 / 秒中断）
+
+> 文件：`sys_rtc.h / sys_rtc.c` ｜ 时钟源：LSE（默认,32.768k 晶振）/ LSI（无晶振兜底,宏切换）
+> 范围：走时/日历（星期自动算）/ 闹钟 A（每日・毎星期・每月某日）/ 秒中断 / 备份寄存器；ISR 已内置（`__weak`+回调）
+> 依赖：RTE 组件 **RTC**（工程已登记,`stm32f4xx_rtc.c` 随组件编译）；时钟准备联动 `sys_clock`
+
+| 函数 | 说明 |
+|---|---|
+| `SYS_RTC_Init()` | 起时钟（LSE/LSI,带超时）→1Hz 预分频→24 小时制；返回 `SYS_RTC_OK` / `SYS_RTC_ERR_CLK` |
+| `SYS_RTC_SetTime(h,m,s)` / `GetTime(&h,&m,&s)` | 十进制入/出（内部 BCD 自动转换） |
+| `SYS_RTC_SetDate(y,m,d)` / `GetDate(&y,&m,&d,&wd)` | 星期蔡勒公式自动推算；year 2000~2099 |
+| `SYS_RTC_SetAlarmDaily / Weekday / Date(...)` / `AlarmOff()` | 闹钟 A 三种生效方式；触发时执行注册的回调 |
+| `SYS_RTC_WakeUp1sOn()` / `WakeUpOff()` | 秒中断（唤醒定时器,1 秒一次） |
+| `SYS_RTC_SetAlarmCallback(cb)` / `SetWakeUpCallback(cb)` | 回调注册（开启中断前注册） |
+| `SYS_RTC_BackupWrite(n,v)` / `BackupRead(n)` | 备份寄存器 0~19（复位不丢,存首次标记/校准值） |
+| `SYS_RTC_WeekdayFromDate(y,m,d)` | 蔡勒公式（1=周一 … 7=周日） |
+
+- 💡 典型（练习同款）：`Init` → 判 `BackupRead(0)!=0x8888` 说明首次上电，再 `SetDate/SetTime/BackupWrite(0,0x8888)`；
+- 💡 联动：`SetWakeUpCallback(On1s)` 里刷 OLED/打印时间；`SetAlarmCallback(OnAlarm)` 里 `BEEP_BeepEx + LED_AllBlink`（练习的“闹钟叫铃”）。
+
+### 5.31 sys_softimer —— 软定时器（模块联动引擎）
+
+> 文件：`sys_softimer.h / sys_softimer.c` ｜ 时基：`sys_tick` 的 1ms 计数（先 `SYS_TICK_Init()`）
+> 定位：**一个节拍驱动 N 条周期任务**——“定时器中断 × 各模块”的公共底座
+
+| 函数 | 说明 |
+|---|---|
+| `SYS_SOFTIMER_Add(cb, period_ms)` | 注册周期任务（返回编号；表满/参数错返回 0xFF） |
+| `SYS_SOFTIMER_Poll()` | 到点执行回调（主循环或 TIM 中断里调；返回执行个数） |
+| `SYS_SOFTIMER_Remove(id)` / `Count()` / `Init()` | 注销 / 已注册数 / 清零 |
+
+典型联动编排（把“主循环轮询一切”升级成“节拍驱动”）：
+```c
+SYS_TICK_Init();
+SYS_SOFTIMER_Add(On1ms,    1);   // 里调 LED_BlinkUpdate / BEEP_Update
+SYS_SOFTIMER_Add(On10ms,  10);   // 里调 KEY_Scan 消抖
+SYS_SOFTIMER_Add(On100ms,100);   // 里调 ADC/传感器采样
+SYS_SOFTIMER_Add(On1s,  1000);   // 里刷 OLED / 打印时间（联动 sys_rtc 秒中断又可反过来）
+while (1) { SYS_SOFTIMER_Poll(); /* 主循环只干重活 */ }
+```
+- 放 TIM 中断里轮询也成（回调必须短小）；硬实时请用 `SYS_TIM_InitIT` 硬件定时器。
+
 ## 6. 可移植性配置总表
 
 **换引脚 / 换板子时先看这张表。**
@@ -1276,6 +1329,8 @@ if (SYS_STR_Find(line, "SET-DATE") && SYS_STR_Split(line, ":", a, 4) >= 2) {
 | `ETH\port\stm32f4x7_eth_conf.h` | PHY_SR / 速度 / 双工三件套（换 PHY 必改） | 换 PHY 型号 |
 | `sys_fault.h` | 故障细分 / 除零捕获 / 自动复位开关（一般不动） | 换异常处理策略 |
 | `sys_wdg.h` | `SYS_WDG_LSI_HZ`（LSI 实测偏差大时改）、调试冻结、`SYS_WDG_HEARTBEAT_COUNT`（心跳任务数,0=关） | 看门狗时间不准 / 调试 / 多任务心跳 |
+| `sys_rtc.h` | `SYS_RTC_CLK_SRC`（LSE/LSI 二选一）、中断优先级宏 | 换时钟源 / 无 32.768k 晶振 |
+| `sys_softimer.h` | `SYS_SOFTIMER_MAX`（软定时器条数,1~16） | 联动作业条数不够 |
 | `sys_flash.h` | `SYS_FLASH_PARAM_ADDR`（参数区地址）、`SYS_FLASH_PARAM_MAX` | 换型号 / 改 Flash 分区 |
 | `sys_oled.h` | `SYS_OLED_I2C_ADDR`（0x3C/0x3D）、尺寸宏 | 换屏地址 / 128x32 屏 |
 | `sys_mpu6050.h` | 量程宏 `GYRO_FS` / `ACCEL_FS`、采样分频 | 换量程 / 采样率 |
@@ -1853,6 +1908,8 @@ EventBits_t bits = xEventGroupWaitBits(
 | `sys_mpu6050.c` | `mpu_gyro_lsb / mpu_accel_lsb` | 灵敏度换算表（量程→LSB 系数） |
 | `sys_modbus.c` | `ModbusCtx_t`（变量 `mb`） | 协议运行上下文（串口/地址/数组/钩子/统计） |
 | `sys_frame.c` | `fx_*` 收帧状态机 | 帧同步状态机（头/命令/长度/数据/校验/尾） |
+| `sys_rtc.c` | `bkp_reg[20]` | 备份寄存器 0~19 → `RTC_BKP_DRx` 编号表 |
+| `sys_softimer.c` | `Softimer_t / softimer_tbl` | 软定时器表（回调/周期/下次到点） |
 | 各 `.h` | `SysTimId_t / SysUsartId_t / SysI2cId_t / SysSpiId_t` 等 | 编号枚举：值与数组下标一一对应 |
 | 各 `.h` | `SysI2cErr_t`、`SYS_FAULT_Record_t`、`SysAdcCh_t`、`SYS_MPU6050_Raw_t/Data_t` | 公开类型：定义处均有逐字段/逐值说明 |
 

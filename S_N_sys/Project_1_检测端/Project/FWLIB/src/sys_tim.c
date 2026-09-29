@@ -576,6 +576,29 @@ void SYS_TIM_TonePlay(SysTimId_t id, uint8_t ch, uint32_t freq_hz)
     SYS_TIM_PwmSetDuty(id, ch, 500);             /* 50% 方波 */
 }
 
+/* 指定频率 + 占空比（‰）发声（无源蜂鸣器调音量/音色） */
+void SYS_TIM_TonePlayDuty(SysTimId_t id, uint8_t ch, uint32_t freq_hz, uint16_t duty_permille)
+{
+    const TimCfg_t *p;
+
+    if (id >= SYS_TIM_COUNT || ch < 1U || ch > 4U) return;
+
+    p = &tim_cfg[id];
+
+    if (freq_hz == 0U) {                         /* 0 → 停止发声 */
+        SYS_TIM_PwmStop(id, ch);
+        return;
+    }
+
+    /* 定时器尚未启动(未 Init)时直接返回，避免改到未配置的寄存器 */
+    if ((p->tim->CR1 & TIM_CR1_CEN) == 0U) return;
+
+    if (duty_permille > 1000U) duty_permille = 1000U;
+
+    SYS_TIM_PwmSetFreq(id, freq_hz);
+    SYS_TIM_PwmSetDuty(id, ch, duty_permille);
+}
+
 /* 停止发声 */
 void SYS_TIM_ToneStop(SysTimId_t id, uint8_t ch)
 {

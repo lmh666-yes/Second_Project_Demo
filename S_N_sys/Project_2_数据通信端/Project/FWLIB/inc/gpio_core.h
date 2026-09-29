@@ -24,7 +24,7 @@
  *  命名约定 :
  *      GPIO_OutXxx —— 输出方向（推挽 GPIO_OType_PP / 开漏 GPIO_OType_OD 的配置与操作）
  *      GPIO_InXxx  —— 输入方向（读取引脚电平）
- *      位带宏类    —— BITBAND_* / GPIO_BB_* / Pxout(n)（单比特零开销读写）
+ *      位带宏类    —— BITBAND_* / GPIO_BB_* / Pxout(n) A~I（单比特零开销读写）
  *
  *  结构说明（与其它模块的"区块"对应）:
  *      区块 1 —— 无硬件映射（换板子零改动，相当于区块 1 为空）
@@ -179,6 +179,13 @@ uint8_t GPIO_PinSource(uint16_t pin);
  *   if (GPIO_BB_IN(GPIOA, 0) == 0) {}  // 读 PA0（KEY1）电平
  *   PFout(9) = 0;                      // 51 风格等价写法
  *   BITBAND_PERIPH(&TIM2->CR1, 0) = 1; // 任意寄存器位：启动 TIM2
+ *
+ * 与常见教程 sys.h（BIT_ADDR / Pxout 风格）的对照:
+ *   同一套公式 : 别名 = 0x42000000 + ((地址 & 0xFFFFF) << 5) + 位号×4
+ *   教程 PAout(n) = BIT_ADDR(GPIOA_ODR_Addr, n)   // ODR 偏移 0x14
+ *   本库 PAout(n) = GPIO_BB_OUT(GPIOA, n)         // 完全等价
+ *   教程 BITBAND / MEM_ADDR / BIT_ADDR ↔ 本库 BITBAND_PERIPH / _ADDR
+ *   端口覆盖 : 两边都是 A ~ I 全套一一对应
  * ================================================================ */
 /* 通用位带"地址"宏：产出别名区指针（供查表 / 传参 / 预先算好地址）
  * 读写写法：*BITBAND_PERIPH_ADDR(&某变量, 位号) = 值;
@@ -199,12 +206,16 @@ uint8_t GPIO_PinSource(uint16_t pin);
  *   "地址→整数→再回指针"的混合运算，ARMCC 对静态初始化器会报
  *   #1296 扩展常量警告；换成"整数域全程运算、最后一步才转指针"
  *   就干干净净（led.c / key.c 的位带表借此通过 0 警告编译）。
- * 范围：F407ZG 可用端口 A ~ G；换型号时在链中增加对应项即可。 */
+ * 范围：A ~ I（与常见教程 sys.h 的端口覆盖一致,教程代码原样可编译；
+ *       本板 F407ZG 实装 A ~ G,H/I 供换更大封装型号/跨芯片移植用,
+ *       若头文件未定义对应 GPIOx_BASE 可删该行）。
+ * ⭐ 全程用标准库的 GPIOx_BASE 宏运算（不写裸地址）。 */
 #define GPIO_BASE_NUM(port) ( \
       ((port) == GPIOA) ? GPIOA_BASE : ((port) == GPIOB) ? GPIOB_BASE : \
       ((port) == GPIOC) ? GPIOC_BASE : ((port) == GPIOD) ? GPIOD_BASE : \
       ((port) == GPIOE) ? GPIOE_BASE : ((port) == GPIOF) ? GPIOF_BASE : \
-      ((port) == GPIOG) ? GPIOG_BASE : 0UL )
+      ((port) == GPIOG) ? GPIOG_BASE : ((port) == GPIOH) ? GPIOH_BASE : \
+      ((port) == GPIOI) ? GPIOI_BASE : 0UL )
 
 /* GPIO 位带"别名地址"宏：产出指针，可存入静态表（表驱动位带）
  * 全程"基址整数 + 偏移"运算 —— 结果可用于静态初始化器（0 警告）
@@ -248,7 +259,9 @@ uint8_t GPIO_PinSource(uint16_t pin);
       ((pin) == GPIO_Pin_14) ? 14 :            \
       ((pin) == GPIO_Pin_15) ? 15 : 0xFF )
 
-/* 51 风格快捷宏（F407ZG 可用端口：A ~ G；如与其它代码重名可删掉本组）
+/* 51 风格快捷宏（A ~ I 全套,与常见教程 sys.h 的命名/覆盖一致；
+ * 本板 F407ZG 实装 A ~ G,H/I 供换更大封装/跨芯片时教程代码原样可编译;
+ * 如与其它代码重名可删掉本组）
  * 例：PFout(9) = 0;   if (PAin(0) == 0) { ... } */
 #define PAout(n)  GPIO_BB_OUT(GPIOA, (n))
 #define PAin(n)   GPIO_BB_IN (GPIOA, (n))
@@ -264,6 +277,10 @@ uint8_t GPIO_PinSource(uint16_t pin);
 #define PFin(n)   GPIO_BB_IN (GPIOF, (n))
 #define PGout(n)  GPIO_BB_OUT(GPIOG, (n))
 #define PGin(n)   GPIO_BB_IN (GPIOG, (n))
+#define PHout(n)  GPIO_BB_OUT(GPIOH, (n))
+#define PHin(n)   GPIO_BB_IN (GPIOH, (n))
+#define PIout(n)  GPIO_BB_OUT(GPIOI, (n))
+#define PIin(n)   GPIO_BB_IN (GPIOI, (n))
 
 
 /* ================================================================
@@ -338,15 +355,19 @@ uint32_t DWT_ElapsedUs(uint32_t start_us);  /* 距时间戳已过多少微秒 */
 /* ================================================================
  *  附:标准库结构体速查 —— GPIO_TypeDef（定义在 stm32f4xx.h）
  * ================================================================
- *  官方头文件的英文注释看不懂就来这;库通过指针（如 GPIOA->MODER）操作:
- *    MODER     模式:2 位一组——GPIO_Mode_IN / _OUT / _AF / _AN
- *              （对应编码 00 / 01 / 10 / 11;GPIO_Init 配"方向"写的就是它）
- *    OTYPER    输出类型:GPIO_OType_PP / _OD
- *              （对应编码 0 = 推挽 / 1 = 开漏;GPIO_OutInitOD 选开漏）
- *    OSPEEDR   输出速度:GPIO_Speed_2MHz / _25MHz / _50MHz / _100MHz
- *              （对应编码 00 / 01 / 10 / 11;GPIO_Init 的 Speed 字段）
- *    PUPDR     上下拉:GPIO_PuPd_NOPULL / _UP / _DOWN
- *              （对应编码 00 / 01 / 10;GPIO_InInit 的 pull 参数,按键空闲电平靠它）
+ *  官方头文件的英文注释看不懂就来这;库通过指针（如 GPIOA->MODER）操作。
+ *  ⭐ 一律写标准库宏名——下表左边就是宏名,填参数 / 读代码照名字对:
+ *    MODER     模式:GPIO_Mode_IN（输入） / GPIO_Mode_OUT（输出） /
+ *              GPIO_Mode_AF（复用） / GPIO_Mode_AN（模拟）
+ *              （GPIO_Init 配"方向"写的就是它;寄存器编码 00/01/10/11）
+ *    OTYPER    输出类型:GPIO_OType_PP（推挽） / GPIO_OType_OD（开漏）
+ *              （GPIO_OutInitOD 选的就是 GPIO_OType_OD）
+ *    OSPEEDR   输出速度:GPIO_Speed_2MHz / GPIO_Speed_25MHz /
+ *              GPIO_Speed_50MHz / GPIO_Speed_100MHz
+ *              （GPIO_Init 的 Speed 字段;寄存器编码 00/01/10/11）
+ *    PUPDR     上下拉:GPIO_PuPd_NOPULL（无） / GPIO_PuPd_UP（上拉） /
+ *              GPIO_PuPd_DOWN（下拉）
+ *              （GPIO_InInit 的 pull 参数;按键空闲电平靠它）
  *    IDR       输入数据:引脚上的真实电平（GPIO_InRead / 位带读它）
  *    ODR       输出数据:软件写入的电平（位带直写就是写它的某一位;
  *              GPIO_OutRead 读它）

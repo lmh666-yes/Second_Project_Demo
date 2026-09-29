@@ -410,3 +410,94 @@ void SYS_I2C_BusReset(SysI2cId_t id)
     /* ④ 按上次速率重新初始化（引脚会切回复用模式） */
     SYS_I2C_Init(id, i2c_speed[id]);
 }
+
+/* ================================================================
+ *        扩展功能：总线扫描 + 16 位寄存器读写（工业联调常用）
+ * ================================================================ */
+/* 扫描总线上的所有器件（标准范围 0x08 ~ 0x77） */
+uint8_t SYS_I2C_Scan(SysI2cId_t id, uint8_t *found, uint8_t max)
+{
+    uint8_t n = 0U;
+    uint8_t a;
+
+    for (a = 0x08U; a <= 0x77U; a++) {
+        if (SYS_I2C_IsDeviceReady(id, a) == SYS_I2C_OK) {
+            if ((found != 0) && (n < max)) found[n] = a;
+            n++;
+        }
+    }
+    return n;
+}
+
+/* 16 位寄存器地址连写 */
+int SYS_I2C_WriteReg16(SysI2cId_t id, uint8_t addr7, uint16_t reg,
+                       const uint8_t *buf, uint16_t len)
+{
+    const I2cCfg_t *p = i2c_get(id);
+    uint16_t i;
+    int err;
+
+    if (p == 0 || buf == 0 || len == 0U) return SYS_I2C_ERR_PARAM;
+
+    err = i2c_start(p->i2c);                          if (err != 0) { i2c_stop(p->i2c); return err; }
+    err = i2c_send_addr(p->i2c, addr7, 0);            if (err != 0) { i2c_stop(p->i2c); return err; }
+    err = i2c_write_raw(p->i2c, (uint8_t)(reg >> 8)); if (err != 0) { i2c_stop(p->i2c); return err; }
+    err = i2c_write_raw(p->i2c, (uint8_t)(reg & 0xFFU)); if (err != 0) { i2c_stop(p->i2c); return err; }
+
+    for (i = 0U; i < len; i++) {
+        err = i2c_write_raw(p->i2c, buf[i]);          if (err != 0) { i2c_stop(p->i2c); return err; }
+    }
+
+    err = i2c_wait_btf(p->i2c);                       if (err != 0) { i2c_stop(p->i2c); return err; }
+
+    i2c_stop(p->i2c);
+    return SYS_I2C_OK;
+}
+
+/* 16 位寄存器地址连读（重复起始换向,收尾规则与 ReadBytes 相同） */
+int SYS_I2C_ReadReg16(SysI2cId_t id, uint8_t addr7, uint16_t reg,
+                      uint8_t *buf, uint16_t len)
+{
+    const I2cCfg_t *p = i2c_get(id);
+    uint16_t i;
+    int err;
+
+    if (p == 0 || buf == 0 || len == 0U) return SYS_I2C_ERR_PARAM;
+
+    err = i2c_start(p->i2c);                          if (err != 0) { i2c_stop(p->i2c); return err; }
+    err = i2c_send_addr(p->i2c, addr7, 0);            if (err != 0) { i2c_stop(p->i2c); return err; }
+    err = i2c_write_raw(p->i2c, (uint8_t)(reg >> 8)); if (err != 0) { i2c_stop(p->i2c); return err; }
+    err = i2c_write_raw(p->i2c, (uint8_t)(reg & 0xFFU)); if (err != 0) { i2c_stop(p->i2c); return err; }
+    err = i2c_wait_btf(p->i2c);                       if (err != 0) { i2c_stop(p->i2c); return err; }
+
+    err = i2c_start(p->i2c);                          if (err != 0) { i2c_stop(p->i2c); return err; }
+    err = i2c_send_addr(p->i2c, addr7, 1);            if (err != 0) { i2c_stop(p->i2c); return err; }
+
+    if (len == 1U) {
+        p->i2c->CR1 &= (uint16_t)~I2C_CR1_ACK;
+        i2c_stop(p->i2c);
+        err = i2c_read_raw(p->i2c, &buf[0]);
+    } else {
+        err = SYS_I2C_OK;
+        for (i = 0U; i < len; i++) {
+            err = i2c_read_raw(p->i2c, &buf[i]);
+            if (err != 0) break;
+
+            if (i == (uint16_t)(len - 2U)) {
+                p->i2c->CR1 &= (uint16_t)~I2C_CR1_ACK;
+                i2c_stop(p->i2c);
+            }
+        }
+    }
+
+    p->i2c->CR1 |= I2C_CR1_ACK;
+    return err;
+}
+
+/* ================================================================
+ *  扩展提示（工业级增强方向,需要时按此自加）:
+ *   ① SMBus PEC: 初始化时置 CR1 的 ENPEC,发送走硬件的 PEC 机制;
+ *      或软件实现 CRC-8（多项式 0x07）逐字节累加;
+ *   ② 速率自动降级: 失败后切 100kHz 重试一次（需在此保存/切换速度）;
+ *   ③ 多次重传: 封装 ".c 内部三层重试 + BusReset" 的健壮写入口。
+ * ================================================================ */

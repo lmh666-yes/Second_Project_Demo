@@ -87,6 +87,8 @@
    - [5.46 vl53l0x —— VL53L0X 激光测距（ToF）](#546-vl53l0x--vl53l0x-激光测距tof)
    - [5.47 tb6612 —— TB6612FNG 双路直流电机驱动（4WD 小车）](#547-tb6612--tb6612fng-双路直流电机驱动4wd-小车)
    - [5.48 中断向量表与模块对照（ISR 归属总表）](#548-中断向量表与模块对照isr-归属总表)
+   - [5.49 sys_softimer —— 软定时器（模块联动引擎）](#549-sys_softimer--软定时器模块联动引擎)
+   - [5.50 sys_frame —— 串口自定义帧协议](#550-sys_frame--串口自定义帧协议)
 6. [可移植性配置总表](#6-可移植性配置总表)
 7. [教程 A：换引脚 / 换端口](#7-教程-a换引脚--换端口)
 8. [教程 B：换板子](#8-教程-b换板子)
@@ -213,6 +215,7 @@
 │   │   ├── sys_wdg.h         【系统】看门狗（IWDG / WWDG）
 │   │   ├── sys_pwr.h         【系统】低功耗 Sleep/Stop/Standby
 │   │   ├── sys_rtc.h         【系统】RTC 实时时钟 + 备份域
+│   │   ├── sys_softimer.h    【系统】软定时器（联动引擎）
 │   │   ├── mpu6050.h         【器件】六轴姿态（I2C1, 0x68）
 │   │   ├── vl53l0x.h         【器件】VL53L0X 激光测距 ToF（I2C1, 0x29）
 │   │   ├── ds18b20.h         【器件】单总线温度（PG9）
@@ -1159,12 +1162,14 @@ SYS_FAULT_SetCallback(on_fault);
 ### 5.20 sys_wdg —— 看门狗（IWDG 基础 / WWDG 扩展）
 
 > 文件：`sys_wdg.h / sys_wdg.c` ｜ 依赖 RTE 组件：**IWDG**（+ WWDG，已勾选）
-> 范围：IWDG 按毫秒启动/喂狗；区块 3 = 复位原因诊断 + WWDG 窗口看门狗
+> 范围：IWDG 按毫秒启动/喂狗；区块 3 = 复位原因诊断 + 多任务心跳汇总 + WWDG 窗口看门狗
 
 | 函数 | 说明 |
 |---|---|
 | `SYS_WDG_Init(ms)` | 启动 IWDG（1~32768ms，自动换算 LSI 分频）；启动后无法关闭（官方特性） |
 | `SYS_WDG_Feed()` | 喂狗（必须在超时前重复调用） |
+| `SYS_WDG_Heartbeat(id)` / `HeartbeatPoll()` | （区块 3）**多任务心跳汇总**：各任务报到，全员到齐 `Poll` 才喂狗——治“一个任务卡死、其它任务照常喂狗” |
+| `SYS_WDG_HeartbeatAll / Pending / Clear()` | （区块 3）全员到齐查询 / 缺位掩码（谁没报到）/ 清零开新一轮 |
 | `SYS_WDG_ResetCause()` / `ClearResetFlags()` | （区块 3）读 / 清“上次复位原因” |
 | `SYS_WDG_ResetCauseDecode(cause,buf,size)` | （区块 3）原因解码成短文字，如 `IWDG` / `SOFT,PIN` |
 | `SYS_WDG_WwdgInit(ms)` / `SYS_WDG_WwdgFeed()` | （区块 3）WWDG 窗口看门狗（按当前 PCLK1 自动换算） |
@@ -1173,6 +1178,8 @@ SYS_FAULT_SetCallback(on_fault);
 - 调试：初始化自动开启“调试暂停冻结”，Keil 断点/单步不会触发复位；
 - ⚠ 与 `sys_pwr`：Stop 模式下 LSI 继续运行、看门狗继续计数——休眠时间超过超时会直接复位。
 - ⚠ IWDG 超时按 LSI≈32kHz 换算；LSI 实际频率 17~47kHz（芯片特性），**最大误差可达 ±50%**——精度要求高时先实测 LSI 再修改 `SYS_WDG_LSI_HZ`。
+- 💡 **推荐用法（心跳汇总,练习同款思路的强化版）**：区块 1 把 `SYS_WDG_HEARTBEAT_COUNT` 改成任务数（1~32），每个任务循环里 `SYS_WDG_Heartbeat(id)` 报到，主循环只留 `SYS_WDG_HeartbeatPoll()`——全员到齐才喂狗；某任务卡死 → 它的位缺 → 等狗咬复位。开机自报复位原因：`if (SYS_WDG_ResetCause() & SYS_WDG_RST_IWDG) SYS_USART_SendLine(SYS_USART_1, "IWDG!");`（再 `ClearResetFlags()`）。
+- 📋 哪些库函数可能“阻塞超时”：喂狗周期对照表见 `sys_wdg.h` 文件头（KEY_WaitPress / 扇区擦除 / ETH 自协商等）。
 
 ### 5.21 sys_flash —— 内部 Flash 擦写与参数保存
 
@@ -2197,6 +2204,67 @@ if (VL53L0X_ReadMm(&mm) == VL53L0X_OK) printf("[ToF] %u mm\r\n", mm);
 
 ---
 
+### 5.49 sys_softimer —— 软定时器（模块联动引擎）
+
+> 文件：`sys_softimer.h / sys_softimer.c` ｜ 时基：`sys_tick` 的 1ms 计数（先 `SYS_TICK_Init()`）
+> 定位：**一个节拍驱动 N 条周期任务**——“定时器中断 × 各模块”的公共底座
+
+| 函数 | 说明 |
+|---|---|
+| `SYS_SOFTIMER_Add(cb, period_ms)` | 注册周期任务（返回编号；表满/参数错返回 0xFF） |
+| `SYS_SOFTIMER_Poll()` | 到点执行回调（主循环或 TIM 中断里调；返回执行个数） |
+| `SYS_SOFTIMER_Remove(id)` / `Count()` / `Init()` | 注销 / 已注册数 / 清零 |
+
+典型联动编排（把“主循环轮询一切”升级成“节拍驱动”）：
+```c
+SYS_TICK_Init();
+SYS_SOFTIMER_Add(On1ms,    1);   // 里调 LED_BlinkUpdate / BEEP_Update
+SYS_SOFTIMER_Add(On10ms,  10);   // 里调 KEY_Scan 消抖
+SYS_SOFTIMER_Add(On100ms,100);   // 里调 ADC/传感器采样
+SYS_SOFTIMER_Add(On1s,  1000);   // 里刷 OLED / 打印时间（联动 sys_rtc 秒中断又可反过来）
+while (1) { SYS_SOFTIMER_Poll(); /* 主循环只干重活 */ }
+```
+- 放 TIM 中断里轮询也成（回调必须短小）；硬实时请用 `SYS_TIM_InitIT` 硬件定时器。
+
+### 5.50 sys_frame —— 串口自定义帧协议
+
+> 文件：`sys_frame.h / sys_frame.c` ｜ 帧格式：`AA | CMD | 长度 | 数据 | 异或校验 | 55`，或教材式简化帧 `AA 数据 校验 55`（宏 `SYS_FRAME_WITH_LEN` 切换）｜ 与 USART1/2/3 任一路配合
+> 覆盖：组帧、逐字节收帧状态机、帧同步（错帧自动重新找头）、校验、出错计数、整帧检查（Build / Verify）——全部在库内
+
+| 函数 | 说明 |
+|---|---|
+| `SYS_FRAME_Send(uart, cmd, payload, len)` | 组帧并发送（通用帧；简化模式下 cmd 即数据字节） |
+| `SYS_FRAME_SendShort(uart, data)` | 发“单字节数据”帧（简化模式 = 教材式 4 字节帧） |
+| `SYS_FRAME_Poll(uart)` | 主循环常刷：吃串口字节喂状态机，返回新完整帧数 |
+| `SYS_FRAME_Available()` | 有没有还没取走的帧 |
+| `SYS_FRAME_Get(&cmd, &payload, &len)` | 取走一帧（拷贝；简化模式数据在 cmd 里） |
+| `SYS_FRAME_Feed(byte)` | 单字节喂状态机（你自己的 ISR 用） |
+| `SYS_FRAME_Reset()` / `SYS_FRAME_ErrCount()` | 复位状态机 / 收帧出错计数（联调排查） |
+| `SYS_FRAME_Build(cmd, payload, len, out, cap)` | （区块 3）**定义数据帧**：组帧到你的缓冲区（不发送），返回帧长——先组后发/入队/统一节奏 |
+| `SYS_FRAME_Verify(buf, len)` | （区块 3）**检查数据帧**：0=合法；1 头/2 尾/3 长度不符（抓住“两帧粘接”）/4 校验错/5 参数 |
+
+```c
+SYS_USART_InitRxIT(SYS_USART_1, 115200);          /* 中断收字节 */
+SYS_FRAME_SendShort(SYS_USART_1, 0x0F);           /* 教材对照:线上 AA 0F A5 55 */
+
+while (1) {
+    if (SYS_FRAME_Poll(SYS_USART_1) > 0) {        /* 非阻塞;收到完整帧时 >0 */
+        uint8_t cmd, data[16]; uint16_t n;
+        if (SYS_FRAME_Get(&cmd, data, &n) == 0) {
+            if (cmd & 0x01) LED_On(0); else LED_Off(0);   /* 教材 LED 位掩码例子 */
+        }
+    }
+}
+```
+
+- **与《20_串口协议设置》对照**：`AA 0F A5 55` ↔ `SYS_FRAME_SendShort(SYS_USART_1, 0x0F)`；帧同步/校验/收帧状态机全在库内（教材 ISR 里的 frame_idx/frame_buf 逻辑不再需要手写）；
+- ⚠ 用库方式时**不要自己再写 `USART1_IRQHandler`**（库已定义）——想用自己的 ISR，把收到的字节喂 `SYS_FRAME_Feed()` 即可；
+- 数据字节避开 `0xAA`/`0x55`（简化帧无转义）；要更强校验（求和/CRC）——换帧尾格式并按注释里的“扩展提示”改两处代码即可。
+- 💡 **防粘包 / 半包**：多帧粘连（`AA…55 AA…55`）由状态机逐帧拆开；半包跨调用累积；丢字节由“长度+异或”拦下自动重找头。想双保险就在收整段后先 `SYS_FRAME_Verify()` 再解析——“两帧粘接”会被报 `ERR_LEN`。
+- 💡 **指定数据帧的传输设定**：用 `SYS_FRAME_Build(cmd, payload, len, buf, cap)` 先组帧到缓冲区（返回帧长），再按你的节奏统一发出（`SendBuf`/DMA/RS485 均可）——上下位机联调最稳。
+
+---
+
 ## 6. 可移植性配置总表
 
 **换引脚 / 换板子时先看这张表。**
@@ -2225,7 +2293,7 @@ if (VL53L0X_ReadMm(&mm) == VL53L0X_OK) printf("[ToF] %u mm\r\n", mm);
 | `sys_eth.h` | RMII 引脚宏、PHY 地址、MAC 地址宏 | 换板 / 换 PHY 地址 |
 | `ETH\port\stm32f4x7_eth_conf.h` | PHY_SR / 速度 / 双工三件套（换 PHY 必改） | 换 PHY 型号 |
 | `sys_fault.h` | 故障细分 / 除零捕获 / 自动复位开关（一般不动） | 换异常处理策略 |
-| `sys_wdg.h` | `SYS_WDG_LSI_HZ`（LSI 实测偏差大时改）、调试冻结 | 看门狗时间不准 / 调试 |
+| `sys_wdg.h` | `SYS_WDG_LSI_HZ`（LSI 实测偏差大时改）、调试冻结、`SYS_WDG_HEARTBEAT_COUNT`（心跳任务数,0=关） | 看门狗时间不准 / 调试 / 多任务心跳 |
 | `sys_flash.h` | `SYS_FLASH_PARAM_ADDR`（参数区地址）、`SYS_FLASH_PARAM_MAX` | 换型号 / 改 Flash 分区 |
 | `mpu6050.h` | `MPU6050_I2C_ID`、`MPU6050_ADDR`（AD0 接 VCC 改 0x69）、`MPU6050_INT_*` | 换总线 / 换中断脚 / AD0 改接 |
 | `vl53l0x.h` | `VL53L0X_I2C_ID`、`VL53L0X_I2C_ADDR`（固定 0x29，**改了要跟着 `SetAddress`**）、`VL53L0X_TIMEOUT_MS`、`VL53L0X_BUDGET_DEFAULT_US` | 换 I2C 口 / 同总线挂两颗 / 测量精度不够 |
@@ -2247,6 +2315,7 @@ if (VL53L0X_ReadMm(&mm) == VL53L0X_OK) printf("[ToF] %u mm\r\n", mm);
 | `sys_encoder.h` | `SYS_ENCODER_MAX`（路数）、`SYS_ENCODER_MODE`（倍频方式） | 加第 3 路编码器 / 改单边沿计数 |
 | `xpt2046.h` | 5 根引脚的 `PORT/PIN` 宏、`XPT2046_SCREEN_W/H`、采样次数/去极值数、`USE_EEPROM/USE_EXTI` 开关 | 换引脚 / 换屏分辨率 / 关掉 EEPROM 或 EXTI 依赖 |
 | `sys_rtc.h` | `SYS_RTC_LSE_HZ`、`SYS_RTC_LSE_TIMEOUT_MS`、`SYS_RTC_LSI_FALLBACK`、`SYS_RTC_DEFAULT_UNIX` | 换晶振 / 无晶振板子 / 改首次上电默认时间 |
+| `sys_softimer.h` | `SYS_SOFTIMER_MAX`（软定时器条数,1~16） | 联动作业条数不够 |
 | `sys_dac.h` | `SYS_DAC1_PORT/PIN`、`SYS_DAC2_PORT/PIN`、`SYS_DAC2_ENABLE`、`SYS_DAC_VREF_MV`、`SYS_DAC_TIM`、`SYS_DAC_DMA_STREAM`、`SYS_DAC_SINE_POINTS` | 换 DAC 引脚 / 启用双通道 / 换参考电压 / 换触发定时器或 DMA 通道 |
 | `sram.h` | `SYS_SRAM_ENABLE`、`SYS_SRAM_BANK`、`SYS_SRAM_BASE_ADDR`、`SYS_SRAM_SIZE_BYTES`、四个时序宏（本板芯片 -55，`DATA_SETUP` 别低于 12） | 换 bank/容量 / 读写出错（加大 `SYS_SRAM_DATA_SETUP`）|
 | `sys_can.h` | `SYS_CAN_TX/RX_PORT/PIN`、`SYS_CAN_APB1_HZ`、`SYS_CAN_TX_TIMEOUT_MS`、`SYS_CAN_RX_QUEUE_SIZE` | 换引脚 / 改了系统主频（必须同步）+ 重新 Init |

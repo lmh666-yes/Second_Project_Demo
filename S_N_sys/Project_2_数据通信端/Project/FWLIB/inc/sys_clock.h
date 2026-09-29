@@ -83,6 +83,8 @@ typedef enum {
 #define SYS_CLK_ERR_SW       3      /* 切换超时未完成 */
 #define SYS_CLK_ERR_DIV      4      /* 分频值非法（不是 SPL 分频常量） */
 #define SYS_CLK_ERR_RANGE    5      /* 预演频率超出总线上限（拒绝执行） */
+#define SYS_CLK_ERR_LSI      6      /* LSI 未就绪（超时） */
+#define SYS_CLK_ERR_LSE      7      /* LSE 未起振（查晶振/负载电容） */
 
 
 /* ================================================================
@@ -152,6 +154,26 @@ void SYS_CLK_GetBusFreq(uint32_t *hclk, uint32_t *pclk1, uint32_t *pclk2);
  * 标准库 : RCC_HCLKConfig / RCC_PCLK1Config / RCC_PCLK2Config
  * 示例 : SYS_CLK_SetBusDiv(RCC_SYSCLK_Div1, RCC_HCLK_Div8, RCC_HCLK_Div2);   // 降 PCLK1 */
 uint8_t SYS_CLK_SetBusDiv(uint32_t hclk_div, uint32_t pclk1_div, uint32_t pclk2_div);
+
+/* ---- LSE / LSI / RTC 时钟源（sys_rtc 的依赖,也给"要晶振/低速时钟"的场景）---- */
+/* 启动 LSE（外部 32.768kHz 晶振）并等起振
+ * 返回 : SYS_CLK_OK / SYS_CLK_ERR_LSE（超时——查晶振/负载电容/焊点）
+ * 标准库 : RCC_LSEConfig(RCC_LSE_ON) + RCC_GetFlagStatus(RCC_FLAG_LSERDY) */
+uint8_t SYS_CLK_LseOn(void);
+
+/* LSE / LSI 就绪查询（1 = 已就绪） */
+uint8_t SYS_CLK_LseReady(void);
+uint8_t SYS_CLK_LsiReady(void);
+
+/* 启动 LSI（内部低速 RC）并等就绪（带超时,不再死等）
+ * 说明 : IWDG/看门狗也可能已开 LSI——重复使能幂等
+ * 标准库 : RCC_LSICmd + RCC_GetFlagStatus(RCC_FLAG_LSIRDY) */
+uint8_t SYS_CLK_LsiOn(void);
+
+/* 选择并启用 RTC 时钟（联动 sys_rtc 的 SYS_RTC_Init 内部调用）
+ * 参数 : src —— RCC_RTCCLKSource_LSE / _LSI / _HSE（填标准库常量）
+ * 标准库 : RCC_RTCCLKConfig + RCC_RTCCLKCmd(ENABLE) */
+void SYS_CLK_RtcClkSelect(uint32_t src);
 
 
 /* ================================================================

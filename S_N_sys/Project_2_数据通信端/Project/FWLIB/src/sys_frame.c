@@ -41,9 +41,9 @@ typedef char fx_max_payload_check[(SYS_FRAME_MAX_PAYLOAD <= 255U) ? 1 : -1];
 static uint8_t  fx_state = FX_ST_HEAD;                  /* 当前状态 */
 static uint8_t  fx_cmd;                                 /* 已收到的命令字 */
 static uint8_t  fx_chk;                                 /* 运行中的异或值 */
+#if SYS_FRAME_WITH_LEN
 static uint8_t  fx_idx;                                 /* 数据接收下标 */
 static uint8_t  fx_dlen;                                /* 本帧数据长度 */
-#if SYS_FRAME_WITH_LEN
 static uint8_t  fx_data[SYS_FRAME_MAX_PAYLOAD];         /* 正在收的数据区 */
 #endif
 
@@ -77,8 +77,10 @@ static void fx_restart(uint8_t byte)
  * ================================================================ */
 void SYS_FRAME_Send(SysUsartId_t uart, uint8_t cmd, const uint8_t *payload, uint16_t len)
 {
-    uint16_t i;
     uint8_t  chk;
+#if SYS_FRAME_WITH_LEN
+    uint16_t i;
+#endif
 
     if (uart >= SYS_USART_COUNT) return;
 
@@ -234,7 +236,9 @@ uint8_t SYS_FRAME_Feed(uint8_t byte)
 void SYS_FRAME_Reset(void)
 {
     fx_state = FX_ST_HEAD;
+#if SYS_FRAME_WITH_LEN
     fx_idx   = 0U;
+#endif
     fx_ready = 0U;
     fx_rlen  = 0U;
 }
@@ -242,4 +246,81 @@ void SYS_FRAME_Reset(void)
 uint16_t SYS_FRAME_ErrCount(void)
 {
     return fx_err;
+}
+
+/* ================================================================
+ *        扩展功能：组帧到缓冲区 / 整帧校验（防粘包双保险）
+ * ================================================================ */
+uint16_t SYS_FRAME_Build(uint8_t cmd, const uint8_t *payload, uint16_t len,
+                         uint8_t *out, uint16_t cap)
+{
+    uint8_t  chk;
+#if SYS_FRAME_WITH_LEN
+    uint16_t i;
+#endif
+
+    if (out == 0) return 0U;
+
+#if SYS_FRAME_WITH_LEN
+    /* 通用帧: HEAD + CMD + LEN + data + CHK + TAIL = len + 5 */
+    if (len > SYS_FRAME_MAX_PAYLOAD) return 0U;
+    if ((payload == 0) && (len != 0U)) return 0U;
+    if (cap < (uint16_t)(len + 5U)) return 0U;
+
+    chk = (uint8_t)(SYS_FRAME_HEAD ^ cmd ^ (uint8_t)len);
+    for (i = 0U; i < len; i++) chk ^= payload[i];
+
+    out[0] = (uint8_t)SYS_FRAME_HEAD;
+    out[1] = cmd;
+    out[2] = (uint8_t)len;
+    for (i = 0U; i < len; i++) out[3U + i] = payload[i];
+    out[3U + len] = chk;
+    out[4U + len] = (uint8_t)SYS_FRAME_TAIL;
+    return (uint16_t)(len + 5U);
+#else
+    /* 简化帧: HEAD + 数据 + CHK + TAIL = 4 */
+    (void)payload;
+    (void)len;
+    if (cap < 4U) return 0U;
+
+    chk = (uint8_t)(SYS_FRAME_HEAD ^ cmd);
+
+    out[0] = (uint8_t)SYS_FRAME_HEAD;
+    out[1] = cmd;
+    out[2] = chk;
+    out[3] = (uint8_t)SYS_FRAME_TAIL;
+    return 4U;
+#endif
+}
+
+uint8_t SYS_FRAME_Verify(const uint8_t *buf, uint16_t len)
+{
+#if SYS_FRAME_WITH_LEN
+    uint16_t i;
+    uint8_t  chk;
+#endif
+
+    if (buf == 0) return SYS_FRAME_ERR_PARAM;
+
+#if SYS_FRAME_WITH_LEN
+    if (len < 5U) return SYS_FRAME_ERR_PARAM;
+    if (buf[0] != (uint8_t)SYS_FRAME_HEAD) return SYS_FRAME_ERR_HEAD;
+    if (buf[len - 1U] != (uint8_t)SYS_FRAME_TAIL) return SYS_FRAME_ERR_TAIL;
+
+    /* 长度字段与实际帧长必须一致——"两帧粘接"就在这里被抓住 */
+    if ((uint16_t)buf[2] + 5U != len) return SYS_FRAME_ERR_LEN;
+
+    chk = (uint8_t)(SYS_FRAME_HEAD ^ buf[1] ^ buf[2]);
+    for (i = 0U; i < (uint16_t)buf[2]; i++) chk ^= buf[3U + i];
+    if (chk != buf[3U + (uint16_t)buf[2]]) return SYS_FRAME_ERR_CHECK;
+
+    return SYS_FRAME_OK;
+#else
+    if (len != 4U) return SYS_FRAME_ERR_PARAM;
+    if (buf[0] != (uint8_t)SYS_FRAME_HEAD) return SYS_FRAME_ERR_HEAD;
+    if (buf[3] != (uint8_t)SYS_FRAME_TAIL) return SYS_FRAME_ERR_TAIL;
+    if ((uint8_t)(SYS_FRAME_HEAD ^ buf[1]) != buf[2]) return SYS_FRAME_ERR_CHECK;
+
+    return SYS_FRAME_OK;
+#endif
 }

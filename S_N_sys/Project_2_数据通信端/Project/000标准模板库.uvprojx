@@ -526,6 +526,11 @@
               <FilePath>.\FWLIB\src\\sys_tick.c</FilePath>
             </File>
             <File>
+              <FileName>sys_softimer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\FWLIB\src\\sys_softimer.c</FilePath>
+            </File>
+            <File>
               <FileName>sys_usart.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\FWLIB\src\\sys_usart.c</FilePath>
@@ -779,6 +784,11 @@
               <FileName>sys_tick.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\FWLIB\inc\\sys_tick.h</FilePath>
+            </File>
+            <File>
+              <FileName>sys_softimer.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\FWLIB\inc\\sys_softimer.h</FilePath>
             </File>
             <File>
               <FileName>sys_usart.h</FileName>

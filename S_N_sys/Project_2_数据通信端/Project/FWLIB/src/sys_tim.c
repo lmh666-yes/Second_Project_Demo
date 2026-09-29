@@ -31,8 +31,15 @@
 /* ================================================================
  *                    内部配置表
  * ================================================================ */
+/* 用途 : 定时器编号（= SYS_TIM_x 枚举顺序 = 数组下标）→ 硬件资源映射;
+ *        库内所有函数都靠这张表"由编号找到真实定时器"（改表即改库）
+ * 字段 : tim  = 外设指针（TIM1~TIM14）
+ *        clk  = 对应 RCC 时钟使能位（RCC_APB1/2Periph_TIMx）
+ *        irq  = 中断向量号（TIMx_IRQn;多处共享的向量见各行枚举名）
+ *        apb2 = 总线归属（1 = APB2:TIM1/8~11;0 = APB1:TIM2~7/12~14）
+ * 何时改 : 一般不用动;换型号增删定时器时才改（项数有编译期护栏核对） */
 typedef struct {
-    TIM_TypeDef *tim;
+    TIM_TypeDef *tim;     /* 外设指针（TIM1~TIM14） */
     uint32_t     clk;     /* 对应 RCC 时钟位 */
     IRQn_Type    irq;     /* 中断向量号 */
     uint8_t      apb2;    /* 1 = 挂 APB2 总线（TIM1/8~11）；0 = APB1 */
@@ -261,7 +268,7 @@ void SYS_TIM_PwmInit(SysTimId_t id, uint8_t ch, GPIO_TypeDef *port, uint16_t pin
     else         RCC_APB1PeriphClockCmd(p->clk, ENABLE);
     GPIO_ClockEnable(port);
 
-    /* ② 引脚：复用推挽输出（GPIO_OType_PP，附带弱上拉防悬空；复用输出时上拉对输出电平无影响） */
+    /* ② 引脚：复用推挽输出(GPIO_OType_PP)（附带弱上拉防悬空；复用输出时上拉对输出电平无影响） */
     GPIO_PinAFConfig(port, GPIO_PinSource(pin), af);
     gi.GPIO_Pin   = pin;
     gi.GPIO_Mode  = GPIO_Mode_AF;
@@ -281,7 +288,7 @@ void SYS_TIM_PwmInit(SysTimId_t id, uint8_t ch, GPIO_TypeDef *port, uint16_t pin
     tb.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(p->tim, &tb);
 
-    /* ④ 输出比较：PWM1 模式（TIM_OCMode_PWM1），初始占空比 0（输出保持低） */
+    /* ④ 输出比较：PWM1 模式(宏 TIM_OCMode_PWM1)，初始占空比 0（输出保持低） */
     TIM_OCStructInit(&oc);
     oc.TIM_OCMode      = TIM_OCMode_PWM1;
     oc.TIM_OutputState = TIM_OutputState_Enable;
@@ -398,6 +405,40 @@ void SYS_TIM_Stop(SysTimId_t id)
 
     TIM_Cmd(tim_cfg[id].tim, DISABLE);
     TIM_ITConfig(tim_cfg[id].tim, TIM_IT_Update, DISABLE);
+}
+
+
+/* ================================================================
+ *        扩展功能：定时器触发输出（TRGO → ADC 采样节拍）
+ * ================================================================ */
+/* 每周期输出一次 TRGO(更新事件);只有 TIM2/3/8 连到 ADC 触发选择器
+ * （RM0090 触发映射表）——其余定时器即使有 TRGO 也不通 ADC,直接返回 */
+void SYS_TIM_TrgoInit(SysTimId_t id, uint32_t freq_hz)
+{
+    const TimCfg_t *p;
+    uint32_t psc;
+    uint32_t arr;
+
+    if (id >= SYS_TIM_COUNT || freq_hz == 0U) return;
+
+    p = &tim_cfg[id];
+
+    /* 只支持 TIM2 / TIM3 / TIM8（芯片内部触发线固定映射） */
+    if (p->tim != TIM2 && p->tim != TIM3 && p->tim != TIM8) return;
+
+    if (p->apb2) RCC_APB2PeriphClockCmd(p->clk, ENABLE);
+    else         RCC_APB1PeriphClockCmd(p->clk, ENABLE);
+
+    TIM_Cmd(p->tim, DISABLE);          /* 先停,重配干净 */
+
+    tim_calc_psc_arr(tim_get_clock(p->apb2), freq_hz, &psc, &arr);
+    p->tim->PSC = (uint16_t)psc;
+    p->tim->ARR = (uint16_t)arr;
+    TIM_GenerateEvent(p->tim, TIM_EventSource_Update);      /* 立即装载 */
+
+    TIM_SelectOutputTrigger(p->tim, TIM_TRGOSource_Update); /* 每周期发一次 TRGO */
+
+    TIM_Cmd(p->tim, ENABLE);
 }
 
 /* 中断统一处理：捕获/更新 标志 → 清标志 → 执行回调 */
@@ -535,6 +576,29 @@ void SYS_TIM_TonePlay(SysTimId_t id, uint8_t ch, uint32_t freq_hz)
     SYS_TIM_PwmSetDuty(id, ch, 500);             /* 50% 方波 */
 }
 
+/* 指定频率 + 占空比（‰）发声（无源蜂鸣器调音量/音色） */
+void SYS_TIM_TonePlayDuty(SysTimId_t id, uint8_t ch, uint32_t freq_hz, uint16_t duty_permille)
+{
+    const TimCfg_t *p;
+
+    if (id >= SYS_TIM_COUNT || ch < 1U || ch > 4U) return;
+
+    p = &tim_cfg[id];
+
+    if (freq_hz == 0U) {                         /* 0 → 停止发声 */
+        SYS_TIM_PwmStop(id, ch);
+        return;
+    }
+
+    /* 定时器尚未启动(未 Init)时直接返回，避免改到未配置的寄存器 */
+    if ((p->tim->CR1 & TIM_CR1_CEN) == 0U) return;
+
+    if (duty_permille > 1000U) duty_permille = 1000U;
+
+    SYS_TIM_PwmSetFreq(id, freq_hz);
+    SYS_TIM_PwmSetDuty(id, ch, duty_permille);
+}
+
 /* 停止发声 */
 void SYS_TIM_ToneStop(SysTimId_t id, uint8_t ch)
 {
@@ -548,7 +612,8 @@ void SYS_TIM_ToneStop(SysTimId_t id, uint8_t ch)
 /* ETR 公共配置：时钟 → 引脚复用 → 时基 → 外部时钟 → 启动
  * 说明 : 计数时钟来自 ETR 引脚上的脉冲,内部 PSC 固定 0（不分频）,
  *        收到 period_n 个脉冲计数器归零一轮（产生一次更新事件）;
- *        时钟通路模式 1/2 由头文件宏 SYS_TIM_ETR_CLKMODE 选（默认 2） */
+ *        通路用 TIM_ETRClockMode1Config / Mode2Config 哪个,由头文件宏
+ *        SYS_TIM_ETR_CLKMODE 选（默认 2 = Mode2Config） */
 static void tim_etr_setup(SysTimId_t id, GPIO_TypeDef *port, uint16_t pin,
                           uint8_t af, uint32_t period_n)
 {
@@ -584,8 +649,8 @@ static void tim_etr_setup(SysTimId_t id, GPIO_TypeDef *port, uint16_t pin,
     tb.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(p->tim, &tb);
 
-    /* ④ ETR 外部时钟:脉冲当计数时钟;通路模式/滤波强度见头文件宏
-     *    TIM_ETRClockMode2Config（默认）= ECE 直通;TIM_ETRClockMode1Config = 经触发控制器（SMS + TS） */
+    /* ④ ETR 外部时钟:脉冲当计数时钟;通路选择/滤波强度见头文件宏
+     *    Mode2Config（默认）= ECE 直通;Mode1Config = 经触发控制器（SMS + TS） */
 #if (SYS_TIM_ETR_CLKMODE == 1)
     TIM_ETRClockMode1Config(p->tim, TIM_ExtTRGPSC_OFF,
                             TIM_ExtTRGPolarity_NonInverted, SYS_TIM_ETR_FILTER);
@@ -701,7 +766,7 @@ static void tim_cap_setup(SysTimId_t id, uint8_t ch, GPIO_TypeDef *port, uint16_
     tb.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(p->tim, &tb);
 
-    /* ④ 信道：输入捕获（引脚直连 TIM_ICSelection_DirectTI + 不分频 TIM_ICPSC_DIV1;滤波强度见头文件宏） */
+    /* ④ 信道：输入捕获（引脚直连 + 不分频;滤波强度见头文件宏） */
     TIM_ICStructInit(&ic);
     ic.TIM_Channel     = cap_channel(ch);
     ic.TIM_ICPolarity  = polarity;
@@ -822,7 +887,7 @@ static void tim_oc_setup(SysTimId_t id, uint8_t ch, GPIO_TypeDef *port, uint16_t
     if (p->apb2) RCC_APB2PeriphClockCmd(p->clk, ENABLE);
     else         RCC_APB1PeriphClockCmd(p->clk, ENABLE);
 
-    /* ② 引脚：复用推挽输出（GPIO_OType_PP） */
+    /* ② 引脚：复用推挽输出(GPIO_OType_PP) */
     if (port != 0) {
         GPIO_ClockEnable(port);
         GPIO_PinAFConfig(port, GPIO_PinSource(pin), af);

@@ -39,6 +39,15 @@
  *    ④ 出错累计在 SYS_FRAME_ErrCount（联调时看一眼就知道链路质量）;
  *    ⑤ 数据里别使用 0xAA / 0x55（简化帧无转义字节;通用帧虽带长度,
  *       也建议避开——换头尾宏即可绕开）
+ *
+ *  防"粘包 / 半包"机制（为什么用它就不用操心分包）:
+ *    ① 多帧粘连（一次收到 AA..55 AA..55）——状态机收完一帧回到找头,
+ *       Poll 会把缓冲里字节全部喂完,逐帧拆开;
+ *    ② 半包（一帧分几次到达）——状态机跨调用/跨中断累积,凑齐才就绪;
+ *    ③ 丢字节/误码——长度与异或校验拦下,自动重找帧头恢复;
+ *    ④ 双保险——整段收到后先 SYS_FRAME_Verify() 再解析;发端用
+ *       SYS_FRAME_Build() 先组帧、统一节奏发送,避免半帧交叉;
+ *    ⑤ 粘接检测——Verify 对"两帧粘成一帧"会报 SYS_FRAME_ERR_LEN。
  * ================================================================ */
 
 
@@ -55,6 +64,14 @@
 
 /* 通用帧的数据区最大字节数（= 内部收帧缓冲大小;按协议最长数据改） */
 #define SYS_FRAME_MAX_PAYLOAD   64U
+
+/* 整帧校验（SYS_FRAME_Verify）返回码 */
+#define SYS_FRAME_OK         0U   /* 校验通过 */
+#define SYS_FRAME_ERR_HEAD   1U   /* 帧头不对 */
+#define SYS_FRAME_ERR_TAIL   2U   /* 帧尾不对 */
+#define SYS_FRAME_ERR_LEN    3U   /* 长度字段与实际帧长不符（典型:两帧粘接） */
+#define SYS_FRAME_ERR_CHECK  4U   /* 异或校验错 */
+#define SYS_FRAME_ERR_PARAM  5U   /* 参数非法（指针空/长度不够） */
 
 
 /* ================================================================
@@ -112,5 +129,23 @@ void SYS_FRAME_Reset(void);
 
 /* 收帧出错计数（帧长超限/校验错/帧尾错）——联调排查用 */
 uint16_t SYS_FRAME_ErrCount(void);
+
+/* ---- 数据帧的定义与检查（防粘包双保险）---- */
+
+/* 组帧到"你的缓冲区"（不发送）——先组后发/入队/走其它通道
+ * 返回 : 帧总字节数（>0）;0 = 参数非法（cap 不够/指针空/长度超限）
+ * 用途 : **定义数据帧的统一入口**;与 SYS_FRAME_Verify 对偶（组完可自检）
+ * 示例 : uint8_t fbuf[80]; uint16_t n;
+ *        n = SYS_FRAME_Build(0x01, &mask, 1, fbuf, sizeof(fbuf));
+ *        SYS_USART_SendBuf(SYS_USART_1, fbuf, n);   // 统一节奏发出 */
+uint16_t SYS_FRAME_Build(uint8_t cmd, const uint8_t *payload, uint16_t len,
+                         uint8_t *out, uint16_t cap);
+
+/* 校验"一整帧"（缓冲区里已是完整帧:自己的 ISR 收、DMA 收、上位机联调）
+ * 返回 : SYS_FRAME_OK(0) 合法;1 帧头 / 2 帧尾 / 3 长度不符 / 4 校验错 / 5 参数
+ * 用途 : **检查数据帧的函数**——先 Verify 再剥数据;
+ *        "两帧粘接"会被报 ERR_LEN、丢字节报 ERR_CHECK,完全挡在解析前
+ * 示例 : if (SYS_FRAME_Verify(buf, n) == SYS_FRAME_OK) { 拆 cmd/data; } */
+uint8_t SYS_FRAME_Verify(const uint8_t *buf, uint16_t len);
 
 #endif /* __FWLIB_SYS_FRAME_H */

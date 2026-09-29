@@ -63,8 +63,9 @@ void SYS_PWR_Stop(void);
 void SYS_PWR_Standby(void);
 
 /* 使能 / 关闭 WKUP 引脚(PA0)的唤醒功能：enable 非 0 = 使能
- * 标准库 : PWR_WakeUpPinCmd(PWR_WakeUpPin_1, ENABLE / DISABLE)
- *          （PA0 = WKUP 引脚 1;enable → ENABLE,其它 → DISABLE）
+ * 标准库 : PWR_WakeUpPinCmd(ENABLE/DISABLE)
+ *          （本 DFP 的裁剪版函数就一个参数——引脚固定为 WKUP=PA0;
+ *            完整版 SPL 的写法是 PWR_WakeUpPinCmd(PWR_WakeUpPin_1, ENABLE)）
  * 示例 : SYS_PWR_SetWakeupPin(1);   // 使能 PA0 唤醒(0 = 关闭) */
 void SYS_PWR_SetWakeupPin(uint8_t enable);
 
