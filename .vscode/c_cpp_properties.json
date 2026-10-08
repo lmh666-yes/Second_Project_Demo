@@ -3,17 +3,17 @@
         {
             "name": "标准模板_gpio标准库",
             "includePath": [
-                "d:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\Project\\0001_标准模板库\\FWLIB\\inc",
-                "d:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\Project\\0001_标准模板库\\FreeRTOS\\inc",
-                "d:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\Project\\0001_标准模板库\\FreeRTOS\\port",
-                "d:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\Project\\0001_标准模板库\\ETH\\inc",
-                "d:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\Project\\0001_标准模板库\\ETH\\port",
+                "d:\\GitHub_Project\\S_N_sys\\Project_1_检测端\\Project\\FWLIB\\inc",
+                "d:\\GitHub_Project\\S_N_sys\\Project_1_检测端\\Project\\FreeRTOS\\inc",
+                "d:\\GitHub_Project\\S_N_sys\\Project_1_检测端\\Project\\FreeRTOS\\port",
+                "d:\\GitHub_Project\\S_N_sys\\Project_1_检测端\\Project\\ETH\\inc",
+                "d:\\GitHub_Project\\S_N_sys\\Project_1_检测端\\Project\\ETH\\port",
                 "E:\\k5_v5\\ARM\\ARMCC\\include",
                 "E:\\k5_v5\\ARM\\ARMCC\\include\\rw",
-                "d:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\Project\\0001_标准模板库",
-                "d:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\Project\\0001_标准模板库\\FWLIB\\src",
-                "d:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\Project\\0001_标准模板库\\ETH\\src",
-                "d:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\Project\\0001_标准模板库\\FreeRTOS\\src",
+                "d:\\GitHub_Project\\S_N_sys\\Project_1_检测端\\Project",
+                "d:\\GitHub_Project\\S_N_sys\\Project_1_检测端\\Project\\FWLIB\\src",
+                "d:\\GitHub_Project\\S_N_sys\\Project_1_检测端\\Project\\ETH\\src",
+                "d:\\GitHub_Project\\S_N_sys\\Project_1_检测端\\Project\\FreeRTOS\\src",
                 "${default}"
             ],
             "defines": [
