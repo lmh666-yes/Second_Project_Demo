@@ -1,6 +1,7 @@
 #include "sram.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"          /* DWT_GetUs / DWT_ElapsedUs（测速/超时） */
 
 /* ================================================================
  *  sram.c —— FSMC 外扩 SRAM（IS62WV51216）  实现文件

@@ -130,13 +130,13 @@ void SYS_WDG_ClearResetFlags(void);
 uint32_t SYS_WDG_ResetCauseDecode(uint32_t cause, char *buf, uint32_t size);
 
 /* ---- 多任务心跳汇总喂狗（联动各业务任务/模块）----
- * 原理 : 一个 32 位掩码（SRAM 位带原子写,底层是 gpio_core 的
- *        BITBAND_SRAM）记录"谁报到了";Poll 里"全员到齐 → 喂狗
+ * 原理 : 一个 32 位掩码（短临界区保护置位）记录"谁报到了";
+ *        Poll 里"全员到齐 → 喂狗
  *        + 掩码清零,开始新一轮"。 */
 
-/* 任务报到（可在任意上下文调用:位带原子写,无需关中断）
+/* 任务报到（可在任意上下文调用:内部短临界区保护,无需外部关中断）
  * 参数 : id —— 任务编号（0 ~ SYS_WDG_HEARTBEAT_COUNT-1,越界忽略）
- * 标准库 : 无直接对应——SRAM 位带写（gpio_core 的 BITBAND_SRAM）
+ * 标准库 : 无直接对应——掩码置位（短临界区:__disable_irq / __enable_irq）
  * 示例 : void TaskA(void) { while (1) { 干活(); SYS_WDG_Heartbeat(0); } } */
 void SYS_WDG_Heartbeat(uint8_t id);
 

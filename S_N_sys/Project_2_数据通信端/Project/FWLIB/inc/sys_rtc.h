@@ -41,7 +41,7 @@
  *      while (1) {
  *          SysRtc_t now;
  *          SYS_RTC_GetTime(&now);           // ③ 随时读（无需等待）
- *          Delay_ms(1000);
+ *          delay_ms(1000);
  *      }
  *
  *  【常见坑】

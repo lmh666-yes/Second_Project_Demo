@@ -1,6 +1,7 @@
 #include "mpu6050.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_ms 等）独立文件 */
 #include "sys_exti.h"
 
 /* ================================================================
@@ -160,7 +161,7 @@ uint8_t MPU6050_IsOnline(void)
 void MPU6050_Reset(void)
 {
     (void)mpu_write(MPU_PWR_MGMT_1, 0x80U);       /* DEVICE_RESET = 1 */
-    Delay_ms(120);                                /* 手册要求 ≥100ms */
+    delay_ms(120);                                /* 手册要求 ≥100ms */
 }
 
 void MPU6050_Sleep(uint8_t enable)
@@ -187,10 +188,10 @@ uint8_t MPU6050_Init(void)
     MPU6050_Reset();
 
     if (mpu_write(MPU_PWR_MGMT_1, 0x01U) != 0U) return 1U;  /* 唤醒,时钟选陀螺 PLL(最稳) */
-    Delay_ms(10);
+    delay_ms(10);
 
     (void)mpu_write(MPU_SIGNAL_PATH_RST, 0x07U);  /* 复位加速度/陀螺/温度信号通路 */
-    Delay_ms(10);
+    delay_ms(10);
 
     (void)mpu_write(MPU_PWR_MGMT_2, 0x00U);       /* 六轴全部开启 */
 
@@ -285,7 +286,7 @@ uint8_t MPU6050_CalibrateGyro(void)
         sx += raw.gx;
         sy += raw.gy;
         sz += raw.gz;
-        Delay_ms(5);                 /* 顺带把采样拉开（≈200 次 × 5ms ≈ 1s） */
+        delay_ms(5);                 /* 顺带把采样拉开（≈200 次 × 5ms ≈ 1s） */
     }
 
     mpu_gyro_bias[0] = mpu_to_dps10((int16_t)(sx / (int32_t)MPU6050_CALIB_TIMES));

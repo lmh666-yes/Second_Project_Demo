@@ -1,6 +1,7 @@
 #include "at24c02.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_ms 等）独立文件 */
 
 /* ================================================================
  *  at24c02.c —— AT24C02 EEPROM 驱动  实现文件
@@ -34,7 +35,7 @@ static void at24c02_wait_ready(void)
             return;
         }
     }
-    Delay_ms(AT24C02_WRITE_MS);     /* 兜底：直接等一个写周期 */
+    delay_ms(AT24C02_WRITE_MS);     /* 兜底：直接等一个写周期 */
 }
 
 
@@ -46,7 +47,7 @@ uint8_t AT24C02_Init(uint32_t speed)
     if (speed == 0U) speed = AT24C02_I2C_SPEED;
 
     SYS_I2C_Init(AT24C02_I2C_ID, speed);
-    Delay_ms(10);                   /* 上电后 EEPROM 需要准备时间 */
+    delay_ms(10);                   /* 上电后 EEPROM 需要准备时间 */
 
     return AT24C02_IsOnline() ? 0U : 1U;
 }

@@ -1,7 +1,7 @@
 #include "sys_modbus.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 
-#include "gpio_core.h"      /* Delay_us:顺带确保 DWT 计时使能 */
+#include "delay.h"          /* delay_us:顺带确保 DWT 计时使能 */
 
 /* ================================================================
  *  sys_modbus.c —— 【系统】Modbus-RTU 从机协议模块  实现文件
@@ -252,7 +252,7 @@ void SYS_MODBUS_Init(SysUsartId_t uart, uint8_t addr, uint32_t baud,
     if (baud == 0U) baud = 9600U;
     t35_us = (baud > 19200U) ? 1750U : (38500000UL / baud);
 
-    Delay_us(1);                                    /* 确保 DWT 计时已使能 */
+    delay_us(1);                                    /* 确保 DWT 计时已使能 */
     mb.t35_cycles = t35_us * (SystemCoreClock / 1000000U);
 
     mb_rx_len = 0U;

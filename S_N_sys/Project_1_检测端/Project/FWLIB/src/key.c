@@ -1,6 +1,7 @@
 #include "key.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_ms 等）独立文件 */
 #include "sys_exti.h"   /* 按键中断组合（区块 3）基于外部中断模块 */
 
 /* ================================================================
@@ -36,18 +37,6 @@ static const uint16_t      key_pin [] = {KEY1_PIN,  KEY2_PIN,  KEY3_PIN,  KEY4_P
 
 /* 编译期护栏：表项数必须与 key.h 的 KEY_COUNT 相同（不一致则此行直接编译不过） */
 typedef char key_table_count_check[(sizeof(key_port) / sizeof(key_port[0]) == KEY_COUNT) ? 1 : -1];
-
-/* 位带别名地址表（与上面两张表同源的"第二种映射"，供 KEY_BB_Read 使用）
- * 每项 = 该按键对应 IDR 位的别名地址：*key_bb[i] 读出的就是该位电平。
- * 地址在编译期全部算好，运行时零运算（原理见 gpio_core.h 位带小节） */
-static volatile uint32_t * const key_bb[] = {
-    GPIO_BB_IN_ADDR(KEY1_PORT, GPIO_PIN_NUM(KEY1_PIN)),
-    GPIO_BB_IN_ADDR(KEY2_PORT, GPIO_PIN_NUM(KEY2_PIN)),
-    GPIO_BB_IN_ADDR(KEY3_PORT, GPIO_PIN_NUM(KEY3_PIN)),
-    GPIO_BB_IN_ADDR(KEY4_PORT, GPIO_PIN_NUM(KEY4_PIN)),
-};
-/* 编译期护栏：与 key_port 同规则 —— 增删按键时本表同步增删 */
-typedef char key_bb_count_check[(sizeof(key_bb) / sizeof(key_bb[0]) == KEY_COUNT) ? 1 : -1];
 
 /* 边沿检测状态表：记录每个按键"上一次扫描到"的电平
  * KEY_Scan 靠它区分"一直按着"（上次=按下）与"刚刚按下"（上次=松开）
@@ -128,7 +117,7 @@ uint8_t KEY_Scan(void)
 
     /* ③ 消抖：延时 10ms 后复测 */
     if (hit != KEY_NONE) {
-        Delay_ms(10);
+        delay_ms(10);
         level[hit] = GPIO_InRead(key_port[hit], key_pin[hit]);
         down = (level[hit] == KEY_PRESS_LEVEL) ? 1 : 0;
     }
@@ -160,13 +149,6 @@ uint32_t KEY_ReadAll(void)
     return mask;
 }
 
-/* 位带直读（与 KEY_Read 结果相同、实现不同，对照说明见 key.h 声明处） */
-uint8_t KEY_BB_Read(uint8_t id)
-{
-    if (id >= KEY_COUNT) return 0;
-    return (*key_bb[id] == (uint32_t)KEY_PRESS_LEVEL) ? 1 : 0;
-}
-
 /* 阻塞等待任意键按下：反复扫描，直到出现"新按下"事件
  * （借助 KEY_Scan 的消抖与边沿特性，天然过滤抖动） */
 uint8_t KEY_WaitPress(void)
@@ -189,7 +171,7 @@ uint8_t KEY_LongPress(uint8_t id, uint32_t hold_ms)
     if (!KEY_Read(id))   return 0;          /* 当前未按下 → 直接失败 */
 
     while (held < hold_ms) {
-        Delay_ms(10);
+        delay_ms(10);
         held += 10;
 
         if (!KEY_Read(id)) return 0;        /* 中途松开 → 不是长按 */

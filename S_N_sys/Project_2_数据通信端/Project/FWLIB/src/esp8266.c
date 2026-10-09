@@ -1,6 +1,7 @@
 #include "esp8266.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_ms 等）独立文件 */
 #include <string.h>
 
 /* ================================================================
@@ -127,7 +128,7 @@ uint8_t ESP8266_Init(uint32_t baudrate)
     if (baudrate == 0U) baudrate = ESP8266_DEFAULT_BAUD;
 
     SYS_USART_InitRxIT(ESP8266_USART, baudrate);
-    Delay_ms(200);                       /* 等模块上电/复位信息吐完 */
+    delay_ms(200);                       /* 等模块上电/复位信息吐完 */
 
     /* 先试"复位 + 等 ready"；老固件可能不回 ready，就退回测 AT */
     if (ESP8266_Reset() == 0U) return 0U;

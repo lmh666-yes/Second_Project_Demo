@@ -1,6 +1,7 @@
 #include "sys_can.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_us 等）独立文件 */
 
 /* ================================================================
  *  sys_can.c —— 【板载】CAN 总线（CAN1 + TJA1050）  实现文件
@@ -284,7 +285,7 @@ uint8_t SYS_CAN_Transmit(const SysCanFrame_t *frame)
         status = CAN_TransmitStatus(SYS_CAN_INSTANCE, mbox);
         if (status == CAN_TxStatus_Ok) return 0U;
 
-        Delay_us(50U);
+        delay_us(50U);
         waited += 1U;                        /* 每轮约 50us */
     } while (waited < (SYS_CAN_TX_TIMEOUT_MS * 20U));
 
@@ -403,7 +404,7 @@ uint8_t SYS_CAN_LoopbackTest(void)
                    (rx.data[0] == 0xAAU) && (rx.data[1] == 0x55U)) ? 0U : 1U;
             break;
         }
-        Delay_us(50U);
+        delay_us(50U);
         waited += 1U;
     } while (waited < 2000U);            /* 上限约 100ms */
 

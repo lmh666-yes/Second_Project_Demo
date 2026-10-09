@@ -396,6 +396,11 @@
               <FilePath>.\FWLIB\src\\gpio_core.c</FilePath>
             </File>
             <File>
+              <FileName>delay.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\FWLIB\src\\delay.c</FilePath>
+            </File>
+            <File>
               <FileName>led.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\FWLIB\src\\led.c</FilePath>
@@ -649,6 +654,16 @@
               <FileName>gpio_core.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\FWLIB\inc\\gpio_core.h</FilePath>
+            </File>
+            <File>
+              <FileName>delay.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\FWLIB\inc\\delay.h</FilePath>
+            </File>
+            <File>
+              <FileName>sys_bitband.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\FWLIB\inc\\sys_bitband.h</FilePath>
             </File>
             <File>
               <FileName>led.h</FileName>

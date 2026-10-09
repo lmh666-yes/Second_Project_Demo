@@ -1,5 +1,6 @@
 #include "vl53l0x.h"
-#include "gpio_core.h"      /* DWT_GetUs / DWT_ElapsedUs —— 超时计时，免初始化 */
+#include "gpio_core.h"      /* 引脚/位 */
+#include "delay.h"          /* DWT_GetUs / DWT_ElapsedUs —— 超时计时，免初始化 */
 
 /* ================================================================
  *  vl53l0x.c —— VL53L0X 激光测距实现（ToF / SPAD 阵列）

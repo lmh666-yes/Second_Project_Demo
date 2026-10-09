@@ -50,9 +50,9 @@
  *  【使用方式】
  *      TB6612_Init();
  *      TB6612_Car(TB6612_CAR_FWD, 600);      // 前进，60% 速度
- *      Delay_ms(1000);
+ *      delay_ms(1000);
  *      TB6612_CarTank(500, -500);            // 原地转圈（左正右反）
- *      Delay_ms(500);
+ *      delay_ms(500);
  *      TB6612_Stop();
  *
  *  移植指引 : 换引脚只改下面区块 1（7 个引脚 + 1 个定时器）；
@@ -194,7 +194,7 @@ uint8_t TB6612_Car(uint8_t action, uint16_t speed);
  *        step               —— 每毫秒变化多少（千分比/ms），建议 5~20
  * 返回 : 走到位返回 1，还在过渡中返回 0
  * 说明 : 需要在循环里反复调，直到返回 1。典型用法：
- *          while (!TB6612_CarRamp(600, 600, 10)) { Delay_ms(5); }
+ *          while (!TB6612_CarRamp(600, 600, 10)) { delay_ms(5); }
  *        ⚠ 每 1ms 调一次才准；调得比 1ms 慢就按实际间隔折算 step
  * 示例 : TB6612_CarRamp(600, 600, 10);   // 10ms 内从 0 加到 600 */
 uint8_t TB6612_CarRamp(int16_t target_l, int16_t target_r, uint16_t step);

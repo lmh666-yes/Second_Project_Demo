@@ -1,6 +1,7 @@
 #include "w25qxx.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_us / delay_ms 等）独立文件 */
 
 /* ================================================================
  *  w25qxx.c —— W25Q 系列 SPI Flash 驱动  实现文件
@@ -89,7 +90,7 @@ uint8_t W25QXX_WaitBusy(void)
 
     while ((w25_read_status() & 0x01U) != 0U) {
         if (DWT_ElapsedUs(t0) > (W25_TIMEOUT_MS_SMALL * 3000UL)) return 2U;
-        Delay_us(50);
+        delay_us(50);
     }
     return 0U;
 }
@@ -101,7 +102,7 @@ static uint8_t w25_wait_busy_long(void)
 
     while ((w25_read_status() & 0x01U) != 0U) {
         if (DWT_ElapsedUs(t0) > (W25_TIMEOUT_MS_BIG * 1000UL)) return 2U;
-        Delay_ms(10);
+        delay_ms(10);
     }
     return 0U;
 }
@@ -124,7 +125,7 @@ uint8_t W25QXX_Init(uint32_t speed)
 
     /* ③ 唤醒（芯片可能还在上次的掉电模式里） */
     W25QXX_WakeUp();
-    Delay_ms(10);                 /* 唤醒后要等 tRES1(约 3µs~1ms) */
+    delay_ms(10);                 /* 唤醒后要等 tRES1(约 3µs~1ms) */
 
     return (W25QXX_ReadID() == W25QXX_ID_W25Q128) ? 0U : 1U;
 }
@@ -318,7 +319,7 @@ void W25QXX_PowerDown(void)
     w25_cs_low();
     SYS_SPI_TransferByte(W25QXX_SPI_ID, W25_CMD_POWER_DOWN);
     w25_cs_high();
-    Delay_us(3);                   /* tDP 上电到掉电的保持时间 */
+    delay_us(3);                   /* tDP 上电到掉电的保持时间 */
 }
 
 void W25QXX_WakeUp(void)
@@ -326,5 +327,5 @@ void W25QXX_WakeUp(void)
     w25_cs_low();
     SYS_SPI_TransferByte(W25QXX_SPI_ID, W25_CMD_RELEASE_PD);
     w25_cs_high();
-    Delay_us(10);                  /* tRES1 */
+    delay_us(10);                  /* tRES1 */
 }

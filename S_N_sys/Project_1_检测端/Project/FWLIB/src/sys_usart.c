@@ -1,6 +1,7 @@
 #include "sys_usart.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_us 等）独立文件 */
 #include "sys_dma.h"
 
 #include <stdio.h>
@@ -328,7 +329,7 @@ void SYS_USART_RxFlush(SysUsartId_t id)
 /* ================================================================
  *                扩展功能：按结束符接收（不定长字符串）
  * ================================================================ */
-/* 超时用 DWT 周期计数(与 Delay_us 同套硬件,无需 SysTick):
+/* 超时用 DWT 周期计数(与 delay_us 同套硬件,无需 SysTick):
  * 收到一个字节就把"字节间超时"基准刷新一次——发送方中途停顿时长
  * 超过 timeout_ms 即判超时;timeout_ms=0 时为"非阻塞"用法 */
 int SYS_USART_ReadUntil(SysUsartId_t id, char *buf, uint16_t max, char end_ch, uint32_t timeout_ms)
@@ -340,7 +341,7 @@ int SYS_USART_ReadUntil(SysUsartId_t id, char *buf, uint16_t max, char end_ch, u
 
     if (id >= SYS_USART_COUNT || buf == 0 || max < 2U) return -2;
 
-    Delay_us(1);                                  /* 顺带确保 DWT 周期计数已使能 */
+    delay_us(1);                                  /* 顺带确保 DWT 周期计数已使能 */
     if (timeout_ms > 25000U) timeout_ms = 25000U; /* 32 位周期计数上限约 25.5s@168MHz */
     to_cycles = timeout_ms * (SystemCoreClock / 1000U);
     t0 = DWT->CYCCNT;

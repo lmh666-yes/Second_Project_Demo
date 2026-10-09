@@ -10,7 +10,7 @@
  *  设计定位 : 小车上"前面有没有墙"、智能家居"人靠多近"——
  *             需要非接触测距就用它。便宜、好使、不用编解码协议。
  *             面向【智能环境监测小车 / 智能家居终端】。
- *  依赖     : gpio_core.h（GPIO 工具 + Delay_us + DWT 微秒计时）
+ *  依赖     : gpio_core.h + delay.h（GPIO 工具 + delay_us + DWT 微秒计时）
  *  标准库关键词 : RCC_AHB1PeriphClockCmd / GPIO_Init / GPIO_SetBits /
  *                 GPIO_ReadInputDataBit（后两者经 gpio_core 封装）
  *

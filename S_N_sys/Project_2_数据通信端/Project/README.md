@@ -89,6 +89,8 @@
    - [5.48 中断向量表与模块对照（ISR 归属总表）](#548-中断向量表与模块对照isr-归属总表)
    - [5.49 sys_softimer —— 软定时器（模块联动引擎）](#549-sys_softimer--软定时器模块联动引擎)
    - [5.50 sys_frame —— 串口自定义帧协议](#550-sys_frame--串口自定义帧协议)
+   - [5.51 sys_bitband —— 位带操作（独立宏文件）](#551-sys_bitband--位带操作独立宏文件)
+   - [5.52 delay —— 延时函数（粗延时 + DWT 精准延时）](#552-delay--延时函数粗延时--dwt-精准延时)
 6. [可移植性配置总表](#6-可移植性配置总表)
 7. [教程 A：换引脚 / 换端口](#7-教程-a换引脚--换端口)
 8. [教程 B：换板子](#8-教程-b换板子)
@@ -216,6 +218,8 @@
 │   │   ├── sys_pwr.h         【系统】低功耗 Sleep/Stop/Standby
 │   │   ├── sys_rtc.h         【系统】RTC 实时时钟 + 备份域
 │   │   ├── sys_softimer.h    【系统】软定时器（联动引擎）
+│   │   ├── sys_bitband.h     【通用】位带操作（BITBAND / Pxout 宏）
+│   │   ├── delay.h           【通用】延时（粗延时 + DWT 精准延时）
 │   │   ├── mpu6050.h         【器件】六轴姿态（I2C1, 0x68）
 │   │   ├── vl53l0x.h         【器件】VL53L0X 激光测距 ToF（I2C1, 0x29）
 │   │   ├── ds18b20.h         【器件】单总线温度（PG9）
@@ -451,7 +455,7 @@ int main(void)
 | 点亮 / 熄灭 / 翻转 LED | `LED_On(id)` / `LED_Off(id)` / `LED_Toggle(id)` |
 | 全部点亮 / 熄灭 | `LED_AllOn()` / `LED_AllOff()` |
 | 二进制显示一个数 | `LED_ShowHex(value)` |
-| 位带单比特读写（像51） | `GPIO_BB_OUT(port, n) = 0/1` / `GPIO_BB_IN(port, n)` / `PFout(n)`（见 5.1） |
+| 位带单比特读写（像51） | `GPIO_BB_OUT(port, n) = 0/1` / `GPIO_BB_IN(port, n)` / `PFout(n)`（独立文件 `sys_bitband.h`，见 5.51） |
 | 闪烁 / 流水灯 / 跑马灯 | `LED_Blink` / `LED_Flow` / `LED_Marquee`（更多见 5.2） |
 | 读按键即时状态 | `KEY_Read(id)` |
 | 扫按键单击事件 | `KEY_Scan()`（返回 id，无事件返回 `KEY_NONE`） |
@@ -466,9 +470,9 @@ int main(void)
 | 引脚外部中断 | `SYS_EXTI_InitLine(line, port, pin, 触发方式, 回调)` |
 | 低功耗 | `SYS_PWR_Sleep()` / `SYS_PWR_Stop()` / `SYS_PWR_Standby()` |
 | 精确延时 | `SYS_TICK_Delay_ms(ms)` / `SYS_TICK_Delay_us(us)` |
-| 纳秒 ~ 毫秒级精准延时（硬件计时，免初始化） | `Delay_ns(ns)` / `Delay_us(us)` / `Delay_ms_DWT(ms)` / `Delay_cycles(n)`（见 5.1） |
+| 纳秒 ~ 毫秒级精准延时（硬件计时，免初始化） | `delay_ns(ns)` / `delay_us(us)` / `delay_ms_dwt(ms)` / `delay_cycles(n)`（独立文件 delay.h，见 5.52） |
 | 秒延时 / 微秒时间戳 / 超时 | `SYS_TICK_Delay_s` / `SYS_TICK_GetUs` / `SYS_TICK_Timeout` |
-| 粗延时（无定时要求） | `Delay_ms(ms)` |
+| 粗延时（无定时要求） | `delay_ms(ms)`（delay.h） |
 | 测一段代码耗时 | `t = SYS_TICK_GetTick(); ... ; SYS_TICK_Elapsed(t)` |
 | 切换主频 / 自定义总线分频 | `SYS_CLK_Switch()` / `SYS_CLK_ToHighSpeed()` / `SYS_CLK_ToLowPower()` / `SYS_CLK_SetBusDiv()` |
 | 中断优先级设置 | `SYS_NVIC_Init()` + `SYS_NVIC_SetPriority(irq, pre, sub)`（见 5.12） |
@@ -488,7 +492,7 @@ int main(void)
   ↑
 语义层    led / key / beep / ext_io —— "点亮 / 按键 / 检测"等外设语义
   ↑
-工具层    gpio_core —— 引脚配置、电平读写、粗延时（无外设语义）
+工具层    gpio_core —— 引脚配置、电平读写（延时在 delay.h;无外设语义）
   ↑
 标准库    ST StdPeriph —— stm32f4xx_gpio.c / rcc.c / flash.c 等
   ↑
@@ -531,10 +535,8 @@ int main(void)
 | `void GPIO_InInit(port, pin, pull)` | 配置输入：`0`=浮空(GPIO_PuPd_NOPULL) / `1`=上拉(GPIO_PuPd_UP) / `2`=下拉(GPIO_PuPd_DOWN)（自动开时钟） |
 | `uint8_t GPIO_InRead(port, pin)` | 读 IDR（引脚真实电平，无消抖） |
 | `uint8_t GPIO_PinSource(pin)` | 单引脚掩码 → 位号 0~15（AF 配置等场合；非法输入返回 0xFF） |
-| 位带宏（左值直写） | `GPIO_BB_OUT(port, n) = 0/1`、`GPIO_BB_IN(port, n)`、`Pxout(n)` / `Pxin(n)` |
-| 位带辅助宏 | `GPIO_BB_OUT_ADDR / IN_ADDR`（别名地址，供查表）、`GPIO_PIN_NUM(pin)`（掩码→位号，编译期常量） |
-| `void Delay_ms(ms)` / `void Delay_loop(n)` | 软件空循环粗延时（未标定，见第 11 节） |
-| `Delay_cycles(n)` / `Delay_us(us)` / `Delay_ns(ns)` / `Delay_ms_DWT(ms)` | **精准延时**：基于内核 DWT 周期计数器（硬件计时，非空循环）——无需初始化、**RTOS 下可用**；`Delay_ms_DWT` 单次 ≤ 约 25.5s（忙等稍占 CPU） |
+| 位带宏（已拆分为独立文件） | 见 `sys_bitband.h`：`GPIO_BB_OUT(port, n) = 0/1`、`GPIO_BB_IN(port, n)`、`Pxout(n)` / `Pxin(n)`、`GPIO_BB_*_ADDR`、`GPIO_PIN_NUM(pin)` |
+| 延时（已拆分为独立文件） | 见 `delay.h / delay.c`（见 5.52）：粗延时 `delay_ms / delay_loop`;DWT 精准延时 `delay_cycles / delay_us / delay_ns / delay_ms_dwt`;测时读数 `DWT_GetCycles / DWT_GetUs / DWT_ElapsedUs` |
 
 使用示例（直接操作一个库尚未封装的引脚，如 PA5）：
 
@@ -543,9 +545,9 @@ GPIO_OutInit(GPIOA, GPIO_Pin_5);   /* 内部自动使能 GPIOA 时钟 */
 GPIO_OutSet (GPIOA, GPIO_Pin_5);
 ```
 
-> 💡 **位带（Bit-Band）**：本头文件还提供单比特零开销读写宏，写法类似 51 的 sbit：`GPIO_BB_OUT(GPIOF, 9) = 0;` 或 `PFout(9) = 0;`——编译期算地址、一条指令完成，还能直接操作**任意外设寄存器位**（如 `BITBAND_PERIPH(&TIM2->CR1, 0) = 1;`）。详见 `gpio_core.h` "位带操作" 一节。
-> **库内位带函数示范**：`led` 的 `LED_BB_On / LED_BB_Off / LED_BB_Toggle` 与 `key` 的 `KEY_BB_Read`——与各自的库函数版**结果相同、过程不同**（表里存别名地址，操作即一条直写/直读；对照说明见两个头文件的声明注释）。（注意 F7/H7 无位带，这组函数与宏都不可用——见第 11 节）
-> ⏱ **精准延时（DWT）**：`Delay_us / Delay_ns / Delay_ms_DWT` 基于内核 DWT 周期计数器（硬件计时、每周期 +1）——无需初始化、不占中断，**FreeRTOS 下依然可用**（毫秒级替代 `SYS_TICK_*` 的搭档，见 5.7；超长延时任务里优先 `vTaskDelay`）；误差 ±几十 ns 级，适用单总线（WS2812 / DS18B20）、传感器时序、脉冲宽度等"纳秒 ~ 毫秒"场合。
+> 💡 **位带（Bit-Band）已独立成文件**：见 **5.51 `sys_bitband.h`**——写法像 51 的 sbit：`GPIO_BB_OUT(GPIOF, 9) = 0;` 或 `PFout(9) = 0;`；编译期算地址、一条指令完成，还能直接操作**任意外设寄存器位**（`BITBAND_PERIPH(&TIM2->CR1, 0) = 1;`）。
+> **2026-10-08 调整**：led/key 里的 `LED_BB_*` / `KEY_BB_Read` 已撤除——位带统一直取 `sys_bitband.h` 的宏（`PFout(9) = 0;`、`PAin(0)`）。（F7/H7 无位带，宏不可用——见第 11 节）
+> ⏱ **精准延时（DWT，独立文件 `delay.h`）**：`delay_us / delay_ns / delay_ms_dwt` 基于内核 DWT 周期计数器（硬件计时、每周期 +1）——无需初始化、不占中断，**FreeRTOS 下依然可用**（毫秒级替代 `SYS_TICK_*` 的搭档，见 5.7；超长延时任务里优先 `vTaskDelay`）；误差 ±几十 ns 级，适用单总线（WS2812 / DS18B20）、传感器时序、脉冲宽度等"纳秒 ~ 毫秒"场合。
 
 > 🔌 **GPIO 复用功能（AF）**：引脚要接哪路外设信号，靠“复用号” `GPIO_AF_xxx` 指定——完整的 **AF0~AF15 速查表**、"外设→AF 反查表"、`GPIO_PinAFConfig` **源码逐句解析**（含"脚序号 ≠ 引脚掩码"这个最大坑）都在 `gpio_core.h` 文末附录“附:GPIO 复用功能(AF)速查表”。
 
@@ -565,7 +567,7 @@ GPIO_OutSet (GPIOA, GPIO_Pin_5);
 |---|---|
 | `LED_Init()` | 初始化并全部熄灭（自动开时钟） |
 | `LED_On(id)` / `LED_Off(id)` / `LED_Toggle(id)` | 亮 / 灭 / 翻转（id 越界安全返回） |
-| `LED_BB_On(id)` / `LED_BB_Off(id)` / `LED_BB_Toggle(id)` | **位带直写版**：结果与上一排相同、实现不同（单条指令直写别名地址，零调用开销；对照说明见 `led.h`） |
+| 位带直写（可选） | 已统一到 `sys_bitband.h`：`PFout(9) = 0/1`（旧 `LED_BB_*` 已撤除） |
 | `LED_AllOn()` / `LED_AllOff()` | 全部亮 / 全部灭 |
 | `LED_ShowHex(value)` | 按位显示：bit0→LED0（位序可由 `LED_SHOW_REVERSE` 反转） |
 
@@ -614,7 +616,7 @@ LED_Blink(0, 3, 200);   /* LED0 闪 3 次，亮/灭各 200ms */
 |---|---|
 | `KEY_Init()` | 初始化：输入 + 每键各自的上下拉，并复位边沿记录 |
 | `KEY_Read(id)` | 即时读取：`1`=按下 `0`=松开（无消抖） |
-| `KEY_BB_Read(id)` | **位带直读版**：与 `KEY_Read` 结果相同、实现不同（一条 LDR 直读别名地址） |
+| 位带直读（可选） | 已统一到 `sys_bitband.h`：`PAin(0)`（旧 `KEY_BB_Read` 已撤除） |
 | `KEY_ActiveLow(id)` | 查询该键的按下极性（`1`=低电平按下）；id 越界返回 0 |
 | `KEY_Scan()` | 扫描单击事件：返回按键 id；无事件返回 `KEY_NONE` |
 | `KEY_ReadAll()` | 位掩码读取全部按键：bit i = 按键 i 当前按下（最多 32 键） |
@@ -726,7 +728,7 @@ EXT_XXX_Init()       ← 第二层：专属覆盖（默认留空），在打底�
 **注意事项**
 
 - 切换内部自动走"先降速（HSI）→ 改 latency/分频 → 再升速"的安全流程，无需手动干预；
-- 切换后：`Delay_ms` 等软件延时不再准确；**`SYS_TICK_Init()` 必须重新调用**；
+- 切换后：delay_loop 空转延时数值随主频变化（DWT 系 delay_* 自动按新主频换算）；**`SYS_TICK_Init()` 必须重新调用**；
 - PLL 档参数（Flash 5 等待周期、APB1÷4、APB2÷2）按 168MHz 预设，若你改过 `SystemInit` 里的 PLL 配置需同步修改配置表；
 - 自定义分频（`SYS_CLK_SetBusDiv`）后再调 `SYS_CLK_Switch()` 会按档位重置分频；例：把 PCLK1 从 42MHz（168÷4）降到 21MHz（168÷8）——APB1 定时器（TIM2~7/12~14）时钟随之 84MHz → 42MHz（APB 分频≠1 时定时器时钟 = PCLK×2）：`SYS_CLK_SetBusDiv(RCC_SYSCLK_Div1, RCC_HCLK_Div8, RCC_HCLK_Div2);`
 - **切换后必须重做清单**（完整版见 `sys_clock.h` 顶部警告框）：`sys_tick` 重 Init；串口 / 定时器 / I2C / SPI / ADC 重 Init；WWDG 重 Init；IWDG、EXTI、NVIC、DMA、Flash 不受影响；FreeRTOS 下跳过 `sys_tick` 一项。
@@ -747,13 +749,13 @@ EXT_XXX_Init()       ← 第二层：专属覆盖（默认留空），在打底�
 | `SYS_TICK_Timeout(t, ms)` | 非阻塞超时判断：已超时返回 1 |
 | `SYS_TICK_Every(&t, ms)` | 周期节拍：到点返回 1 并更新 t（非阻塞，一份时基多路节拍） |
 
-与 `Delay_ms` 的取舍：
+与 `delay_ms` 的取舍：
 
 | 场景 | 推荐 |
 |---|---|
-| LED 闪烁 / 蜂鸣器节拍 / 按键消抖 | `Delay_ms`（无需初始化） |
+| LED 闪烁 / 蜂鸣器节拍 / 按键消抖 | `delay_ms`（无需初始化） |
 | 计时、超时判断、传感器时序 | `SYS_TICK_*`（精确、跨主频仍准） |
-| 单总线 / 纳秒 ~ 微秒级极短时序 | gpio_core 的 `Delay_ns / Delay_us`（DWT 硬件计时，无需初始化，RTOS 下也可用） |
+| 单总线 / 纳秒 ~ 微秒级极短时序 | delay.h 的 `delay_ns / delay_us`（DWT 硬件计时，无需初始化，RTOS 下也可用） |
 
 > ⚠️ SysTick 是内核独占资源：本模块以"中断方式"使用它，`SysTick_Handler` 已在 `sys_tick.c` 中定义（弱定义）。应用代码不要同时再配置 SysTick；想自己接管就直接写同名函数（自动顶替库版——但本模块计时/延时随之停用）。
 
@@ -899,7 +901,7 @@ void TIM3_IRQHandler(void) {
 
 - 触发方式：`SYS_EXTI_RISING` / `SYS_EXTI_FALLING` / `SYS_EXTI_BOTH`；
 - "线号 = 引脚号"，每线只能绑一个引脚；引脚方向/上下拉需自行配置（按键模块已配好）；
-- **回调里要延时怎么办**（教学实验常见）：用 `Delay_ms()`（gpio_core，纯忙等、不依赖中断，ISR 内安全）；⚠ 别用 `SYS_TICK_Delay_ms()`——它靠 SysTick 中断续时基，优先级不当会在 ISR 里死等；工程惯例是"回调只置标志、耗时处理留给主循环"；
+- **回调里要延时怎么办**（教学实验常见）：用 `delay_ms()`（delay.h，纯忙等、不依赖中断，ISR 内安全）；⚠ 别用 `SYS_TICK_Delay_ms()`——它靠 SysTick 中断续时基，优先级不当会在 ISR 里死等；工程惯例是"回调只置标志、耗时处理留给主循环"；
 - **EXTI 线占用表（本库现状）**：
 
 | 线号 | 0 | 1 | 2 | 3 | 4 | 5 ~ 15 |
@@ -1258,7 +1260,7 @@ SYS_FLASH_SaveParams(&cfg, sizeof(cfg));      /* 掉电不丢 */
 
 | 函数 | 说明 |
 |---|---|
-| `DHT11_Init()` | 准备引脚（不通信；上电后请自行 `Delay_ms(1000)` 再读第一次） |
+| `DHT11_Init()` | 准备引脚（不通信；上电后请自行 `delay_ms(1000)` 再读第一次） |
 | `DHT11_ReadInt(&t, &h)` | 读温湿度（整数℃，%RH）；返回 0 = 成功（含校验） |
 | `DHT11_ReadC10(&t, &h)` | 返回 ×10 格式，与 DS18B20 统一，方便显示 |
 | `DHT11_ReadRaw(buf[5])` | 读 5 字节原始帧（湿度整/小 + 温度整/小 + 校验） |
@@ -1381,7 +1383,7 @@ SYS_FLASH_SaveParams(&cfg, sizeof(cfg));      /* 掉电不丢 */
 | `SYS_RS485_IsSending()` | 是否正在发送（判断总线忙） |
 
 - ⚠ **半双工**：同一时刻只能一个方向。发送必须"发完最后一个字节 + 移位寄存器空"才切回接收，
-  否则最后 1~2 个字节会被自己掐掉 —— 本模块用 `USART_FLAG_TC` 等齐了再切，别自己用 `Delay_ms` 凑；
+  否则最后 1~2 个字节会被自己掐掉 —— 本模块用 `USART_FLAG_TC` 等齐了再切，别自己用 `delay_ms` 凑；
 - ⚠ 总线上必须**两端都有 120Ω 终端电阻**，A/B 不许接反（接反时表现是"完全收不到任何数据"）；
 - ⚠ 与上位机（USB-485 转换器）联调时，先确认波特率/校验位一致，再用 `MODBUS` 或裸帧测试。
 
@@ -1496,7 +1498,7 @@ SYS_FLASH_SaveParams(&cfg, sizeof(cfg));      /* 掉电不丢 */
   SYS_TIM_SetPwmDuty(SYS_TIM_1, ... , out);
   ```
 - **调参顺序**：先 P（到接近目标且略有振荡）→ 再 I（消静差）→ 最后 D（压超调）；
-- ⚠ 控制周期必须**稳定**（用定时器中断打拍，别用 `Delay_ms`），否则 D 项会因 dt 抖动而剧烈跳动；
+- ⚠ 控制周期必须**稳定**（用定时器中断打拍，别用 `delay_ms`），否则 D 项会因 dt 抖动而剧烈跳动；
 - ⚠ PWM 输出要限幅到定时器的真实范围，否则"积分一直涨、输出一直满"= 积分饱和。
 
 ### 5.32 sys_filter —— 数字滤波工具
@@ -1930,7 +1932,7 @@ for (;;) {
     MqttMsg_t m;
     if (MQTT_Poll(&m) == MQTT_OK && strcmp(m.payload, "on") == 0) { LED_On(LED_DS0); }
     MQTT_KeepAliveService();
-    Delay_ms(20);
+    delay_ms(20);
 }
 ```
 
@@ -2263,6 +2265,44 @@ while (1) {
 - 💡 **防粘包 / 半包**：多帧粘连（`AA…55 AA…55`）由状态机逐帧拆开；半包跨调用累积；丢字节由“长度+异或”拦下自动重找头。想双保险就在收整段后先 `SYS_FRAME_Verify()` 再解析——“两帧粘接”会被报 `ERR_LEN`。
 - 💡 **指定数据帧的传输设定**：用 `SYS_FRAME_Build(cmd, payload, len, buf, cap)` 先组帧到缓冲区（返回帧长），再按你的节奏统一发出（`SendBuf`/DMA/RS485 均可）——上下位机联调最稳。
 
+### 5.51 sys_bitband —— 位带操作（独立宏文件）
+
+> 文件：`sys_bitband.h`（纯宏,无 .c）｜ 由 `gpio_core.h` 拆出（2026-10-08）：宏集中一处,各文件不再自带位带实现
+> 覆盖：`BITBAND_PERIPH / _SRAM`、`GPIO_BB_OUT/_IN`、`GPIO_BB_*_ADDR`、`GPIO_PIN_NUM`、`PAout(n) ~ PIin(n)`（A~I 全套）
+
+| 宏 | 说明 |
+|---|---|
+| `GPIO_BB_OUT(port, n) = 0/1` / `GPIO_BB_IN(port, n)` | 任意 GPIO 单比特直写/直读（左值;`n` = 引脚号 0~15） |
+| `Pxout(n)` / `Pxin(n)`（PA~PI） | 51 风格快捷宏（与常见教程 sys.h 完全等价） |
+| `BITBAND_PERIPH(&reg, bit) = 0/1` | **任意外设寄存器位**直写（如 `BITBAND_PERIPH(&TIM2->CR1, 0) = 1;` 启动定时器） |
+| `BITBAND_SRAM(&var, bit)` | SRAM 变量位直写（地址须在 0x20000000 区内） |
+| `BITBAND_*_ADDR / GPIO_BB_*_ADDR` | 别名地址（可存静态表;编译期常量,无 #1296 警告） |
+| `GPIO_PIN_NUM(pin)` | `GPIO_Pin_x` 掩码 → 位号（编译期常量） |
+
+```c
+#include "sys_bitband.h"
+PFout(9) = 0;                          // 一条指令:PF9 输出低(等价 LED_On 的直写版)
+if (PAin(0) == 0) { ... }              // 直读 PA0 电平
+BITBAND_PERIPH(&TIM2->CR1, 0) = 1;     // 任意寄存器位也能写
+```
+
+- ⚠ 仅外设区（0x40000000~0x400FFFFF,GPIO 在内）与 SRAM 区（0x20000000~0x200FFFFF）可位带;**F7/H7（M7）已取消位带**;
+- 📌 led/key 原 `LED_BB_*` / `KEY_BB_Read` 已撤除——统一改用本文件宏;日常用 led/key 函数版即可。
+
+### 5.52 delay —— 延时函数（粗延时 + DWT 精准延时）
+
+> 文件：`delay.h / delay.c`（2026-10-08 从 gpio_core 拆出）｜ 无硬件映射
+> 兼容：老代码 `#include "gpio_core.h"` 仍可用（其转含本文件）;函数名统一小写开头 `delay_xxx`——旧大写名已取消（老工程升级把 `Delay_` 替换成 `delay_`）;新代码建议直接 `#include "delay.h"`
+
+| 函数 | 说明 |
+|---|---|
+| `delay_ms(ms)` / `delay_loop(n)` | 毫秒延时（`delay_ms` 为 DWT 精确实现）/ 空转 n 次（未标定;LED/蜂鸣器节拍用） |
+| `delay_cycles(n)` / `delay_us(us)` / `delay_ns(ns)` / `delay_ms_dwt(ms)` | **DWT 硬件计时精准延时**：免初始化、不占中断,**RTOS 下可用**;`delay_ms_dwt` 单次 ≤ 约 25.5s |
+| `DWT_GetCycles()` / `DWT_GetUs()` / `DWT_ElapsedUs(t)` | DWT 测时读数（脉宽测量 / 耗时统计;回绕安全） |
+
+- 三类延时怎么选：粗延时 `delay_loop`（不敏感场合）→ DWT 忙等（纳秒~毫秒精准、RTOS 可用）→ `SYS_TICK_Delay_ms/us`（中断计时、不占 CPU,需先 Init,裸机毫秒级以上首选,见 5.7）;
+- ⚠ DWT 需 M3/M4/M7（CM0 无）;主频切换自动跟随（换算用 `SystemCoreClock`）。
+
 ---
 
 ## 6. 可移植性配置总表
@@ -2465,8 +2505,6 @@ static GPIO_TypeDef* const led_port[LED_COUNT] = {LED0_PORT, LED1_PORT, LED2_POR
 static const uint16_t      led_pin [LED_COUNT] = {LED0_PIN,  LED1_PIN,  LED2_PIN};
 ```
 
-（同理 `led_bb[]` 位带地址表也要补一项）
-
 **③ 完成。** `LED_On(2)` 即可使用；`LED_AllOn` / `LED_AllOff` 自动包含它。
 
 > `LED_ShowHex` 最多支持 8 个灯（`LED_COUNT` 有编译期检查）。
@@ -2476,7 +2514,7 @@ static const uint16_t      led_pin [LED_COUNT] = {LED0_PIN,  LED1_PIN,  LED2_PIN
 与 LED 完全同理，但按键要同步 **四张表**：`key.h` 加四件套宏
 （`KEY4_PORT` / `KEY4_PIN` / `KEY4_ACTIVE_LOW` / `KEY4_PULL`）+ 改 `KEY_COUNT`，
 `key.c` 的 `key_port[]` / `key_pin[]` / `key_pull[]` / `key_press_level[]`
-以及 `key_bb[]` / `key_exti_edge[]` 各补一项（都有编译期护栏拦着，漏改直接编译不过）。
+以及 `key_exti_edge[]` 补一项（都有编译期护栏拦着，漏改直接编译不过）。
 
 > 💡 这些表**故意不写 `[KEY_COUNT]` 尺寸**：一旦写了尺寸，C 会把缺失的项静默补 0，
 > 护栏就形同虚设；不写尺寸时 `sizeof` 才能反映真实项数，增删都能拦下来。
@@ -2559,7 +2597,7 @@ uint8_t EXT_LASER_Detected(uint8_t id)
 | 传感器结果与实际相反 | 触发极性反了 | 翻转对应 `EXT_XXX_ACTIVE_LOW` |
 | DHT11 湿度恒 ≥128 / 总是"数据超范围" | 单总线**位对齐**错位（凭空多读 1 位 → 整帧右移） | 本库已修（2026-09，见 `dht_read_frame` 注释）；确认工程里拷的是**修复后**的 `dht11.c`；用 `DHT11_ReadRaw` 打原始帧核对 |
 | DHT11 偶尔仍报"数据超范围" | 真实湿度 < 20%RH（干燥环境）/ 刚上电未稳定 | 手册可靠量程 20~90%RH —— 按"数据不可信"处理，别当程序 bug |
-| 延时不准（比预期长 / 短） | ① `Delay_ms` 未标定<br/>② 切换过主频 | ① 精确场景用 `SYS_TICK_Delay_ms`<br/>② 切时钟后重调 `SYS_TICK_Init()` |
+| 延时不准（比预期长 / 短） | ① `delay_loop` 未标定（delay_ms 为 DWT 精确版）<br/>② 切换过主频 | ① 精确场景用 `SYS_TICK_Delay_ms`<br/>② 切时钟后重调 `SYS_TICK_Init()` |
 | `SYS_TICK_Delay_ms` 完全不走 | 没调 `SYS_TICK_Init()` | 初始化后再使用 |
 | 编译报 `A9555E: Failed to check out a license` | Keil 许可证未激活 | Keil → File → License Management 激活 |
 | 编译找不到 `stm32f4xx.h` | 器件包缺失 | 安装 `Keil.STM32F4xx_DFP 1.0.8` |
@@ -2587,13 +2625,13 @@ uint8_t EXT_LASER_Detected(uint8_t id)
 ### 硬性约束
 
 - 本工程使用 **ARM Compiler 5（`uAC6 = 0`）**，代码使用了 C99 语法（`for` 内声明变量），工程已开启 `--c99`，**不要关闭**。
-- **阻塞式函数**（占用 CPU 时间）：`KEY_Scan()`（命中时约 10ms）、`KEY_WaitPress()`、`KEY_LongPress()`、`LED_Blink/AllBlink/Alternate/Flow/Marquee` 等灯效、`BEEP_Beep*()` 与 `BEEP_SOS()`、`Delay_ms()`、`SYS_TICK_Delay_ms/us/s()`；引入中断 / RTOS 时请留意。
+- **阻塞式函数**（占用 CPU 时间）：`KEY_Scan()`（命中时约 10ms）、`KEY_WaitPress()`、`KEY_LongPress()`、`LED_Blink/AllBlink/Alternate/Flow/Marquee` 等灯效、`BEEP_Beep*()` 与 `BEEP_SOS()`、`delay_ms()`、`SYS_TICK_Delay_ms/us/s()`；引入中断 / RTOS 时请留意。
 - **SysTick 独占**：`sys_tick.c` 已定义 `SysTick_Handler` 并接管 SysTick（弱定义）—— 应用代码不要同时再配置 SysTick；想自己接管就直接写同名函数（弱定义自动让位）；引入 RTOS 时需要二选一或改用其它定时器。
 - **时钟切换的连锁影响**：切换后软件延时不再准确；`SYS_TICK_Init()` 必须重新调用；`SYS_CLK_PLL` 档参数按 168MHz 预设（若改过 `SystemInit` 的 PLL 配置需同步改表）。
 - **数量与表必须同步**：`LED_COUNT` / `KEY_COUNT` / `EXT_XXX_COUNT` 与引脚表项数不一致会引发异常或编译告警（详见第 6 节）。
 - `LED_ShowHex()` 最多支持 8 个 LED；`KEY_COUNT` 最多 254。
 - **位带宏**：仅适用于外设区（0x40000000~0x400FFFFF，GPIO 在内）与 SRAM 区（0x20000000~0x200FFFFF）；**Cortex-M7（F7/H7）取消了位带**，跨芯片移植时不要依赖。
-- **DWT 精准延时**：`Delay_ns / Delay_us / Delay_ms_DWT / Delay_cycles` 依赖内核的 DWT 部件（Cortex-M3/M4/M7 均有，CM0/CM0+ 没有）——换到无 DWT 的内核时不可用。
+- **DWT 精准延时**：`delay_ns / delay_us / delay_ms_dwt / delay_cycles`（delay.h）依赖内核的 DWT 部件（Cortex-M3/M4/M7 均有，CM0/CM0+ 没有）——换到无 DWT 的内核时不可用。
 - `SYS_TICK_PERIOD_MS` 已参数化：毫秒时基按该周期工作（推荐保持 1）。
 - **中断资源占用（全为弱定义，可被你的强定义顶替）**：本库已实现的中断服务函数：`SysTick_Handler`（sys_tick）、`USART1/2/3_IRQHandler`（sys_usart）、`TIM2/3/4/5_IRQHandler`、`TIM6_DAC_IRQHandler`、`TIM7_IRQHandler` 及 6 个定时器共享向量（sys_tim）、`EXTI0~15` 统一分发（sys_exti）、`DMA1/2_Stream0~7` 全 16 个（sys_dma）、5 个故障异常（sys_fault）、`RTC_WKUP_IRQHandler` 与 `RTC_Alarm_IRQHandler`（sys_rtc）、`CAN1_RX0_IRQHandler`（sys_can）。**你手写同名函数 = 自动顶替库版**（靠工程链接器 `--muldefweak`；不再报 multiply defined）——顶替后该中断的库回调停用，**二选一**；全库向量归属见 5.38。
 - **源码编码限制（重要）**：AC5 编译器对源码里的 **UTF-8 中文字符串字面量**解析会报错（`#870-D / missing closing quote`）——**字符串一律用 ASCII**，中文说明放注释里（本库 `SYS_I2C_ErrStr` 等即按此约定）。
@@ -2602,10 +2640,10 @@ uint8_t EXT_LASER_Detected(uint8_t id)
 
 ### 设计说明与取舍
 
-- `Delay_ms()` 是**未标定**的软件空循环（经验值：50000 次内层 ≈ 1ms @168MHz + AC5 默认优化）；换主频 / 优化等级后需要重新标定；需要精确定时请使用 `sys_tick` 模块。
+- `delay_loop()` 是**未标定**的软件空循环（经验值：50000 次内层 ≈ 1ms @168MHz + AC5 默认优化）；`delay_ms` 为 DWT 精确实现（见 `delay.h`）;换主频 / 优化等级后 delay_loop 需要重新标定；需要精确定时请使用 `sys_tick` 模块。
 - `ext_io.c` 中 `ExtPin_t.clk` 字段当前冗余（`GPIO_InInit` 会自动开时钟），保留作为双保险，也便于按表集中查改。
 - `led.c` / `key.c` 的引脚表逐个引用宏（而非遍历宏），牺牲一点书写量，换取"数量不一致时容易被发现"的约束力 —— 请严格遵守数量同步规则。
-- **位带版函数只提供 `LED_BB_On / LED_BB_Off / LED_BB_Toggle` 与 `KEY_BB_Read`（led / key 各一组）**：位带的收益（免函数调用、单指令直写）只在"高频单比特"场景才明显 —— 全库中就是"LED 翻转"与"按键快读"这两类；蜂鸣器、外接检测、LCD 背光等操作频率在毫秒级，位带版省下的纳秒量级开销无实际意义，其余模块则不是单比特 GPIO 语义，故均不提供。给任意引脚 / 寄存器位用位带，`gpio_core` 的 `GPIO_BB_*` / `BITBAND_PERIPH` 宏随时可用。
+- **位带已统一在 `sys_bitband.h`（2026-10-08 拆分）**：led/key 的 `LED_BB_*` / `KEY_BB_Read` 已撤除——位带收益只在“高频单比特”场景才明显;需要时直接用宏：`PFout(9) = 0;` / `PAin(0)` / `BITBAND_PERIPH`（任意寄存器位）。
 
 ### 关于标准库文件位置
 
@@ -2851,7 +2889,7 @@ EventBits_t bits = xEventGroupWaitBits(
 1. **SysTick 归 RTOS**：`sys_tick.c` 的 `SysTick_Handler` 是弱定义，会被 FreeRTOS 端口层自动顶替 → `SYS_TICK_Delay_ms / GetTick / GetUs` 等**全部失效**，延时请改用 `vTaskDelay(pdMS_TO_TICKS(ms))`；
 2. **中断优先级**：ISR 里要调用 `xxxFromISR` 接口时，该中断的**优先级数值必须 ≥ 5**（`configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`）。库模块默认 `SYS_XXX_IRQ_PRE_PRIO = 2`（数值小=优先级高，**不能**调 RTOS 接口）——需要时把对应模块头文件里的优先宏改为 `5`，并把 `sys_nvic.h` 的分组宏改成 `NVIC_PriorityGroup_4`（4 位全抢占）后调用 `SYS_NVIC_Init()`；
 3. **不要在中断/回调里用非 FromISR 接口**（`vTaskDelay`、`xQueueSend`……），否则 `configASSERT` 会把你停在死循环里；
-4. **库的阻塞函数在任务里慎用**：`BEEP_SOS()`、`LED_Marquee()`、`KEY_WaitPress()`、`Delay_ms()` 这类"死等"函数会霸占 CPU——任务里请改用"状态机 + `vTaskDelay`"风格。新增的 5 个模块**全部是阻塞式**，耗时实测如下，任务里记得配合 `vTaskDelay` 或丢到专用低优先级任务里：
+4. **库的阻塞函数在任务里慎用**：`BEEP_SOS()`、`LED_Marquee()`、`KEY_WaitPress()`、`delay_ms()` 这类"死等"函数会霸占 CPU——任务里请改用"状态机 + `vTaskDelay`"风格。新增的 5 个模块**全部是阻塞式**，耗时实测如下，任务里记得配合 `vTaskDelay` 或丢到专用低优先级任务里：
 
    | 函数 | 典型阻塞时间 |
    |---|---|
@@ -2861,7 +2899,7 @@ EventBits_t bits = xEventGroupWaitBits(
    | `W25QXX_LogWrite()` | ~1ms；**跨扇区那一次要擦 4KB ≈ 50ms** |
    | `W25QXX_LogInit()` | ~11ms（1024 条全扫一遍） |
 
-   > 💡 这 5 个模块的计时**全部用 DWT**（`gpio_core.h` 的 `DWT_GetUs` / `DWT_ElapsedUs`），**不占 SysTick** —— 所以**不受第 1 条影响**，上 RTOS 后照样能正确计算超时；`kalman` 更是纯运算，完全无副作用。
+   > 💡 这 5 个模块的计时**全部用 DWT**（`delay.h` 的 `DWT_GetUs` / `DWT_ElapsedUs`），**不占 SysTick** —— 所以**不受第 1 条影响**，上 RTOS 后照样能正确计算超时；`kalman` 更是纯运算，完全无副作用。
 5. **栈溢出 / 堆不足**会自动跳到 `FreeRTOS\port\freertos_hooks.c` 并打印到串口 1（`[FreeRTOS] !! ...`）——看到提示先加大任务栈深度或调大 `configTOTAL_HEAP_SIZE`；
 6. **调试提示**：`configASSERT` 失败会停在断言处，看调用栈即知原因（最常见：中断优先级违规、临界区里调阻塞接口）。
 

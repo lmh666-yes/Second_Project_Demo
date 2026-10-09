@@ -2,6 +2,7 @@
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_us 等）独立文件 */
 
 /* ================================================================
  *  sys_dht11.c —— 【板载】温湿度传感器 DHT11  实现文件
@@ -13,7 +14,7 @@
  *    数据: 湿度整数/小数 + 温度整数/小数 + 校验和(= 前 4 字节之和)
  *
  *  实现要点 :
- *    ① 电平变化用 DWT 周期计数器"掐表"(Delay_us 同一套内核硬件),
+ *    ① 电平变化用 DWT 周期计数器"掐表"(delay_us 同一套内核硬件),
  *       26us 与 70us 差距巨大,50us 阈值判定稳;
  *    ② 起始 18ms 延时不用关中断;真正关中断的只有 应答+40 位 的
  *       ~4.5ms 窗口(宏 SYS_DHT11_LOCK_IRQ 可关掉该行为);
@@ -74,13 +75,13 @@ int SYS_DHT11_Read(float *temp_c, float *humi_rh)
 
     for (i = 0U; i < 5U; i++) data[i] = 0U;
 
-    Delay_us(1);                        /* 顺带确保 DWT 计时已使能(首次自动开) */
+    delay_us(1);                        /* 顺带确保 DWT 计时已使能(首次自动开) */
     thresh = (SystemCoreClock / 1000000U) * 50U;        /* 50us 换算成周期数 */
 
     /* ① 起始信号:拉低 18ms 后释放(此段不关中断) */
     GPIO_OutInitOD(s_port, s_pin);
     GPIO_OutWrite(s_port, s_pin, 0U);
-    Delay_ms(18);
+    delay_ms(18);
     GPIO_OutWrite(s_port, s_pin, 1U);   /* 开漏输出(GPIO_OType_OD)高 = 释放总线 */
 
     /* ② 进入微秒时序窗口(约 4.5ms):默认关中断保时序 */

@@ -1,7 +1,6 @@
 #include "sys_wdg.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include <stddef.h>     /* NULL（复位原因解码的指针判断） */
-#include "gpio_core.h"  /* 心跳掩码用其位带宏 BITBAND_SRAM（SRAM 位带原子写） */
 
 /* ================================================================
  *  sys_wdg.c —— 【系统】看门狗模块  实现文件
@@ -164,12 +163,12 @@ uint32_t SYS_WDG_ResetCauseDecode(uint32_t cause, char *buf, uint32_t size)
 }
 
 /* ================================================================
- *   区块 3 扩展：多任务心跳汇总喂狗（与 gpio_core 位带联动）
+ *   区块 3 扩展：多任务心跳汇总喂狗（短临界区置位,无位带依赖）
  * ================================================================ */
 /* 编译期护栏：心跳任务数 0 ~ 32（0 = 不使用该功能） */
 typedef char wdg_hb_cnt_check[(SYS_WDG_HEARTBEAT_COUNT <= 32U) ? 1 : -1];
 
-/* 心跳掩码：bit id = 该任务本轮已报到（SRAM 位带原子写,任何上下文可报） */
+/* 心跳掩码：bit id = 该任务本轮已报到（短临界区保护,任何上下文可报） */
 static volatile uint32_t wdg_hb_mask = 0U;
 
 #if   (SYS_WDG_HEARTBEAT_COUNT == 0U)
@@ -185,7 +184,10 @@ void SYS_WDG_Heartbeat(uint8_t id)
 {
 #if (SYS_WDG_HEARTBEAT_COUNT > 0U)
     if (id < SYS_WDG_HEARTBEAT_COUNT) {
-        BITBAND_SRAM(&wdg_hb_mask, id) = 1U;    /* 单比特原子写,无需关中断 */
+        uint32_t pmask = __get_PRIMASK();       /* 存当前中断屏蔽状态 */
+        __disable_irq();                        /* 短临界区:多任务并发报到不丢位 */
+        wdg_hb_mask |= (1UL << id);
+        __set_PRIMASK(pmask);                   /* 恢复原状态（嵌套安全） */
     }
 #else
     (void)id;

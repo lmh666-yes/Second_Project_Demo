@@ -1,6 +1,7 @@
 #include "lcd.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_ms 等）独立文件 */
 #include "lcd_font.h"   /* 8x16 ASCII 点阵字库（区块 3 的字符显示用） */
 
 /* ================================================================
@@ -286,7 +287,7 @@ static void lcd_run_seq(void)
             }
         }
         if (p->delay_ms != 0U) {
-            Delay_ms(p->delay_ms);
+            delay_ms(p->delay_ms);
         }
     }
 }
@@ -303,7 +304,7 @@ void LCD_Init(void)
     lcd_bl_hw_init();
 
     LCD_BackLight(1);        /* 先开背光（不亮时至少能看到"白屏"） */
-    Delay_ms(50);            /* 等屏内部上电稳定 */
+    delay_ms(50);            /* 等屏内部上电稳定 */
 
     lcd_run_seq();           /* ILI9481 初始化序列（含 2 处必需延时） */
 

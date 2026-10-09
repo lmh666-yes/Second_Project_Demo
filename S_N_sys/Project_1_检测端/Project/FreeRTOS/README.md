@@ -79,7 +79,7 @@ FreeRTOS/
 ## 与库模块的相处规则（重点）
 
 - SysTick 归 FreeRTOS（`sys_tick.c` 的 `SysTick_Handler` 为弱定义，被自动顶替），
-  延时改用 `vTaskDelay`；驱动级毫秒时序可用 `Delay_ms_DWT`（见主 README 5.1）;
+  延时改用 `vTaskDelay`；驱动级毫秒时序可用 `delay_ms_dwt`（见主 README 5.33）;
 - ISR 里只允许调用 `xxxFromISR` 系列接口，且该中断优先级数值要
   ≥ `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`（=5）；
 - NVIC 分组建议 `NVIC_PriorityGroup_4`（FreeRTOS 官方推荐）；

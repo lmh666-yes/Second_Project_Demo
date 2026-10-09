@@ -1,6 +1,7 @@
 #include "sys_eth.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_ms 等）独立文件 */
 /* ----------------------------------------------------------------
  * ⚠【本板不适用】普中-天马 F407 开发板**没有以太网 PHY**：
  *    功略/原理图里那个叫"以太网模块接口"的块，插的是 NRF24L01（CN1）；
@@ -98,15 +99,15 @@ static void eth_phy_hw_reset(void)
     GPIO_OutInit(SYS_ETH_PHY_RST_PORT, SYS_ETH_PHY_RST_PIN);
 
     GPIO_OutReset(SYS_ETH_PHY_RST_PORT, SYS_ETH_PHY_RST_PIN);   /* 复位中 */
-    Delay_ms(100);
+    delay_ms(100);
     GPIO_OutSet  (SYS_ETH_PHY_RST_PORT, SYS_ETH_PHY_RST_PIN);   /* 释放 */
-    Delay_ms(100);
+    delay_ms(100);
 }
 #else
 /* 无复位脚：只做上电稳定等待，保持调用点在两种配置下一致 */
 static void eth_phy_hw_reset(void)
 {
-    Delay_ms(20);
+    delay_ms(20);
 }
 #endif
 

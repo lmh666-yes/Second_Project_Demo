@@ -1,6 +1,7 @@
 #include "sys_rtc.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
-#include "gpio_core.h"      /* Delay_ms / DWT_GetUs / DWT_ElapsedUs */
+#include "gpio_core.h"      /* 引脚/位 */
+#include "delay.h"          /* delay_ms / DWT_GetUs / DWT_ElapsedUs（延时与 DWT 测时） */
 #include "sys_nvic.h"       /* SYS_NVIC_SetPriority / EnableIRQ */
 
 /* ================================================================

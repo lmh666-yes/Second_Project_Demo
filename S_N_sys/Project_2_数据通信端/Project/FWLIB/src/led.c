@@ -1,6 +1,7 @@
 #include "led.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_ms 等）独立文件 */
 
 /* ================================================================
  *  led.c —— 【板载】LED 模块  实现文件
@@ -35,16 +36,6 @@ static const uint16_t      led_pin [LED_COUNT] = {LED0_PIN,  LED1_PIN};
 /* 编译期护栏：表项数必须与 led.h 的 LED_COUNT 相同（不一致则此行直接编译不过） */
 typedef char led_table_count_check[(sizeof(led_port) / sizeof(led_port[0]) == LED_COUNT) ? 1 : -1];
 
-/* 位带别名地址表（与上面两张表同源的"第三种映射"，供 LED_BB_* 使用）
- * 每项 = 该 LED 对应 ODR 位的别名地址：*led_bb[i] = 0/1 即写该位。
- * 地址在编译期全部算好，运行时零运算（原理见 gpio_core.h 位带小节） */
-static volatile uint32_t * const led_bb[LED_COUNT] = {
-    GPIO_BB_OUT_ADDR(LED0_PORT, GPIO_PIN_NUM(LED0_PIN)),
-    GPIO_BB_OUT_ADDR(LED1_PORT, GPIO_PIN_NUM(LED1_PIN)),
-};
-/* 编译期护栏：与 led_port 同规则 —— 增删 LED 时本表同步增删 */
-typedef char led_bb_count_check[(sizeof(led_bb) / sizeof(led_bb[0]) == LED_COUNT) ? 1 : -1];
-
 /* 流水单步位置（LED_FlowStep 的内部状态）：含义 = 下一次要点亮的 id
  * LED_Init() 复位为 0；其它阻塞式灯效不修改它 */
 static uint8_t             led_flow_pos = 0;
@@ -59,13 +50,9 @@ static uint8_t             led_flow_pos = 0;
 #if LED_ACTIVE_LOW
     #define LED_ON_LEVEL    GPIO_ResetBits      /* 低电平点亮 */
     #define LED_OFF_LEVEL   GPIO_SetBits
-    #define LED_ON_VALUE    0U                  /* 位带版写"点亮"用的电平值 */
-    #define LED_OFF_VALUE   1U
 #else
     #define LED_ON_LEVEL    GPIO_SetBits        /* 高电平点亮 */
     #define LED_OFF_LEVEL   GPIO_ResetBits
-    #define LED_ON_VALUE    1U
-    #define LED_OFF_VALUE   0U
 #endif
 
 /* 内部辅助：按"语义"写电平（on 非 0 = 点亮）
@@ -146,33 +133,6 @@ void LED_ShowHex(uint8_t value)
 
 
 /* ================================================================
- *        扩展功能：位带直写版本（与区块 2 三连功能等价）
- * ================================================================
- * 结果相同、过程不同 —— 对照说明见 led.h 的声明注释与 gpio_core.h：
- *   库函数版：查 port/pin 表 → GPIO_SetBits/ResetBits（写 BSRR）
- *   位带版  ：查别名地址表 → *led_bb[id] = 电平（单条 STR 直写 ODR 位） */
-void LED_BB_On(uint8_t id)
-{
-    if (id >= LED_COUNT) return;
-    *led_bb[id] = LED_ON_VALUE;
-}
-
-void LED_BB_Off(uint8_t id)
-{
-    if (id >= LED_COUNT) return;
-    *led_bb[id] = LED_OFF_VALUE;
-}
-
-/* 翻转：读别名（0/1）→ 取反 → 写回；与库版一样是"读-改-写"两步，
- * 中断恰好穿插时可能丢一次翻转（两版行为完全一致） */
-void LED_BB_Toggle(uint8_t id)
-{
-    if (id >= LED_COUNT) return;
-    *led_bb[id] ^= 1U;
-}
-
-
-/* ================================================================
  *                    扩展功能（灯效）
  * ================================================================
  * 全部基于 LED_On / LED_Off / LED_AllOn / LED_AllOff 组合，
@@ -184,8 +144,8 @@ void LED_Blink(uint8_t id, uint32_t times, uint32_t interval_ms)
     if (id >= LED_COUNT || interval_ms == 0) return;
 
     for (uint32_t i = 0; i < times; i++) {
-        LED_On (id); Delay_ms(interval_ms);
-        LED_Off(id); Delay_ms(interval_ms);
+        LED_On (id); delay_ms(interval_ms);
+        LED_Off(id); delay_ms(interval_ms);
     }
 }
 
@@ -195,8 +155,8 @@ void LED_AllBlink(uint32_t times, uint32_t interval_ms)
     if (interval_ms == 0) return;
 
     for (uint32_t i = 0; i < times; i++) {
-        LED_AllOn (); Delay_ms(interval_ms);
-        LED_AllOff(); Delay_ms(interval_ms);
+        LED_AllOn (); delay_ms(interval_ms);
+        LED_AllOff(); delay_ms(interval_ms);
     }
 }
 
@@ -211,14 +171,14 @@ void LED_Alternate(uint32_t times, uint32_t interval_ms)
             if ((j & 1) == 0) LED_On (j);
             else              LED_Off(j);
         }
-        Delay_ms(interval_ms);
+        delay_ms(interval_ms);
 
         /* 第二拍：奇 id 亮、偶 id 灭 */
         for (uint8_t j = 0; j < LED_COUNT; j++) {
             if ((j & 1) == 0) LED_Off(j);
             else              LED_On (j);
         }
-        Delay_ms(interval_ms);
+        delay_ms(interval_ms);
     }
     LED_AllOff();
 }
@@ -232,7 +192,7 @@ void LED_Flow(uint32_t times, uint32_t interval_ms)
         for (uint8_t i = 0; i < LED_COUNT; i++) {
             LED_AllOff();               /* 只保留当前灯 */
             LED_On(i);
-            Delay_ms(interval_ms);
+            delay_ms(interval_ms);
         }
     }
     LED_AllOff();
@@ -248,13 +208,13 @@ void LED_Marquee(uint32_t times, uint32_t interval_ms)
         for (uint8_t i = 0; i < LED_COUNT; i++) {
             LED_AllOff();
             LED_On(i);
-            Delay_ms(interval_ms);
+            delay_ms(interval_ms);
         }
         /* 回程：倒数第二个 → LED1（两端不重复点亮） */
         for (int8_t i = (int8_t)(LED_COUNT - 2); i >= 1; i--) {
             LED_AllOff();
             LED_On((uint8_t)i);
-            Delay_ms(interval_ms);
+            delay_ms(interval_ms);
         }
     }
     LED_AllOff();

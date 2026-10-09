@@ -1,6 +1,7 @@
 #include "dht11.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_us 等）独立文件 */
 
 /* ================================================================
  *  dht11.c —— DHT11 温湿度传感器（单总线）  实现文件
@@ -12,7 +13,7 @@
  *      ④ 5 字节 = 湿度整数,湿度小数,温度整数,温度小数,校验和
  *
  *  实现要点 :
- *    ① 位宽测量用 DWT 微秒时间戳（gpio_core 的 DWT_GetUs/ElapsedUs）——
+ *    ① 位宽测量用 DWT 微秒时间戳（delay.h 的 DWT_GetUs/ElapsedUs）——
  *       比"数循环次数"更抗主频变化，换主频/开优化都不用重标定；
  *    ② 每一步都带超时，传感器没插时**立刻返回**而不是死等；
  *    ③ 用"引脚电平"判断协议状态：开漏输出释放后由板上 10K 上拉拉高。
@@ -94,7 +95,7 @@ static uint8_t dht_read_frame(uint8_t buf[5])
 
     /* ① 起始信号：拉低 20ms 后释放 */
     dq_low();
-    Delay_ms_DWT(DHT11_START_LOW_MS);
+    delay_ms_dwt(DHT11_START_LOW_MS);
     dq_high();
 
     /* ② 等从机应答：先 80µs 低，再 80µs 高 */
@@ -156,7 +157,7 @@ uint8_t DHT11_ReadRaw(uint8_t buf[5])
             return 0U;
         }
         if (r == 1U) break;          /* 无应答：重试也没用，直接返回 */
-        Delay_ms_DWT(50);            /* 校验失败：稍等再试 */
+        delay_ms_dwt(50);            /* 校验失败：稍等再试 */
     }
 
     return r;

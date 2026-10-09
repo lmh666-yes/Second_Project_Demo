@@ -1,6 +1,7 @@
 #include "ds18b20.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_us 等）独立文件 */
 
 /* ================================================================
  *  ds18b20.c —— DS18B20 单总线温度传感器  实现文件
@@ -50,13 +51,13 @@ uint8_t DS18B20_IsPresent(void)
     uint8_t present;
 
     dq_low();                                   /* ① 拉低 >480µs */
-    Delay_us(DS18B20_RESET_US);
+    delay_us(DS18B20_RESET_US);
 
     dq_high();                                  /* ② 释放，等 15~60µs */
-    Delay_us(DS18B20_RELEASE_US);
+    delay_us(DS18B20_RELEASE_US);
 
     present = dq_read();                        /* ③ 读：应为 0（器件拉低应答） */
-    Delay_us(DS18B20_PRESENCE_US);              /* ④ 等应答脉冲结束，总线回高 */
+    delay_us(DS18B20_PRESENCE_US);              /* ④ 等应答脉冲结束，总线回高 */
 
     return (present == 0U) ? 1U : 0U;
 }
@@ -67,14 +68,14 @@ void DS18B20_WriteBit(uint8_t bit)
 {
     if (bit) {
         dq_low();
-        Delay_us(2);
+        delay_us(2);
         dq_high();
-        Delay_us(60);
+        delay_us(60);
     } else {
         dq_low();
-        Delay_us(60);
+        delay_us(60);
         dq_high();
-        Delay_us(2);
+        delay_us(2);
     }
 }
 
@@ -84,11 +85,11 @@ uint8_t DS18B20_ReadBit(void)
     uint8_t bit;
 
     dq_low();
-    Delay_us(2);
+    delay_us(2);
     dq_high();
-    Delay_us(10);                               /* 采样点落在 15µs 窗口内 */
+    delay_us(10);                               /* 采样点落在 15µs 窗口内 */
     bit = dq_read();
-    Delay_us(50);                               /* 补足时隙（≥60µs） */
+    delay_us(50);                               /* 补足时隙（≥60µs） */
 
     return bit;
 }
@@ -194,7 +195,7 @@ uint8_t DS18B20_ReadTempC10(int16_t *t_c10)
     if (DS18B20_StartConvert() != 0U) return 1U;
 
     /* 等转换完成：不用 SYS_TICK（RTOS 下可能被占），用 DWT 毫秒延时最稳 */
-    Delay_ms_DWT(DS18B20_CONV_MS);
+    delay_ms_dwt(DS18B20_CONV_MS);
 
     r = DS18B20_ReadTempRaw(&raw);
     if (r != 0U) return r;

@@ -1,5 +1,6 @@
 #include "mqtt.h"
-#include "gpio_core.h"      /* DWT_GetUs / DWT_ElapsedUs —— 心跳计时，免初始化 */
+#include "gpio_core.h"      /* 引脚/位 */
+#include "delay.h"          /* DWT_GetUs / DWT_ElapsedUs —— 心跳计时，免初始化 */
 #include <string.h>
 
 /* ================================================================

@@ -80,7 +80,7 @@ void LED_Init   (void);
  * 示例 : LED_On(0);              // 点亮 0 号灯(左上第一颗)
  *        LED_Toggle(3);          // 3 号灯翻转(闪烁用)
  * 扩展提示 : 增删灯 —— 区块 1 加 LEDx_PORT/PIN 宏并改 LED_COUNT,再同步
- *            led.c 引脚表;新灯效 —— 参照 LED_Flow:用 LED_On/Off + Delay_ms 组合 */
+ *            led.c 引脚表;新灯效 —— 参照 LED_Flow:用 LED_On/Off + delay_ms 组合 */
 void LED_On     (uint8_t id);
 void LED_Off    (uint8_t id);
 void LED_Toggle (uint8_t id);
@@ -117,26 +117,15 @@ void LED_BlinkStart(uint8_t id, uint16_t period_ms, uint16_t duty_permille);
 void LED_BlinkStop (uint8_t id);   /* 停止并熄灭 */
 void LED_BlinkUpdate(void);        /* 每 1ms 调一次 */
 
-/* ----------------------------------------------------------------
- * 位带直写版本（与区块 2 的 LED_On / LED_Off / LED_Toggle 结果相同，实现不同）
- * ----------------------------------------------------------------
- * 库函数版：查"端口 + 掩码"表 → 调 GPIO_SetBits / ResetBits（写 BSRR）；
- * 位带版  ：查"别名地址"表 → *p = 0/1 一条 STR 直写该 ODR 位，
- *           地址在编译期算好、无函数调用、无运算，开销最低。
- * 越界保护、极性适配、翻转语义均与库函数版一致；翻转同样是
- * "读-改-写"两步、非原子。原理见 gpio_core.h "位带"小节；
- * 换板子时自动跟随区块 1 宏，无需改动。
- * 标准库 : 无——编译期算好别名地址后一条 STR 直写 ODR 位,
- *          比"标准库函数调用"路径更短、开销最低 */
-void LED_BB_On    (uint8_t id);      /* 位带直写：点亮; 例:LED_BB_On(0) */
-void LED_BB_Off   (uint8_t id);      /* 位带直写：熄灭; 例:LED_BB_Off(0) */
-void LED_BB_Toggle(uint8_t id);      /* 位带直写：翻转; 例:LED_BB_Toggle(3) */
+/* 位带直写版（LED_BB_On/Off/Toggle）已撤除——见 2026-10-08 拆分：
+ * 位带统一由独立文件 sys_bitband.h 提供宏（如 PFout(9) = 0;）；
+ * 日常请用上面的 LED_On/Off/Toggle（函数版够快,语义更全）。 */
 
 /* ----------------------------------------------------------------
  * 常用灯效（全部基于区块 2 的 LED_On / LED_Off 组合实现）
  *
  * 说明 : 
- *   ① 下列"阻塞式"灯效内部用 gpio_core 的粗延时 Delay_ms，
+ *   ① 下列"阻塞式"灯效内部用 delay.h 的粗延时 delay_ms，
  *      执行期间占用 CPU —— 适合主循环里简单的视觉效果；
  *      需要"边跑灯效边干别的"请用非阻塞的 LED_FlowStep；
  *   ② interval_ms 传 0 时直接返回（避免无意义的忙循环）；

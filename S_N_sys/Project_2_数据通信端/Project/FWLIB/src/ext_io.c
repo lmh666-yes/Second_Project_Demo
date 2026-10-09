@@ -1,6 +1,7 @@
 #include "ext_io.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_us 等）独立文件 */
 
 /* ================================================================
  *  ext_io.c —— 【板载/外接】单引脚数字输入模块封装库  实现文件
@@ -154,7 +155,7 @@ uint32_t EXT_TOUCH_ChargeTimeUs(uint8_t id)
     /* ① 放电：推挽输出（GPIO_OType_PP）拉低，等电容放干净 */
     GPIO_OutInit(p->port, p->pin);
     GPIO_OutReset(p->port, p->pin);
-    Delay_us(5);
+    delay_us(5);
 
     /* ② 开始充电：切成浮空输入（GPIO_PuPd_NOPULL），外部 1M 开始充电 */
     GPIO_InInit(p->port, p->pin, GPIO_PuPd_NOPULL);

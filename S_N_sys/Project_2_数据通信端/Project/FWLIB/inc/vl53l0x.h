@@ -136,7 +136,7 @@ uint8_t VL53L0X_GetModelID(void);
  *                     非 0 = 定时模式，隔 period_ms 测一次
  * 返回 : VL53L0X_OK / VL53L0X_ERR_*
  * 示例 : VL53L0X_StartContinuous(0);
- *        for (;;) { VL53L0X_ReadContinuousMm(&mm); Delay_ms(10); } */
+ *        for (;;) { VL53L0X_ReadContinuousMm(&mm); delay_ms(10); } */
 uint8_t VL53L0X_StartContinuous(uint32_t period_ms);
 
 /* 【读连续模式的最新一次结果】不启动测量，只等结果

@@ -1,6 +1,7 @@
 #include "modbus.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"          /* delay_us:顺带确保 DWT 计时使能 */
 
 /* ================================================================
  *  modbus.c —— Modbus-RTU 从机  实现文件

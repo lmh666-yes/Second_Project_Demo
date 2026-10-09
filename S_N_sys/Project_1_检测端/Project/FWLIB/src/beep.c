@@ -1,6 +1,7 @@
 #include "beep.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_ms 等）独立文件 */
 
 /* ================================================================
  *  beep.c —— 【板载】蜂鸣器模块  实现文件
@@ -57,15 +58,15 @@ void BEEP_Beep(uint32_t times)
 }
 
 /* 自定义节拍版：参数先做防零修正，再按"响-停"节拍循环
- * 说明 : 节拍延时直接复用 gpio_core 的粗延时（精度要求不高） */
+ * 说明 : 节拍延时直接用 delay.h 的粗延时（精度要求不高） */
 void BEEP_BeepEx(uint32_t times, uint32_t on_ms, uint32_t off_ms)
 {
     if (on_ms  == 0) on_ms  = 1;
     if (off_ms == 0) off_ms = 1;
 
     for (uint32_t i = 0; i < times; i++) {
-        BEEP_On();  Delay_ms(on_ms);
-        BEEP_Off(); Delay_ms(off_ms);
+        BEEP_On();  delay_ms(on_ms);
+        BEEP_Off(); delay_ms(off_ms);
     }
 }
 
@@ -80,7 +81,7 @@ void BEEP_BeepEx(uint32_t times, uint32_t on_ms, uint32_t off_ms)
 void BEEP_KeySound(void)
 {
     BEEP_On();
-    Delay_ms(50);
+    delay_ms(50);
     BEEP_Off();
 }
 
@@ -89,15 +90,15 @@ void BEEP_KeySound(void)
 /* 点：响 1 单位 + 停 1 单位 */
 static void beep_sos_dot(void)
 {
-    BEEP_On();  Delay_ms(BEEP_SOS_UNIT_MS);
-    BEEP_Off(); Delay_ms(BEEP_SOS_UNIT_MS);
+    BEEP_On();  delay_ms(BEEP_SOS_UNIT_MS);
+    BEEP_Off(); delay_ms(BEEP_SOS_UNIT_MS);
 }
 
 /* 划：响 3 单位 + 停 1 单位 */
 static void beep_sos_dash(void)
 {
-    BEEP_On();  Delay_ms(BEEP_SOS_UNIT_MS * 3U);
-    BEEP_Off(); Delay_ms(BEEP_SOS_UNIT_MS);
+    BEEP_On();  delay_ms(BEEP_SOS_UNIT_MS * 3U);
+    BEEP_Off(); delay_ms(BEEP_SOS_UNIT_MS);
 }
 
 /* SOS 求救信号：三短 → 三长 → 三短，组间加长停顿便于分辨
@@ -106,15 +107,15 @@ void BEEP_SOS(void)
 {
     /* S：三短 */
     beep_sos_dot();  beep_sos_dot();  beep_sos_dot();
-    Delay_ms(BEEP_SOS_UNIT_MS * 2U);        /* 字母组间隔 */
+    delay_ms(BEEP_SOS_UNIT_MS * 2U);        /* 字母组间隔 */
 
     /* O：三长 */
     beep_sos_dash(); beep_sos_dash(); beep_sos_dash();
-    Delay_ms(BEEP_SOS_UNIT_MS * 2U);        /* 字母组间隔 */
+    delay_ms(BEEP_SOS_UNIT_MS * 2U);        /* 字母组间隔 */
 
     /* S：三短 */
     beep_sos_dot();  beep_sos_dot();  beep_sos_dot();
-    Delay_ms(BEEP_SOS_UNIT_MS * 3U);        /* 结束停顿 */
+    delay_ms(BEEP_SOS_UNIT_MS * 3U);        /* 结束停顿 */
 }
 
 

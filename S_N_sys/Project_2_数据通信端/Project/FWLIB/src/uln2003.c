@@ -1,6 +1,7 @@
 #include "uln2003.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_us 等）独立文件 */
 
 /* ================================================================
  *  uln2003.c —— 【板载】步进电机驱动（ULN2003D）  实现文件
@@ -117,7 +118,7 @@ void ULN2003_Step(uint32_t steps, uint8_t dir)
 
     for (i = 0UL; i < steps; i++) {
         ULN2003_OneStep(dir);
-        Delay_us(motor_delay);
+        delay_us(motor_delay);
     }
 }
 

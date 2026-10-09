@@ -1,6 +1,7 @@
 #include "rgb5x5.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
+#include "delay.h"      /* 延时（delay_us 等）独立文件 */
 
 /* ================================================================
  *  rgb5x5.c —— 【板载】5x5 全彩 LED 阵列（WS2812B x25）  实现文件
@@ -214,7 +215,7 @@ void RGB5X5_Show(void)
 
     /* 复位：拉低保持 RGB5X5_RESET_US 微秒，灯板才认为一帧结束 */
     GPIO_OutReset(RGB5X5_DATA_PORT, RGB5X5_DATA_PIN);
-    Delay_us(RGB5X5_RESET_US);
+    delay_us(RGB5X5_RESET_US);
 
     rgb_last_us = DWT_ElapsedUs(t0);
 #endif

@@ -37,7 +37,7 @@
  *      · sys_adc   —— 重新 Init（ADCCLK/采样时序变化；DMA 采集先停）
  *      · sys_wdg   —— 仅 WWDG 受影响（按 PCLK1 换算，需重 WwdgInit）；
  *                     IWDG 用 LSI，不受切换影响
- *      · gpio_core 的 Delay_ms —— 粗延时数值不再代表毫秒（直接失效）
+ *      · delay.h 的 delay_ms —— 粗延时数值不再代表毫秒（直接失效）
  *      · lcd —— FSMC 时序按 HCLK 周期计，实际时间变（屏异常先重评估宏）
  *      不受影响：sys_exti / sys_nvic / sys_dma / sys_fault / sys_flash
  *      已上 FreeRTOS：SysTick 归 RTOS——跳过 sys_tick 一项，用 vTaskDelay

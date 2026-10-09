@@ -171,7 +171,7 @@ void MPU6050_Reset(void);
  * 说明 : 校准结果存在驱动内部，后续 MPU6050_Read 自动扣除
  * 阻塞 : 约 CALIB_TIMES / 采样率 秒（默认 200 次 @200Hz ≈ 1s）
  * 示例 : MPU6050_Init();
- *        Delay_ms(500);
+ *        delay_ms(500);
  *        MPU6050_CalibrateGyro();     // 校准期间别碰板子 */
 uint8_t MPU6050_CalibrateGyro(void);
 

@@ -98,7 +98,7 @@ uint8_t DS18B20_SetResolution(uint8_t bits);
 uint8_t DS18B20_WriteScratch(uint8_t th, uint8_t tl);
 
 /* 底层原语（要做多器件 ROM 搜索等高级用法时可直接用）
- * 时序均基于 DWT 微秒级延时，见 gpio_core.h 的 Delay_us */
+ * 时序均基于 DWT 微秒级延时，见 delay.h 的 delay_us */
 void    DS18B20_WriteByte(uint8_t byte);
 uint8_t DS18B20_ReadByte(void);
 void    DS18B20_WriteBit(uint8_t bit);

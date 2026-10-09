@@ -2,12 +2,14 @@
 #define __FWLIB_GPIO_CORE_H
 
 #include "stm32f4xx.h"
+#include "delay.h"    /* 兼容:老代码 include gpio_core.h 仍可用（延时见 delay.h）;
+                       * 新代码建议直接 #include "delay.h"（函数名小写开头） */
 
 /* ================================================================
  *  gpio_core.h —— 【通用】GPIO 底层工具库  头文件
  * ================================================================
  *  设计定位 : 标准外设库之上的"薄封装"通用 GPIO 层
- *             —— 只提供"配置引脚 / 读写电平 / 粗延时"三类纯工具
+ *             —— 只提供"配置引脚 / 读写电平"两类纯工具（延时可选用 delay.h）
  *             —— 不含任何外设语义（LED/按键/蜂鸣器等在各自文件里）
  *
  *  被谁使用 :
@@ -24,12 +26,12 @@
  *  命名约定 :
  *      GPIO_OutXxx —— 输出方向（推挽 GPIO_OType_PP / 开漏 GPIO_OType_OD 的配置与操作）
  *      GPIO_InXxx  —— 输入方向（读取引脚电平）
- *      位带宏类    —— BITBAND_* / GPIO_BB_* / Pxout(n) A~I（单比特零开销读写）
+ *      位带宏类    —— 已拆到 sys_bitband.h（BITBAND_* / GPIO_BB_* / Pxout(n) A~I）
  *
  *  结构说明（与其它模块的"区块"对应）:
  *      区块 1 —— 无硬件映射（换板子零改动，相当于区块 1 为空）
- *      区块 2 —— 基础功能：端口时钟 / 输出 / 输入 / 粗延时 / 精准延时(DWT)
- *      区块 3 —— 扩展功能：位带操作（Bit-Band 宏）
+ *      区块 2 —— 基础功能：端口时钟 / 输出 / 输入（延时已拆到 delay.h）
+ *      （原“区块 3：位带操作”已拆分为独立文件 sys_bitband.h）
  * ================================================================ */
 
 
@@ -154,185 +156,23 @@ uint8_t GPIO_PinSource(uint16_t pin);
 
 
 /* ================================================================
- *          区块 3：扩展功能 —— 位带操作（Bit-Band，单比特读写）
+ *  位带操作（Bit-Band）已拆分为独立文件 —— sys_bitband.h
  * ================================================================
- * 原理（像 51 的 sbit 一样读写某一位）:
- *   把"某地址的某一位"映射成别名区的一个 32 位字——
- *   写别名 = 写该位；读别名 = 读该位（返回 0 或 1）。
- *   外设区 0x40000000 ~ 0x400FFFFF  →  别名区 0x42000000 起
- *   SRAM 区 0x20000000 ~ 0x200FFFFF  →  别名区 0x22000000 起
- *
- * 优点 :
- *   ① 地址在编译期算出，宏展开就是一条 STR/LDR —— 零函数调用开销；
- *   ② 单比特原子写，不影响同寄存器其它位（不用 |= / &= 读改写）；
- *   ③ 任何"外设寄存器 / SRAM 变量"的某一位都能这样操作。
- *
- * 注意 :
- *   ① 只有上面两个区域能位带（GPIO 属于外设区 ✓）；
- *      CCM RAM(0x10000000)、FSMC 外扩、Flash 均不在位带区；
- *   ② Cortex-M7（F7/H7）取消了位带——跨芯片移植时不要依赖；
- *   ③ 别名访问固定为 32 位读/写；位号范围 0 ~ 31。
- *
- * 用法示例 :
- *   GPIO_BB_OUT(GPIOF, 9) = 0;         // PF9 输出低（点亮 LED0，低有效）
- *   GPIO_BB_OUT(GPIOF, 9) = 1;         // PF9 输出高（熄灭）
- *   if (GPIO_BB_IN(GPIOA, 0) == 0) {}  // 读 PA0（KEY1）电平
- *   PFout(9) = 0;                      // 51 风格等价写法
- *   BITBAND_PERIPH(&TIM2->CR1, 0) = 1; // 任意寄存器位：启动 TIM2
- *
- * 与常见教程 sys.h（BIT_ADDR / Pxout 风格）的对照:
- *   同一套公式 : 别名 = 0x42000000 + ((地址 & 0xFFFFF) << 5) + 位号×4
- *   教程 PAout(n) = BIT_ADDR(GPIOA_ODR_Addr, n)   // ODR 偏移 0x14
- *   本库 PAout(n) = GPIO_BB_OUT(GPIOA, n)         // 完全等价
- *   教程 BITBAND / MEM_ADDR / BIT_ADDR ↔ 本库 BITBAND_PERIPH / _ADDR
- *   端口覆盖 : 两边都是 A ~ I 全套一一对应
- * ================================================================ */
-/* 通用位带"地址"宏：产出别名区指针（供查表 / 传参 / 预先算好地址）
- * 读写写法：*BITBAND_PERIPH_ADDR(&某变量, 位号) = 值;
- * 提醒 : 本宏含"地址取整"运算 —— 在函数体里用没问题，但别放进
- *       静态初始化器（ARMCC 会报 #1296 扩展常量警告）；
- *       需要静态表请用下方的 GPIO_BB_*_ADDR（纯整数公式版）。 */
-#define BITBAND_PERIPH_ADDR(addr, bit)  ((volatile uint32_t *)(0x42000000UL + (((uint32_t)(addr) & 0x000FFFFFUL) << 5) + ((uint32_t)(bit) << 2)))
-#define BITBAND_SRAM_ADDR(addr, bit)    ((volatile uint32_t *)(0x22000000UL + (((uint32_t)(addr) & 0x000FFFFFUL) << 5) + ((uint32_t)(bit) << 2)))
-
-/* 通用位带宏（左值形式）：addr = 目标地址，bit = 位号（0~31）
- * 例：BITBAND_PERIPH(&TIM2->CR1, 0) = 1;  启动 TIM2 */
-#define BITBAND_PERIPH(addr, bit)   (*(BITBAND_PERIPH_ADDR(addr, bit)))
-#define BITBAND_SRAM(addr, bit)     (*(BITBAND_SRAM_ADDR(addr, bit)))
-
-/* GPIO 端口指针 → 端口基址数值（纯整数，供编译期机械构造位带地址）
- * 例：GPIO_BASE_NUM(GPIOF) → GPIOF_BASE 的值；比较链在编译期折叠为常量
- * 说明（为什么绕这一下）：位带地址若用 &(port)->ODR 直接算，是
- *   "地址→整数→再回指针"的混合运算，ARMCC 对静态初始化器会报
- *   #1296 扩展常量警告；换成"整数域全程运算、最后一步才转指针"
- *   就干干净净（led.c / key.c 的位带表借此通过 0 警告编译）。
- * 范围：A ~ I（与常见教程 sys.h 的端口覆盖一致；F407ZE 封装实际
- *       引出 A ~ G,H/I 供换更大封装型号或跨芯片移植时用）。
- * ⭐ 全程用标准库的 GPIOx_BASE 宏运算（不写裸地址）。 */
-#define GPIO_BASE_NUM(port) ( \
-      ((port) == GPIOA) ? GPIOA_BASE : ((port) == GPIOB) ? GPIOB_BASE : \
-      ((port) == GPIOC) ? GPIOC_BASE : ((port) == GPIOD) ? GPIOD_BASE : \
-      ((port) == GPIOE) ? GPIOE_BASE : ((port) == GPIOF) ? GPIOF_BASE : \
-      ((port) == GPIOG) ? GPIOG_BASE : ((port) == GPIOH) ? GPIOH_BASE : \
-      ((port) == GPIOI) ? GPIOI_BASE : 0UL )
-
-/* GPIO 位带"别名地址"宏：产出指针，可存入静态表（表驱动位带）
- * 全程"基址整数 + 偏移"运算 —— 结果可用于静态初始化器（0 警告）
- * 库内示范：led.c 的 led_bb[] / key.c 的 key_bb[] —— 表里存地址、操作即 *p
- * 说明 : 库内仅 led / key 提供位带版函数 —— 位带收益只在"高频单比特"
- *       场景才明显；其余模块（蜂鸣器/外接/背光等）操作频率在毫秒级，
- *       位带省下的开销无实际意义，故不做；需要时照此模式自建即可。
- * 例：volatile uint32_t *p = GPIO_BB_OUT_ADDR(GPIOF, 9);  *p = 0;
- * 注意 : ODR 偏移 = 0x14、IDR 偏移 = 0x10（F4 系列 GPIO_TypeDef 固定布局） */
-#define GPIO_BB_OUT_ADDR(port, n)   ((volatile uint32_t *)(0x42000000UL + (((GPIO_BASE_NUM(port) + 0x14UL) & 0x000FFFFFUL) << 5) + ((uint32_t)(n) << 2)))
-#define GPIO_BB_IN_ADDR(port, n)    ((volatile uint32_t *)(0x42000000UL + (((GPIO_BASE_NUM(port) + 0x10UL) & 0x000FFFFFUL) << 5) + ((uint32_t)(n) << 2)))
-
-/* GPIO 快捷宏（左值形式）：port = 端口指针，n = 引脚号（0~15，如 PF9 就是 9）
- * 例：GPIO_BB_OUT(GPIOF, 9) = 0;  →  PF9 输出低
- * 说明 : port 传库配置里的常量端口（如 GPIOF）→ 地址全在编译期折叠、
- *       零开销；传运行时变量端口 → 退回比较链（稍慢），该场景可改用
- *       BITBAND_PERIPH(&(port)->ODR, n) 手动构造更快。 */
-#define GPIO_BB_OUT(port, n)        (*(GPIO_BB_OUT_ADDR((port), (n))))
-#define GPIO_BB_IN(port, n)         (*(GPIO_BB_IN_ADDR((port), (n))))
-
-/* 单比特掩码 → 位号（0~15）的【编译期】换算（位带查表等需要常量处）
- * 例：GPIO_PIN_NUM(GPIO_Pin_9) 展开为常量 9
- * 说明 : 是运行时函数 GPIO_PinSource() 的编译期版本 —— 结果可直接用于
- *       静态初始化（如 led.c / key.c 的位带别名地址表）；
- *       只应对单个 GPIO_Pin_x 掩码使用（组合/非法掩码返回 0xFF）。 */
-#define GPIO_PIN_NUM(pin) (                    \
-      ((pin) == GPIO_Pin_0 ) ?  0 :            \
-      ((pin) == GPIO_Pin_1 ) ?  1 :            \
-      ((pin) == GPIO_Pin_2 ) ?  2 :            \
-      ((pin) == GPIO_Pin_3 ) ?  3 :            \
-      ((pin) == GPIO_Pin_4 ) ?  4 :            \
-      ((pin) == GPIO_Pin_5 ) ?  5 :            \
-      ((pin) == GPIO_Pin_6 ) ?  6 :            \
-      ((pin) == GPIO_Pin_7 ) ?  7 :            \
-      ((pin) == GPIO_Pin_8 ) ?  8 :            \
-      ((pin) == GPIO_Pin_9 ) ?  9 :            \
-      ((pin) == GPIO_Pin_10) ? 10 :            \
-      ((pin) == GPIO_Pin_11) ? 11 :            \
-      ((pin) == GPIO_Pin_12) ? 12 :            \
-      ((pin) == GPIO_Pin_13) ? 13 :            \
-      ((pin) == GPIO_Pin_14) ? 14 :            \
-      ((pin) == GPIO_Pin_15) ? 15 : 0xFF )
-
-/* 51 风格快捷宏（A ~ I 全套,与常见教程 sys.h 的命名/覆盖一致；
- * F407ZE 封装实际引出 A ~ G,加 H/I 是为了换更大封装/跨芯片时
- * 教程代码原样可编译；如与其它代码重名可删掉本组）
- * 例：PFout(9) = 0;   if (PAin(0) == 0) { ... } */
-#define PAout(n)  GPIO_BB_OUT(GPIOA, (n))
-#define PAin(n)   GPIO_BB_IN (GPIOA, (n))
-
-#define PBout(n)  GPIO_BB_OUT(GPIOB, (n))
-#define PBin(n)   GPIO_BB_IN (GPIOB, (n))
-
-#define PCout(n)  GPIO_BB_OUT(GPIOC, (n))
-#define PCin(n)   GPIO_BB_IN (GPIOC, (n))
-
-#define PDout(n)  GPIO_BB_OUT(GPIOD, (n))
-#define PDin(n)   GPIO_BB_IN (GPIOD, (n))
-
-#define PEout(n)  GPIO_BB_OUT(GPIOE, (n))
-#define PEin(n)   GPIO_BB_IN (GPIOE, (n))
-
-#define PFout(n)  GPIO_BB_OUT(GPIOF, (n))
-#define PFin(n)   GPIO_BB_IN (GPIOF, (n))
-
-#define PGout(n)  GPIO_BB_OUT(GPIOG, (n))
-#define PGin(n)   GPIO_BB_IN (GPIOG, (n))
-
-#define PHout(n)  GPIO_BB_OUT(GPIOH, (n))
-#define PHin(n)   GPIO_BB_IN (GPIOH, (n))
-
-#define PIout(n)  GPIO_BB_OUT(GPIOI, (n))
-#define PIin(n)   GPIO_BB_IN (GPIOI, (n))
+ *  （2026-10-08 模块拆分:单比特读写宏集中一处更清晰）
+ *  内容 : BITBAND_PERIPH / BITBAND_SRAM / GPIO_BB_OUT / _IN /
+ *         GPIO_BB_*_ADDR / GPIO_PIN_NUM / Pxout(n)~PIin(n) 等宏。
+ *  用法 : 需要时 #include "sys_bitband.h"（纯宏,无编译成本） */
 
 
 /* ================================================================
- *                    粗延时（软件空循环）
+ *  延时函数已拆分为独立文件 —— delay.h / delay.c
  * ================================================================
- * 未做硬件标定：实际时长随主频、编译优化等级、Flash 等待周期变化，
- * 仅适用于 LED 闪烁 / 按键消抖 / 蜂鸣器节拍等对精度不敏感的场景；
- * 需要较长的高精度延时请用 sys_tick 模块；"纳秒 ~ 微秒"级短延时
- * 见下方精准延时小节（DWT 硬件计时;纳秒 ~ 毫秒）。
- * 示例 : Delay_ms(500);       // 粗延时约半秒
- *        Delay_loop(1000);    // 空转 1000 次(最短的延时单元) */
-void Delay_ms  (uint32_t ms);                    /* 毫秒级粗延时 */
-void Delay_loop(volatile uint32_t n);            /* 空转 n 次 */
-
-
-/* ================================================================
- *        精准延时（DWT 周期计数器 —— 非软件空循环;纳秒 ~ 毫秒）
- * ================================================================
- * 原理 :
- *   Cortex-M4 内核自带 DWT->CYCCNT —— 每个 CPU 周期自动 +1 的
- *   硬件计数器；延时 = 忙等到"两次读数之差"达到目标周期数，
- *   周期数↔时间换算使用 SystemCoreClock（主频变了自动跟随）。
- *
- * 特点 :
- *   ① 不用任何定时器 / 中断、无需初始化 —— 首次调用自动使能 DWT；
- *   ② ⭐ FreeRTOS 及其它 RTOS 下依然可用（它不占用 SysTick）；
- *   ③ 忙等实现：被中断打断时总时长顺延（ISR 耗时计入其中）；
- *   ④ 精度：周期级（1 周期 ≈ 6ns @168MHz），换算与循环粒度
- *      合计误差约 ±几十 ns；
- *   ⑤ 毫秒级精准延时两种选择：裸机优先 sys_tick（中断计时、不占 CPU）；
- *      不想依赖 SysTick（如已上 RTOS）用本节的 Delay_ms_DWT——忙等、不占中断。
- *
- * 适用 : 单总线时序（WS2812 / DS18B20）、传感器建立-保持时间、
- *        脉冲宽度、移位寄存器时钟等"纳秒 ~ 毫秒"级场合。
- *
- * 范围提醒（32 位换算，防溢出）:
- *   us / ns / ms 与主频的乘积需小于 2^32 ——
- *   @168MHz：Delay_us 最大约 25.5 秒、Delay_ns 最大约 25.5 毫秒、
- *   Delay_ms_DWT 单次最大约 25.5 秒（超出自动按上限执行）；
- *   更长且不想占 CPU 的毫秒延时请用 sys_tick 的 SYS_TICK_Delay_ms。
- * ================================================================ */
-void Delay_cycles(uint32_t cycles);   /* 原语：忙等 cycles 个 CPU 周期; 例:Delay_cycles(168) ≈ 1µs@168MHz */
-void Delay_us    (uint32_t us);       /* 微秒级精准延时; 例:Delay_us(10) = 10µs */
-void Delay_ns    (uint32_t ns);       /* 纳秒级精准延时; 例:Delay_ns(500) = 0.5µs */
-void Delay_ms_DWT(uint32_t ms);       /* 毫秒级精准延时(不用 SysTick——RTOS 下可用); 例:Delay_ms_DWT(100) = 100ms */
+ *  （2026-10-08 模块拆分:延时工具集中一处,查找/移植更方便）
+ *  内容 : delay_ms / delay_loop（粗延时）;
+ *         delay_cycles / delay_us / delay_ns / delay_ms_dwt（DWT 精准延时）。
+ *  说明 : 老代码继续 #include "gpio_core.h" 即可（本文件已转含 delay.h）;
+ *         新代码建议直接 #include "delay.h"——函数名统一小写开头,
+ *         旧大写名（Delay_xxx）已取消。 */
 
 
 /* ================================================================
@@ -359,17 +199,6 @@ void Delay_ms_DWT(uint32_t ms);       /* 毫秒级精准延时(不用 SysTick—
  *    LCKR      配置锁定:锁住引脚配置防误改,库未使用
  *    AFR[2]    复用功能:每个引脚 4 位,存复用号 0~15
  *              （GPIO_PinAFConfig 写它;GPIO_AF_TIM5 等取的就是这的值）
- *
- *  附:标准库结构体速查 —— DWT_Type（定义在 core_cm4.h;精准短延时用）
- *    CTRL      控制:位 0 = CYCCNT 周期计数使能
- *              （delay_dwt_enable 置位后计数器开始数）
- *    CYCCNT    周期计数:每个 CPU 周期 +1 —— 延时 = 忙等到达目标差值;
- *              32 位约 25.6s @168MHz 回绕,差值法天然安全
- *    CPICNT / EXCCNT / SLEEPCNT / LSUCNT / FOLDCNT  性能计数,库未用
- *    PCSR      程序计数器采样,库未用
- *    COMP/MASK/FUNCTION × 4   数据观察点硬件,库未用
- *    （配套:CoreDebug->DEMCR 的 TRCENA 位是跟踪总开关,
- *      使能 DWT 时一起打开——见 gpio_core.c 的 delay_dwt_enable）
  * ================================================================ */
 
 
@@ -447,7 +276,7 @@ void Delay_ms_DWT(uint32_t ms);       /* 毫秒级精准延时(不用 SysTick—
  *      GPIO_PinSource9 = 9;   而 GPIO_Pin_9 = 0x0200（512）
  *    把掩码当序号传 → 索引越界,写坏内存、程序跑飞。
  *    库内配套了两种转换工具:
- *      运行时 GPIO_PinSource(pin) 函数 / 编译期 GPIO_PIN_NUM(pin) 宏;
+ *      运行时 GPIO_PinSource(pin) 函数 / 编译期 GPIO_PIN_NUM(pin) 宏（见 sys_bitband.h）;
  *    手写标准库时最省事:直接写 GPIO_PinSource9 这样的常量
  *    （lcd.c / sys_eth.c 里就是这种写法）。
  *

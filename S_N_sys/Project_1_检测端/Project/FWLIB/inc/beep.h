@@ -67,7 +67,7 @@ void BEEP_Beep  (uint32_t times);
 /* 可调版：自定义"响 on_ms / 停 off_ms"（单位 ms）
  * on_ms / off_ms 传 0 会被修正为 1（保证节拍有效）
  * 示例 : BEEP_BeepEx(3, 50, 200);  // 快速三短音
- * 扩展提示 : 更复杂的节奏 → 用 BEEP_On/Off + Delay_ms 自行编排
+ * 扩展提示 : 更复杂的节奏 → 用 BEEP_On/Off + delay_ms 自行编排
  *            （先例:BEEP_SOS 就是纯组合写出来的,可照抄套路）*/
 void BEEP_BeepEx(uint32_t times, uint32_t on_ms, uint32_t off_ms);
 

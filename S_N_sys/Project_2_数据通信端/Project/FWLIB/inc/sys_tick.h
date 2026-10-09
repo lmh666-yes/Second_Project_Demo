@@ -13,9 +13,9 @@
  *  标准库关键词 : 无 —— 直接操作内核寄存器（SysTick->LOAD/VAL/CTRL,
  *                 CMSIS 头 core_cm4.h 定义;标准外设库不提供 SysTick API）
  *
- *  与 gpio_core 的 Delay_ms 区别 :
- *      gpio_core 的 Delay_ms —— 软件空循环，主频/优化一变就不准；
- *      本模块的 SYS_TICK_*  —— 硬件计数，改主频后重新 Init 依旧精准。
+ *  与 delay.h 的延时函数区别 :
+ *      delay.h 的 delay_ms —— DWT 忙等实现（准确，但占用 CPU）；
+ *      本模块的 SYS_TICK_*  —— 中断硬件计数，不占 CPU；改主频后重新 Init 依旧精准。
  *      => 对时间有要求的场合（计时、节拍、超时判断）用本模块。
  *
  *  重要说明 :
@@ -51,7 +51,7 @@
  *                    区块 1：定义与宏定义区
  * ================================================================ */
 /* SysTick 中断周期（毫秒）：1 = 每 1ms 中断一次（默认，也是推荐值）
- * 说明 : ms 时基（Delay_ms / GetTick / Elapsed）按该周期工作；
+ * 说明 : ms 时基（SYS_TICK_Delay_ms / GetTick / Elapsed）按该周期工作；
  *       改大周期会降低 ms 计时精度，一般保持 1 即可 */
 #define SYS_TICK_PERIOD_MS   1
 
@@ -68,7 +68,7 @@ void     SYS_TICK_Init    (void);
  * 说明 : 延时期间 CPU 空转等待（阻塞式）
  * ⚠ 不要在中断/回调里使用本函数：它依赖 SysTick 中断"继续累加
  *   时基"，优先级配置不当时会在 ISR 里永久死等；中断内延时请用
- *   gpio_core 的 Delay_ms()（纯忙等，不依赖任何中断）
+ *   delay.h 的 delay_ms()（纯忙等，不依赖任何中断）
  * 示例 : SYS_TICK_Init();
  *        SYS_TICK_Delay_ms(500);        // 精确延时半秒 */
 void     SYS_TICK_Delay_ms(uint32_t ms);

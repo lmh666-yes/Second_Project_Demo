@@ -1,6 +1,7 @@
 #include "xpt2046.h"
 /* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
-#include "gpio_core.h"      /* 引脚 / 电平 / Delay_ns / DWT 计时 */
+#include "gpio_core.h"      /* 引脚 / 电平 */
+#include "delay.h"          /* delay_ns / DWT 计时（延时与测时） */
 #include "sys_exti.h"       /* T_PEN 中断（可关，见 XPT2046_USE_EXTI） */
 #include "at24c02.h"        /* 校准参数掉电存储（可关，见 XPT2046_USE_EEPROM） */
 
@@ -72,9 +73,9 @@ static uint8_t xpt_clk_one_bit(void)
     uint8_t b;
 
     XPT_CLK_LOW();
-    Delay_ns(XPT2046_CLK_DELAY_NS);
+    delay_ns(XPT2046_CLK_DELAY_NS);
     XPT_CLK_HIGH();
-    Delay_ns(XPT2046_CLK_DELAY_NS);
+    delay_ns(XPT2046_CLK_DELAY_NS);
 
     b = (uint8_t)XPT_DOUT_READ();
     return b;
@@ -97,9 +98,9 @@ static uint16_t xpt_transfer(uint8_t cmd)
             XPT_DIN_LOW();
         }
         cmd = (uint8_t)(cmd << 1);
-        Delay_ns(XPT2046_CLK_DELAY_NS);
+        delay_ns(XPT2046_CLK_DELAY_NS);
         XPT_CLK_HIGH();
-        Delay_ns(XPT2046_CLK_DELAY_NS);
+        delay_ns(XPT2046_CLK_DELAY_NS);
     }
 
     /* ② 占位位：此刻 ADC 还在转换，这一位没有意义 —— 必须丢掉 */
@@ -111,7 +112,7 @@ static uint16_t xpt_transfer(uint8_t cmd)
     }
 
     XPT_CS_HIGH();
-    Delay_ns(XPT2046_CLK_DELAY_NS);
+    delay_ns(XPT2046_CLK_DELAY_NS);
 
     return (uint16_t)(val & 0x0FFFU);
 }
@@ -207,7 +208,7 @@ uint8_t XPT2046_Init(void)
     /* 没校准过就先给一组典型值顶着（否则读出来的坐标全是 0） */
     if (xpt_cal_valid == 0U) XPT2046_CalibDefault();
 
-    Delay_us(10);       /* 等 XPT2046 上电稳定 */
+    delay_us(10);       /* 等 XPT2046 上电稳定 */
 
     return 0U;
 }

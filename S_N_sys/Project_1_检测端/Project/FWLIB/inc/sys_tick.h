@@ -13,8 +13,8 @@
  *  标准库关键词 : 无 —— 直接操作内核寄存器（SysTick->LOAD/VAL/CTRL,
  *                 CMSIS 头 core_cm4.h 定义;标准外设库不提供 SysTick API）
  *
- *  与 gpio_core 的 Delay_ms 区别 :
- *      gpio_core 的 Delay_ms —— 软件空循环，主频/优化一变就不准；
+ *  与 delay.h 的 delay_ms 区别 :
+ *      delay.h 的 delay_ms —— 软件空循环，主频/优化一变就不准；
  *      本模块的 SYS_TICK_*  —— 硬件计数，改主频后重新 Init 依旧精准。
  *      => 对时间有要求的场合（计时、节拍、超时判断）用本模块。
  *
@@ -68,7 +68,7 @@ void     SYS_TICK_Init    (void);
  * 说明 : 延时期间 CPU 空转等待（阻塞式）
  * ⚠ 不要在中断/回调里使用本函数：它依赖 SysTick 中断"继续累加
  *   时基"，优先级配置不当时会在 ISR 里永久死等；中断内延时请用
- *   gpio_core 的 Delay_ms()（纯忙等，不依赖任何中断）
+ *   delay.h 的 delay_ms()（纯忙等，不依赖任何中断）
  * 示例 : SYS_TICK_Init();
  *        SYS_TICK_Delay_ms(500);        // 精确延时半秒 */
 void     SYS_TICK_Delay_ms(uint32_t ms);

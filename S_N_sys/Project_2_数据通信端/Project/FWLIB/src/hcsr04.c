@@ -1,4 +1,5 @@
 #include "hcsr04.h"
+#include "delay.h"      /* 延时（delay_us 等）独立文件 */
 
 /* ================================================================
  *  hcsr04.c —— HC-SR04 超声波测距实现
@@ -10,7 +11,7 @@
  *   TRIG 脚     GPIO（运行时指定）    自己接排针        HCSR04_Init 参数
  *   ECHO 脚     GPIO（运行时指定）    自己接排针        HCSR04_Init 参数
  *   计时机        DWT CYCCNT           内核自带          gpio_core.h
- *   微秒延时     Delay_us()            ——                gpio_core.h
+ *   微秒延时     delay_us()            ——                delay.h
  *  ---------------------------------------------------------------
  *  ⚠ ECHO 是 5V 电平，STM32F407 的 FT 脚可直接接；要保险就分压
  *
@@ -90,7 +91,7 @@ uint8_t HCSR04_ReadUs(uint32_t *us)
 
     /* ① 触发：给一个 >=10us 的高脉冲，模块收到就发 8 个 40kHz 脉冲出去 */
     GPIO_OutSet(s_trig_port, s_trig_pin);
-    Delay_us(HCSR04_TRIG_PULSE_US);
+    delay_us(HCSR04_TRIG_PULSE_US);
     GPIO_OutReset(s_trig_port, s_trig_pin);
 
     /* ② 等 ECHO 变高 —— 说明超声已发出 */

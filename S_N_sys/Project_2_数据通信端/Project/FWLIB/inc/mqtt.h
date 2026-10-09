@@ -37,7 +37,7 @@
  *              }
  *          }
  *          MQTT_KeepAliveService();                  // 主循环里调，自动发心跳
- *          Delay_ms(20);
+ *          delay_ms(20);
  *      }
  *
  *  【和云平台对接】
