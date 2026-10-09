@@ -6,6 +6,8 @@
 Objects/
 Listings/
 *.uvguix.*
+# uvoptx 只存调试器/断点/窗口布局等本机个人设置，不含程序内容，但不入库更干净
+*.uvoptx
 *.Administrator
 *.dep
 *.lnp
@@ -35,9 +37,10 @@ S_N_sys/Project_2_数据通信端/Project/0001_标准模板库/
 S_N_sys/QT_project/SerialMonitor/.git_bak/
 
 # ---- 本地工具收纳区（整体不入库）----
+# 注：仓库巡检脚本（project_check.ps1 / .bat）、速查工具等都在这里，随目录一起忽略
 本地工具/
 
-# ---- 本地工具脚本（个人使用，不入库）----
+# ---- 本地工具脚本（若曾放在根目录，历史规则保留，不入库）----
 project_check.ps1
 project_check.bat
 push_to_github.ps1
@@ -47,3 +50,7 @@ search_api.bat
 标准库函数速查.html
 data_std_lib.js
 check_std_lib_data.py
+
+# ---- 个人参考代码（不入库）----
+# 放在项目根目录的孤立 .c 示例（如 RTC 引导参考），不属于任一 Keil 工程
+/main.c

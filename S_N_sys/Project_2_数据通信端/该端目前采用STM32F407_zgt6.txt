@@ -1,0 +1,195 @@
+# 板2 数据通信端（边缘网关）板卡资源说明
+
+> 板卡型号：**普中-天马 F407 开发板**（标注 MCU：STM32F407ZGT6）
+> 依据资料：`双版资源\ZGT6.pdf`（单页整板原理图，842×595pt 矢量图）、
+> `Project_2_数据通信端\Project\普中-天马 F407开发板原理图.pdf`、
+> `双版资源\ZET6.jpg`（◀ 注：这是板1 的照片，不是板2）
+> 整理时间：2026-10-09
+> 状态：**外设清单已确认**；**逐引脚接线表待核对**（见第 4 节）
+
+---
+
+## 1. 主控与工程配置
+
+| 项目 | 值 |
+|---|---|
+| MCU | STM32F407**ZGT6**（LQFP144，**1MB** Flash / 192KB SRAM + 64KB CCM） |
+| Keil 工程 | `S_N_sys\Project_2_数据通信端\Project\000标准模板库.uvprojx` |
+| Keil Device | STM32F407ZG |
+| 编译宏 | `USE_STDPERIPH_DRIVER, STM32F40_41xxx, HSE_VALUE=8000000` |
+| 外部晶振 | 8 MHz（HSE） |
+| 库 | ST 标准外设库（SPL）+ FreeRTOS（已挂入工程） |
+| 编译状态 | **0 Error / 0 Warning**（FreeRTOS 内核 7 个文件全部编译进去） |
+
+> ⚠ 与板1 的唯一实质区别：板2 是 **1MB Flash**，可擦写 `FLASH_Sector_0 ~ 11`。
+> 参数区常放最后一个扇区 `FLASH_Sector_11`（如 `0x080E0000`）。
+> 库函数层面两板 100% 通用，代码可互换（只需改 Keil Device 与 Flash 扇区号）。
+
+---
+
+## 2. 板载外设清单（据原理图，已确认）
+
+### 2.1 通信类
+
+| 模块 | 芯片/接口 | 备注 |
+|---|---|---|
+| USB 转串口 | **CH340G** + **P9 排针**（CRX / CTX / PA11 / PA12 / D- / D+） | 板载 CH340G；P9 是其引出排针 |
+| ESP8266 / WiFi 模块接口 | 独立排针 | 实拍可见 WiFi 模块座 |
+| RS485 | 收发器 + **P6 排针**（含 485R / 485T 选择、PB10 / PB11） | 网表含 `485R` / `485T` |
+| CAN | 收发器 + **P8 排针**（B / A） | 网表含 `CAN_TX` / `CAN_RX` |
+| **以太网** | PHY + RJ45（**COMM1**） | 工程含 `sys_eth.c` + `stm32f4x7_eth.c` |
+| 无线模块接口 | **P11 排针**（含 TXD3 / RXD3 / PB10 / PB11） | ★ 可接 LoRa E22 |
+| USB HOST / Device | USB 座（USB1 / USB2） | — |
+| SD 卡 | Micro SD 卡座（TF1） | SDIO |
+| 触摸屏控制器 | XPT2046（SPI） | 与 LCD 同用 |
+
+### 2.2 显示与人机交互
+
+| 模块 | 型号 | 接口 | 备注 |
+|---|---|---|---|
+| **TFT LCD 接口** | 大号 2×22 排（图中 y≈130–160 的黄色排针） | FSMC 并口 | 信号含 `VCC / GND / BL / RST / CS / RS / WR / RD / D0~D17 / TS / MISO / MOSI / SCK / T_PEN / T_CS / T_MISO / T_MOSI / T_SCK` |
+| **RGB 点阵** | 8×8 或 16×16 RGB 点阵 | 多路 GPIO 驱动 | 图中右中部大块红蓝走线区 |
+| 用户按键 | **KEY0 / KEY1 / KEY2 / KEY3** + KEY_UP | GPIO | 图中右下方 4+1 个按键 |
+| 复位按键 | RST | — | 图中 `PARST01/02` |
+| 有源蜂鸣器 | BEEP | GPIO | 图中 `BEEP`（Q2 驱动） |
+| 红外接收头 | IR1 | GPIO/EXTI | 图中 `PAIR101/102/103` |
+| 4 位拨码/跳线 | LS1 | — | 图中 `LS1` |
+| 电源 | DC 5V 输入（DC_IN）+ 电源开关 + 稳压 | — | 图中左下角 |
+
+### 2.3 板载传感器
+
+| 模块 | 型号 | 接口 | 备注 |
+|---|---|---|---|
+| 温湿度 | **DHT11** | 单总线 | 图中 `DAT`（P10 附近） |
+| 六轴姿态 | **MPU6050** | I2C | 图中 `P10` 排针含 `SCL / SDA`，标 `MPU6050` |
+
+### 2.4 存储与其它
+
+| 模块 | 备注 |
+|---|---|
+| I2C EEPROM | 图中 `DAT` 附近的 I2C 器件（AT24C02 类） |
+| SPI Flash | 工程含 `w25qxx.c/.h`（W25Q128 类） |
+| NTC 热敏 / PT100 | 工程含 `ntc_pt100.c/.h`，图中 `NTC` 接线柱 |
+| ADC 输入 | 图中 `ADI` / `ADC` 接线柱、`PT` |
+| DAC 输出 | 图中 `DAC` 接线柱（P12 附近） |
+| 电机驱动 | 工程含 `tb6612.c/.h`、`uln2003.c/.h` |
+| 测距 | 工程含 `vl53l0x.c/.h`、`hcsr04.c/.h` |
+| 编码器 | 工程含 `sys_encoder.c/.h` |
+| 5V / GND 排针 | 图中 P3（`5V / GND / MCLK / LRCK / SCK / SDI / SDO / SCL / SDA`） |
+| 音频 | I2S 相关引脚（MCLK / LRCK / SCK / SDI / SDO） |
+| 尺寸 | 172.09 × 124.08 mm（PCB 外形 180 × 132 mm） |
+
+---
+
+## 3. 与目标项目的匹配结论
+
+板2 作为**边缘网关**，需要：LoRa 接收 + 串口转发 Qt + ESP8266/MQTT 上云 + 看门狗。
+
+| 项目需要 | 板2 是否具备 | 结论 |
+|---|---|---|
+| LoRa E22 接收（UART） | 有 **P11 排针**（TXD3/RXD3/PB10/PB11）和多个 UART 引出；工程已有 `sys_usart`（DMA+空闲中断） | ✅ 可接 |
+| **ESP8266 WiFi** | 有 WiFi 模块接口；工程**已有 `esp8266.c/.h`（20 个 API）** | ✅ 已有 |
+| **MQTT 客户端** | 工程**已有 `mqtt.c/.h`（14 个 API）** | ✅ 已有 |
+| 串口转发 Qt 上位机 | 板载 CH340G + P9；工程已有 `sys_usart` | ✅ 已有 |
+| 串口帧协议 | 工程**已有 `sys_frame.c/.h`**；CRC16-MODBUS 在 `modbus.c` | ✅ 已有 |
+| 看门狗心跳 | 工程**已有 `sys_wdg.c/.h`（含心跳版）** | ✅ 已有 |
+| 本地显示/调试 | LCD 接口、RGB 点阵、EEPROM | ✅ 可用 |
+
+> **结论：板2 作为网关的资源完全足够，且 ESP8266 / MQTT / 帧协议 / 看门狗四个关键驱动工程里都已经有了** ——
+> 板2 侧的主要工作是**写网关任务逻辑**（接收解析 → 双路转发），而不是从零写驱动。
+>
+> ⚠ **唯一硬缺口：LoRa E22 驱动两端都没有**（板1、板2 都要新增 `lora_e22.c/.h`）。
+
+---
+
+## 4. 引脚接线表（待核对后定稿）
+
+> ⚠ **本节需你核对实物后填写。**
+> `ZGT6.pdf` 里连接器的**引脚名是以矢量图形绘制的（不是文本对象）**，
+> 我用 PDF 文本层只能取到元件位号（如 `P1`、`P2`、`CN1`、`PAU10105`），
+> **取不到"第几脚 = 哪个 GPIO"**，只能人工对照原理图/实物确认。
+
+### 4.1 从原理图已能确认的排针（供你对照）
+
+| 排针 | 作用 | 已确认信号 |
+|---|---|---|
+| **P9** | CH340G 串口引出 | CRX / CTX / PA11 / PA12 / D- / D+ |
+| **P11** | 无线/串口模块 | TXD3 / RXD3 / PB10 / PB11 |
+| **P8** | CAN | B / A |
+| **P6** | RS485 | 485R / 485T / PA3 / PA2 / PB10 / PB11 |
+| **P10** | 传感器（MPU6050 / DHT11 区） | SCL / SDA / DAT / 3.3V / GND |
+| **P3** | 电源/音频 | 5V / GND / MCLK / LRCK / SCK / SDI / SDO / SCL / SDA |
+| **CN1** | TFT LCD（大排） | VCC / GND / BL / RST / CS / RS / WR / RD / D0~D17 / TS / T_PEN / T_CS / T_MISO / T_MOSI / T_SCK |
+| **CN5** | 电源/扩展 | DAT / 5V / E5V |
+| **P12** | ADC / DAC / 电容触摸 | ADI / DAC / PT / ADC / IN / RAD / NTC |
+| **J10** | LED 指示灯组 | LED1 ~ LED7 / 3V3 / BTO / GND / BOOT |
+| **P1 / P2** | GPIO 扩展排针 | 引出 PD / PE / PF / PG / PB / PC / PA 各端口（逐脚对照见下） |
+
+### 4.2 待填表（按项目需要）
+
+| 功能 | 外设 | 引脚 | 备注 |
+|---|---|---|---|
+| 调试串口 | USART1 | 待定 | 115200；板载 CH340G |
+| **LoRa E22 收发** | USART? | 待定 | ★ 优先用 P11（TXD3/RXD3）；与模块 TXD/RXD **交叉**接 |
+| **ESP8266 通信** | USART? | 待定 | ★ 与 ESP8266 的 TXD/RXD **交叉**接；注意 3.3V 独立供电 |
+| Qt 上位机串口 | USART2 | 待定 | 转发帧给 Qt |
+| 帧协议解析 | — | — | 用 `sys_frame` + `modbus` 的 CRC16 |
+| 喂狗 | IWDG | — | 用 `sys_wdg` 心跳版 |
+| （可选）本地指示 | LED | 板载 | 图中 J10 的 LED1~LED7 |
+
+### 4.3 串口分配建议（三个串口同时用）
+
+板2 需要**同时**跑：LoRa（收）、ESP8266（AT/MQTT）、Qt 上位机（转发），
+建议按下列原则分配（具体引脚待你在库里核对后填）：
+
+| 用途 | 建议外设 | 理由 |
+|---|---|---|
+| 调试打印 | USART1（PA9/PA10） | 板载 CH340G 固定在此，不占用其他资源 |
+| LoRa E22 | USART2 或 USART3 | 二者都在 APB1，可用 DMA |
+| ESP8266 | USART3 或 UART4/5 | 与 LoRa 错开；ESP8266 只跑 AT 指令，波特率 115200 |
+| Qt 上位机 | UART4 / UART5 或 USART6 | 数据量大时可用 DMA 发送 |
+
+> ⚠ 注意：**每个 USART 的 DMA 数据流/通道是固定映射的**，不能随便选。
+> 查速查工具的「DMA 请求映射表」：
+> `USART1_RX=DMA2_Stream5/通道4`、`USART2_RX=DMA1_Stream5/通道4`、
+> `USART3_RX=DMA1_Stream1/通道4`、`USART6_RX=DMA2_Stream1/通道5`。
+
+---
+
+## 5. 板上可直接复用的工程驱动（FWLIB）
+
+板2 的 FWLIB 是两板中最全的（43 个驱动），与网关直接相关的高亮如下：
+
+| 驱动 | 用途 | 与本项目关系 |
+|---|---|---|
+| **`esp8266.c/.h`** | WiFi AT 指令驱动（20 个 API：Init/TestAT/SetMode/JoinAP/ConnectTCP/SendData…） | ★★ 网关上云核心，**已有** |
+| **`mqtt.c/.h`** | MQTT 客户端（14 个 API：Connect/Publish/PublishInt/PublishFloat/PubllishStr/Ping/KeepAliveService…） | ★★ 巴法云上报，**已有** |
+| `sys_usart.c/.h` | 串口（DMA + 空闲中断） | ★ LoRa / ESP8266 / Qt 三路串口 |
+| `sys_frame.c/.h` | 串口帧协议 | ★ 20 字节帧收发 |
+| **`modbus.c/.h`** | 含 **CRC16-MODBUS** 实现 | ★★ 协议校验（三端复用同一实现） |
+| `sys_wdg.c/.h` | 看门狗（含心跳版） | ★ MonitorTask 喂狗 |
+| `sys_i2c.c/.h` | 通用 I2C HAL | 传感器/EEPROM |
+| `sys_adc.c/.h` / `sys_dac.c/.h` | ADC / DAC | 模拟量 |
+| `sys_can.c/.h` | CAN | 板载 CAN 接口 |
+| `sys_eth.c/.h` | 以太网 | 备用上行通道 |
+| `sys_rtc.c/.h` | RTC | 时间戳 |
+| `sys_flash.c/.h` / `w25qxx.c/.h` / `at24c02.c/.h` | 片内 Flash / SPI Flash / EEPROM | 参数与日志保存 |
+| `sys_filter.c/.h` / `kalman.c/.h` | 滑动滤波 / 卡尔曼 | ★ 数据滤波（ProcessTask） |
+| `sys_softimer.c/.h` | 软件定时器 | 周期任务 |
+| `sys_str.c/.h` | 字符串处理 | AT 指令拼接 |
+| `sys_fault.c/.h` | 硬件异常捕获 | 可靠性 |
+
+---
+
+## 6. 待办
+
+- [ ] 按实物/原理图补全第 4 节引脚表（尤其是 LoRa / ESP8266 / Qt 三路串口）
+- [ ] 新建驱动：`lora_e22.c/.h`（★ 两板共用，板1 也要）
+- [ ] 写网关任务：CommRxTask（收 LoRa → 信号量）→ ForwardTask（双路转发）
+- [ ] ESP8266 + MQTT 接巴法云联调（先用串口助手手动走通 AT 指令）
+- [ ] LoRa 点对点收发自测（板1 ↔ 板2）
+
+---
+
+> 资料来源：外设清单由 `ZGT6.pdf` 原理图（矢量图 + 文本层位号）与实际工程 FWLIB 交叉确认；
+> 逐引脚对应关系因原理图中连接器引脚名为矢量图形，需人工核对后填写。
