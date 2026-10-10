@@ -1,56 +1,42 @@
 #include "vl53l0x.h"
 #include "gpio_core.h"      /* 引脚/位 */
-#include "delay.h"          /* DWT_GetUs / DWT_ElapsedUs —— 超时计时，免初始化 */
+#include "delay.h"          /* DWT_GetUs / DWT_ElapsedUs，超时计时，免初始化 */
 
-/* ================================================================
- *  vl53l0x.c —— VL53L0X 激光测距实现（ToF / SPAD 阵列）
- * ================================================================
- *  硬件映射表
- *  ---------------------------------------------------------------
- *   功能        资源            板上位置              改这里
- *  ---------------------------------------------------------------
- *   I2C 总线    I2C1            PB8=SCL / PB9=SDA     区块1 VL53L0X_I2C_ID
- *   器件地址    0x29（固定）     ——                    区块1 VL53L0X_I2C_ADDR
- *   计时机        DWT CYCCNT      内核自带              gpio_core.h
- *  ---------------------------------------------------------------
- *  ⚠ 板载 I2C1 上已挂 24C02(0x50) 与 MPU6050(0x68)，0x29 不冲突 ✓
+/*
+ * vl53l0x.c：VL53L0X 激光测距（ToF / SPAD 阵列）
  *
- *  【寄存器地址是 8 位，不是 16 位】
- *  VL53L0X 的 I2C 时序就是老式"写 1 字节寄存器号，再读/写数据"，
- *  所以 sys_i2c 现成的 WriteByte / ReadBytes 直接能用，
- *  不需要为它改总线层。16 位/32 位"寄存器"只是**连续写多个数据字节**：
- *      writeReg16Bit(reg, v)  ==  往 reg 写 {v>>8, v&0xFF}
- *      writeReg32Bit(reg, v)  ==  往 reg 写 {v>>24, v>>16, v>>8, v}
+ * 硬件映射表
+ * ---------------------------------------------------------------
+ *  功能        资源          引脚/位置            配置宏
+ * ---------------------------------------------------------------
+ *  I2C 总线    I2C1          PB8=SCL / PB9=SDA    VL53L0X_I2C_ID
+ *  器件地址    0x29（固定）  --                   VL53L0X_I2C_ADDR
+ *  计时机      DWT CYCCNT    内核自带             gpio_core.h
+ * ---------------------------------------------------------------
+ * I2C1 上已挂 24C02(0x50) 与 MPU6050(0x68)，与 0x29 不冲突
  *
- *  【片内还有"寄存器页"这回事】
- *  0xFF 本身是个寄存器，写不同的值会切换到不同的页；
- *  同一个寄存器号（如 0x30）在不同页下含义完全不同。
- *  看 ST 的调参表会觉得"怎么老在写 0xFF" —— 那是在翻页，
- *  **顺序绝对不能重排**，本文件照抄官方顺序，不要"优化"。
+ * 寄存器地址为 8 位，I2C 时序先写 1 字节寄存器号再读写数据，
+ * 16 位与 32 位寄存器为连续写多个数据字节，高位在前。
  *
- *  【两条最容易漏的规矩】
- *  ① stop_variable：初始化时从 0x91 读出来的一个魔数，
- *     **每次启动测量前必须写回 0x91**，漏了就是读回 8190/8191 不读数。
- *  ② 每次读完必须写 SYSTEM_INTERRUPT_CLEAR(0x0B)=0x01 清中断，
- *     不然下一次一上来就"结果就绪"，你会一直读到同一条旧数据。
+ * 0xFF 是寄存器页选择寄存器，同一寄存器号在不同页下含义不同，
+ * 寄存器表与初始化流程必须按官方顺序执行，不能重排。
  *
- *  【代码出处】
- *  寄存器表与初始化流程改写自 ST 官方 API（STSW-IMG005）与
- *  Pololu vl53l0x-arduino 的移植，寄存器名与顺序保持一致，
- *  方便对着 UM2039 手册和官方 API 源码逐条核对。
- * ================================================================ */
+ * stop_variable：初始化时从 0x91 读出的值，每次启动测量前必须写回 0x91，
+ * 漏写会读回 8190/8191 固定值。
+ * 每次读完必须写 SYSTEM_INTERRUPT_CLEAR(0x0B)=0x01 清中断，
+ * 否则下一次结果立即就绪，读到的是同一条旧数据。
+ *
+ * 寄存器表与初始化流程改写自 ST 官方 API（STSW-IMG005）与 Pololu vl53l0x-arduino，
+ * 寄存器名与顺序与 UM2039 手册、官方 API 一致。
+ */
 
-/* ================================================================
- *                      编译期护栏（配错立刻报错）
- * ================================================================ */
+/* 编译期检查：地址、超时、预算配置越界时编译报错 */
 typedef char vl53l0x_addr_check[((VL53L0X_I2C_ADDR >= 0x08U) && (VL53L0X_I2C_ADDR <= 0x77U)) ? 1 : -1];
 typedef char vl53l0x_to_check[(VL53L0X_TIMEOUT_MS >= 20U) ? 1 : -1];
 typedef char vl53l0x_budget_check[(VL53L0X_BUDGET_DEFAULT_US >= 20000UL) ? 1 : -1];
 
 
-/* ================================================================
- *    区块 1（续）：寄存器地址表 —— 名字与官方 vl53l0x_device.h 一致
- * ================================================================ */
+/* 寄存器地址表，名字与官方 vl53l0x_device.h 一致 */
 #define VL_SYSRANGE_START                       0x00U
 #define VL_SYSTEM_SEQUENCE_CONFIG               0x01U
 #define VL_SYSTEM_INTERMEASUREMENT_PERIOD       0x04U
@@ -83,16 +69,14 @@ typedef char vl53l0x_budget_check[(VL53L0X_BUDGET_DEFAULT_US >= 20000UL) ? 1 : -
 #define VL_OSC_CALIBRATE_VAL                    0xF8U
 #define VL_VHV_CONFIG_PAD_SCL_SDA__EXTSUP_HV    0x89U
 
-/* 调参表里有两个 0x30 — 它们在不同"页"下含义不同，别合并 */
+/* 调参表里 0x30 出现两次（VL_ALGO_PHASECAL_LIM 与 CONFIG_TIMEOUT），分属不同页，不能合并 */
 #define VL_POWER_MANAGEMENT_GO1_POWER_FORCE     0x80U
 
 
-/* ================================================================
- *                          模块内部状态
- * ================================================================ */
+/* 模块内部状态 */
 static uint8_t  s_addr      = VL53L0X_I2C_ADDR;     /* 当前 7 位地址 */
 static uint8_t  s_inited    = 0U;                   /* 1 = 已经 Init 过 */
-static uint8_t  s_stop_var  = 0x00U;                /* 0x91 里读出来的魔数 */
+static uint8_t  s_stop_var  = 0x00U;                /* 0x91 里读出的值 */
 static uint16_t s_timeout_ms = VL53L0X_TIMEOUT_MS;
 static uint32_t s_t0        = 0UL;                  /* 超时起点（DWT 微秒） */
 static uint8_t  s_did_timeout = 0U;
@@ -102,7 +86,7 @@ static uint32_t s_budget_us = VL53L0X_BUDGET_DEFAULT_US;
 #define VL_CHECK_TIMEOUT()   ((s_timeout_ms != 0U) && \
                               (DWT_ElapsedUs(s_t0) > ((uint32_t)s_timeout_ms * 1000UL)))
 
-/* 序列配置位（SYSTEM_SEQUENCE_CONFIG 的每一位 = 一个测量子步骤开不开） */
+/* 序列配置位：SYSTEM_SEQUENCE_CONFIG 每一位对应一个测量子步骤 */
 typedef struct {
     uint8_t tcc;            /* Target Centre Check 目标中心检查 */
     uint8_t dss;            /* Dynamic Spad Selection 动态 SPAD 选择 */
@@ -129,9 +113,7 @@ typedef struct {
 } VlRegVal_t;
 
 
-/* ================================================================
- *                      区块 2（续）：I2C 收发包装
- * ================================================================ */
+/* I2C 收发包装 */
 
 static void vl_write(uint8_t reg, uint8_t val)
 {
@@ -183,11 +165,9 @@ static void vl_read_multi(uint8_t reg, uint8_t *dst, uint8_t n)
 }
 
 
-/* ================================================================
- *                      区块 2（续）：时间换算
- * ================================================================ */
+/* 时间换算 */
 
-/* 宏周期（ns）= 2304 × VCSEL周期 × 1655ps ÷ 1000，照官方公式 */
+/* 宏周期（ns）= 2304 × VCSEL周期 × 1655ps ÷ 1000 */
 #define VL_MACRO_PERIOD_NS(pclks) \
     ((((uint32_t)2304UL * (uint32_t)(pclks) * 1655UL) + 500UL) / 1000UL)
 
@@ -195,7 +175,7 @@ static void vl_read_multi(uint8_t reg, uint8_t *dst, uint8_t n)
 #define VL_DECODE_VCSEL(reg)     (((reg) + 1U) << 1)
 #define VL_ENCODE_VCSEL(pclks)   ((((pclks) >> 1) - 1U))
 
-/* 超时值寄存器格式是 "(低字节 × 2^高字节) + 1"，不是普通整数 */
+/* 超时寄存器格式为 (低字节 × 2^高字节) + 1，不是普通整数 */
 static uint16_t vl_decode_timeout(uint16_t reg_val)
 {
     return (uint16_t)((((uint32_t)(reg_val & 0x00FFU))
@@ -232,10 +212,8 @@ static uint32_t vl_us_to_mclks(uint32_t us, uint8_t vcsel_pclks)
 }
 
 
-/* ================================================================
- *                      区块 2（续）：内部原语
- * ================================================================ */
-static uint8_t  vl_get_vcsel_pulse_period(uint8_t type);    /* 前置声明 */
+/* 内部原语 */
+static uint8_t  vl_get_vcsel_pulse_period(uint8_t type);
 static uint8_t  vl_get_spad_info(uint8_t *count, uint8_t *type_is_aperture);
 static uint8_t  vl_perform_single_ref_cal(uint8_t vhv_init_byte);
 static void     vl_get_seq_enables(VlSeqEnable_t *e);
@@ -268,7 +246,7 @@ static void vl_get_seq_timeouts(const VlSeqEnable_t *e, VlSeqTimeout_t *t)
     t->final_range_mclks = vl_decode_timeout(vl_read16(VL_FINAL_RANGE_CONFIG_TIMEOUT_MACROP_HI));
 
     if (e->pre_range != 0U) {
-        /* 寄存器里存的是"预量程 + 最终量程"的和，要减掉预量程那段 */
+        /* 寄存器存的是预量程加最终量程的和，要减掉预量程段 */
         t->final_range_mclks = (uint16_t)(t->final_range_mclks - t->pre_range_mclks);
     }
 
@@ -276,7 +254,7 @@ static void vl_get_seq_timeouts(const VlSeqEnable_t *e, VlSeqTimeout_t *t)
                                        (uint8_t)t->final_range_vcsel_period_pclks);
 }
 
-/* 取参考 SPAD 的个数和类型（做成"动态选择"用） */
+/* 取参考 SPAD 的个数与类型，供动态 SPAD 选择使用 */
 static uint8_t vl_get_spad_info(uint8_t *count, uint8_t *type_is_aperture)
 {
     uint8_t tmp;
@@ -319,7 +297,7 @@ static uint8_t vl_get_spad_info(uint8_t *count, uint8_t *type_is_aperture)
     return VL53L0X_OK;
 }
 
-/* 单次参考校准：vhv_init_byte 传 0x40 = VHV 校准，传 0x00 = 相位校准 */
+/* 单次参考校准：vhv_init_byte = 0x40 为 VHV 校准，0x00 为相位校准 */
 static uint8_t vl_perform_single_ref_cal(uint8_t vhv_init_byte)
 {
     vl_write(VL_SYSRANGE_START, (uint8_t)(0x01U | vhv_init_byte));
@@ -339,9 +317,7 @@ static uint8_t vl_perform_single_ref_cal(uint8_t vhv_init_byte)
 }
 
 
-/* ================================================================
- *                    区块 2：基础功能
- * ================================================================ */
+/* 基础功能 */
 
 uint8_t VL53L0X_GetModelID(void)
 {
@@ -367,7 +343,7 @@ uint8_t VL53L0X_TimeoutOccurred(void)
 
 uint8_t VL53L0X_Init(void)
 {
-    uint8_t  io_2v8 = 1U;               /* 默认按 2V8 供电模式配（绝大多数模块） */
+    uint8_t  io_2v8 = 1U;               /* 1 = 2V8 供电模式 */
     uint8_t  spad_count = 0U;
     uint8_t  spad_is_aperture = 0U;
     uint8_t  ref_spad_map[6];
@@ -379,12 +355,12 @@ uint8_t VL53L0X_Init(void)
     s_addr     = VL53L0X_I2C_ADDR;
     s_timeout_ms = VL53L0X_TIMEOUT_MS;
 
-    /* ---------- ① 先认人：不是 0xEE 就别往下跑了 ---------- */
+    /* 校验器件型号，非 0xEE 直接返回 */
     if (VL53L0X_GetModelID() != (uint8_t)VL53L0X_MODEL_ID) {
         return VL53L0X_ERR_NO_DEVICE;
     }
 
-    /* ---------- ② DataInit ---------- */
+    /* DataInit */
     if (io_2v8 != 0U) {
         vl_write(VL_VHV_CONFIG_PAD_SCL_SDA__EXTSUP_HV,
                  (uint8_t)(vl_read(VL_VHV_CONFIG_PAD_SCL_SDA__EXTSUP_HV) | 0x01U));
@@ -395,12 +371,12 @@ uint8_t VL53L0X_Init(void)
     vl_write(0x80, 0x01);
     vl_write(0xFF, 0x01);
     vl_write(0x00, 0x00);
-    s_stop_var = vl_read(0x91);         /* ★ 魔数，以后每次测量前要写回 */
+    s_stop_var = vl_read(0x91);         /* 每次启动测量前要写回 0x91 */
     vl_write(0x00, 0x01);
     vl_write(0xFF, 0x00);
     vl_write(0x80, 0x00);
 
-    /* 放开 MSRC(bit1) 和 预量程信号率(bit4) 两道限幅，不然远处一律报"信号弱" */
+    /* 使能 MSRC(bit1) 与预量程信号率(bit4) 限幅检查 */
     vl_write(VL_MSRC_CONFIG_CONTROL,
              (uint8_t)(vl_read(VL_MSRC_CONFIG_CONTROL) | 0x12U));
 
@@ -409,13 +385,13 @@ uint8_t VL53L0X_Init(void)
 
     vl_write(VL_SYSTEM_SEQUENCE_CONFIG, 0xFF);
 
-    /* ---------- ③ StaticInit ---------- */
+    /* StaticInit */
     r = vl_get_spad_info(&spad_count, &spad_is_aperture);
     if (r != VL53L0X_OK) return r;
 
     vl_read_multi(VL_GLOBAL_CONFIG_SPAD_ENABLES_REF_0, ref_spad_map, 6U);
 
-    /* -- 配参考 SPAD -- */
+    /* 配置参考 SPAD */
     vl_write(0xFF, 0x01);
     vl_write(VL_DYNAMIC_SPAD_REF_EN_START_OFFSET, 0x00);
     vl_write(VL_DYNAMIC_SPAD_NUM_REQUESTED_REF_SPAD, 0x2C);
@@ -436,7 +412,7 @@ uint8_t VL53L0X_Init(void)
     }
     vl_write_multi(VL_GLOBAL_CONFIG_SPAD_ENABLES_REF_0, ref_spad_map, 6U);
 
-    /* -- 灌 ST 官方调参表（顺序不能动！0xFF 是在翻页） -- */
+    /* 写入官方调参表，顺序不能改，0xFF 是翻页寄存器 */
     {
         static const VlRegVal_t tuning[] = {
             {0xFF, 0x01}, {0x00, 0x00}, {0xFF, 0x00}, {0x09, 0x00},
@@ -466,7 +442,7 @@ uint8_t VL53L0X_Init(void)
         }
     }
 
-    /* -- 中断改成"测量完成就拉高 GPIO"（本模块用不到 GPIO，但官方流程要设） -- */
+    /* 中断配置为测量完成拉高 GPIO，本模块不用 GPIO，按官方流程设置 */
     vl_write(VL_SYSTEM_INTERRUPT_CONFIG_GPIO, 0x04);
     vl_write(VL_GPIO_HV_MUX_ACTIVE_HIGH,
              (uint8_t)(vl_read(VL_GPIO_HV_MUX_ACTIVE_HIGH) & 0xEFU));   /* 低有效 */
@@ -474,12 +450,12 @@ uint8_t VL53L0X_Init(void)
 
     s_budget_us = VL53L0X_GetTimingBudget();
 
-    /* 默认不要 MSRC 和 TCC 两段（省时间，精度损失可忽略） */
+    /* 默认关闭 MSRC 与 TCC 两段 */
     vl_write(VL_SYSTEM_SEQUENCE_CONFIG, 0xE8);
 
     (void)VL53L0X_SetTimingBudget(s_budget_us);
 
-    /* -- 参考校准：先 VHV(0x40) 再相位(0x00) -- */
+    /* 参考校准：先 VHV(0x40)，再相位(0x00) */
     vl_write(VL_SYSTEM_SEQUENCE_CONFIG, 0x01);
     r = vl_perform_single_ref_cal(0x40);
     if (r != VL53L0X_OK) return r;
@@ -494,7 +470,7 @@ uint8_t VL53L0X_Init(void)
     return VL53L0X_OK;
 }
 
-/* 启动测量前把 stop_variable 写回去 —— 少了这一步就是一直读 8190 */
+/* 启动测量前把 stop_variable 写回 0x91，漏写会一直读回 8190 */
 static void vl_load_stop_variable(void)
 {
     vl_write(0x80, 0x01);
@@ -506,7 +482,7 @@ static void vl_load_stop_variable(void)
     vl_write(0x80, 0x00);
 }
 
-/* 等"结果就绪"标志，然后把状态和距离取回来 */
+/* 等待结果就绪标志，然后取回状态与距离 */
 static uint8_t vl_wait_and_read(uint16_t *mm, uint8_t *status)
 {
     uint8_t st;
@@ -523,7 +499,7 @@ static uint8_t vl_wait_and_read(uint16_t *mm, uint8_t *status)
     st  = vl_read(VL_RESULT_RANGE_STATUS);
     *mm = vl_read16((uint8_t)(VL_RESULT_RANGE_STATUS + 10U));
 
-    /* ★ 清中断，否则下一次一进来就"就绪"，读到的还是这条旧数据 */
+    /* 清中断，否则下一次结果立即就绪，读到的是同一条旧数据 */
     vl_write(VL_SYSTEM_INTERRUPT_CLEAR, 0x01);
 
     if (status != 0) *status = (uint8_t)((st >> 3) & 0x0FU);
@@ -540,7 +516,7 @@ uint8_t VL53L0X_ReadMmEx(uint16_t *mm, uint8_t *status)
     vl_load_stop_variable();
     vl_write(VL_SYSRANGE_START, 0x01);          /* 单次测量 */
 
-    /* 等启动位自动清零 —— 清了才说明测量真的跑起来了 */
+    /* 等待启动位自动清零，清零表示测量已启动 */
     VL_START_TIMEOUT();
     while ((vl_read(VL_SYSRANGE_START) & 0x01U) != 0U) {
         if (VL_CHECK_TIMEOUT()) {
@@ -559,9 +535,7 @@ uint8_t VL53L0X_ReadMm(uint16_t *mm)
 }
 
 
-/* ================================================================
- *                        区块 3：扩展功能
- * ================================================================ */
+/* 扩展功能 */
 
 uint8_t VL53L0X_StartContinuous(uint32_t period_ms)
 {
@@ -572,13 +546,13 @@ uint8_t VL53L0X_StartContinuous(uint32_t period_ms)
     if (period_ms != 0UL) {
         uint16_t osc = vl_read16(VL_OSC_CALIBRATE_VAL);
 
-        /* 片内振荡器不准，官方要求乘这个校准系数换算成"芯片时钟周期" */
+        /* 片内振荡器有偏差，官方要求乘该系数换算成芯片时钟周期 */
         if (osc != 0U) period_ms *= (uint32_t)osc;
 
         vl_write32(VL_SYSTEM_INTERMEASUREMENT_PERIOD, period_ms);
         vl_write(VL_SYSRANGE_START, 0x04);      /* 定时模式 */
     } else {
-        vl_write(VL_SYSRANGE_START, 0x02);      /* 背靠背模式（测完立刻下一次） */
+        vl_write(VL_SYSRANGE_START, 0x02);      /* 背靠背模式：测完立即启动下一次 */
     }
     return VL53L0X_OK;
 }
@@ -609,7 +583,7 @@ uint8_t VL53L0X_SetAddress(uint8_t new_addr7)
 {
     if ((new_addr7 < 0x08U) || (new_addr7 > 0x77U)) return VL53L0X_ERR_PARAM;
 
-    /* 用**当前**地址写"新地址"寄存器，之后就用新地址通信 */
+    /* 用当前地址写入新地址寄存器，写完后改用新地址通信 */
     vl_write(VL_I2C_SLAVE_DEVICE_ADDRESS, (uint8_t)(new_addr7 & 0x7FU));
     s_addr = new_addr7;
 
@@ -635,7 +609,7 @@ uint8_t VL53L0X_SetTimingBudget(uint32_t budget_us)
     VlSeqEnable_t  enables;
     VlSeqTimeout_t timeouts;
 
-    /* 官方给的各段固定开销（微秒），照抄，别算 */
+    /* 官方各段固定开销，单位微秒 */
     const uint32_t START_OVERHEAD      = 1910UL;
     const uint32_t END_OVERHEAD        = 960UL;
     const uint32_t MSRC_OVERHEAD       = 660UL;
@@ -668,14 +642,14 @@ uint8_t VL53L0X_SetTimingBudget(uint32_t budget_us)
     if (enables.final_range != 0U) {
         used += FINAL_RANGE_OVERHEAD;
 
-        /* 预算不够分给最终量程段就报错，不硬塞 */
+        /* 预算不足以分配给最终量程段时返回参数错误 */
         if (used > budget_us) return VL53L0X_ERR_PARAM;
 
         final_us = budget_us - used;
 
         final_mclks = vl_us_to_mclks(final_us, (uint8_t)timeouts.final_range_vcsel_period_pclks);
 
-        /* 寄存器存的是"预量程 + 最终量程"的和（两段 VCSEL 周期不同，只能用 MClk 相加） */
+        /* 寄存器存的是预量程与最终量程之和，两段 VCSEL 周期不同，按 MClk 相加 */
         if (enables.pre_range != 0U) {
             final_mclks += (uint32_t)timeouts.pre_range_mclks;
         }
@@ -754,7 +728,7 @@ uint8_t VL53L0X_SetVcselPulsePeriod(uint8_t type, uint8_t period_pclks)
     vl_get_seq_timeouts(&enables, &timeouts);
 
     if (type == VL53L0X_VCSEL_PRE) {
-        /* -- 预量程段：12/14/16/18，周期越长量程越大 -- */
+        /* 预量程段可选 12/14/16/18，周期越长量程越大 */
         switch (period_pclks) {
         case 12: vl_write(VL_PRE_RANGE_CONFIG_VALID_PHASE_HIGH, 0x18); break;
         case 14: vl_write(VL_PRE_RANGE_CONFIG_VALID_PHASE_HIGH, 0x30); break;
@@ -765,7 +739,7 @@ uint8_t VL53L0X_SetVcselPulsePeriod(uint8_t type, uint8_t period_pclks)
         vl_write(VL_PRE_RANGE_CONFIG_VALID_PHASE_LOW, 0x08);
         vl_write(VL_PRE_RANGE_CONFIG_VCSEL_PERIOD, reg_val);
 
-        /* 周期变了，之前的超时值是按旧周期算的，必须重算重写 */
+        /* 周期变化后原超时值失效，需按新周期重算并写入 */
         {
             uint16_t new_pre_mclks = (uint16_t)vl_us_to_mclks(timeouts.pre_range_us, period_pclks);
             uint16_t new_msrc_mclks = (uint16_t)vl_us_to_mclks(timeouts.msrc_dss_tcc_us, period_pclks);
@@ -775,7 +749,7 @@ uint8_t VL53L0X_SetVcselPulsePeriod(uint8_t type, uint8_t period_pclks)
                      (uint8_t)((new_msrc_mclks > 256U) ? 255U : (new_msrc_mclks - 1U)));
         }
     } else if (type == VL53L0X_VCSEL_FINAL) {
-        /* -- 最终量程段：8/10/12/14 -- */
+        /* 最终量程段可选 8/10/12/14 */
         switch (period_pclks) {
         case 8:
             vl_write(VL_FINAL_RANGE_CONFIG_VALID_PHASE_HIGH, 0x10);
@@ -831,7 +805,7 @@ uint8_t VL53L0X_SetVcselPulsePeriod(uint8_t type, uint8_t period_pclks)
         return VL53L0X_ERR_PARAM;
     }
 
-    /* 改完周期必须把预算重新算一遍，再做一次相位校准，否则读数会飘 */
+    /* 周期改变后需重算预算，并重做一次相位校准，否则读数漂移 */
     (void)VL53L0X_SetTimingBudget(s_budget_us);
 
     {
@@ -845,9 +819,7 @@ uint8_t VL53L0X_SetVcselPulsePeriod(uint8_t type, uint8_t period_pclks)
 }
 
 
-/* ================================================================
- *                        错误/状态文字
- * ================================================================ */
+/* 错误与状态文字 */
 
 const char *VL53L0X_StatusStr(uint8_t status)
 {
@@ -878,5 +850,3 @@ const char *VL53L0X_ErrStr(uint8_t err)
     default:                     return "ERR: unknown";
     }
 }
-
-/* ==================== vl53l0x.c end ==================== */

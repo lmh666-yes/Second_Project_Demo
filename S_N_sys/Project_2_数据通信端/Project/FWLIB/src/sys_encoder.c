@@ -1,26 +1,21 @@
 #include "sys_encoder.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
+/* 接口说明见 sys_encoder.h */
 #include "gpio_core.h"
 
-/* ================================================================
- *  sys_encoder.c —— 正交编码器接口（TIM 编码器模式 TIM_EncoderMode_TI12 / _TI1）  实现文件
- * ================================================================
- *  为什么用硬件编码器接口而不是"外部中断 + 软件判相"：
- *      100 线编码器 4 倍频后每转 400 个脉冲，3000rpm 时就是 20kHz 边沿——
- *      软件中断根本扛不住（CPU 全被中断吃光）；
- *      TIM 编码器模式是硬件自己加减计数，CPU 只负责"隔 10ms 读一次"。
+/* sys_encoder.c：正交编码器接口 实现文件，使用 TIM 编码器模式
+ * （TIM_EncoderMode_TI12 / _TI1）
  *
- *  16 位回绕的处理（本文件关键之一）：
- *      TIM 计数器只有 16 位，跑到 65535 会回 0。
- *      做法：每次读时算 (now - last) 的**16 位差值**，再用符号扩展还原
- *      "实际走了多少" —— 这样只要相邻两次读数之间变化不超过 ±32767，
- *      就永远不会漏数，而且不用中断。
- * ================================================================ */
+ * 用硬件编码器接口而不用外部中断加软件判相的依据：100 线编码器
+ * 4 倍频后每转 400 个脉冲，3000rpm 时边沿频率 20kHz，软件中断
+ * 无法承受；TIM 编码器模式由硬件加减计数，CPU 隔 10ms 读一次即可。
+ *
+ * 16 位回绕：TIM 计数器 16 位，计到 65535 后回 0。每次读时算
+ * (now - last) 的 16 位差值再按符号扩展还原实际变化量，只要相邻
+ * 两次读数之间变化不超过 ±32767 就不会漏数，且不需要中断。
+ */
 
 
-/* ================================================================
- *                      实例状态
- * ================================================================ */
+/* 实例状态 */
 typedef struct {
     TIM_TypeDef *tim;
     uint8_t      used;
@@ -70,9 +65,7 @@ static uint16_t enc_read_raw(SysEncoderId_t id)
 }
 
 
-/* ================================================================
- *                    区块 2：基础功能
- * ================================================================ */
+/* 区块 2：基础功能 */
 uint8_t SYS_ENCODER_Init(SysEncoderId_t id, SysTimId_t tim,
                          GPIO_TypeDef *ch1_port, uint16_t ch1_pin, uint8_t ch1_af,
                          GPIO_TypeDef *ch2_port, uint16_t ch2_pin, uint8_t ch2_af,
@@ -88,7 +81,7 @@ uint8_t SYS_ENCODER_Init(SysEncoderId_t id, SysTimId_t tim,
     t = enc_tim_of(tim);
     if (t == 0) return 1U;
 
-    /* ① 引脚：复用输入 + 上拉（编码器多为开集/开漏输出，内部上拉更稳） */
+    /* 1) 引脚：复用输入加上拉。编码器多为开集或开漏输出 */
     GPIO_ClockEnable(ch1_port);
     GPIO_ClockEnable(ch2_port);
 
@@ -105,7 +98,7 @@ uint8_t SYS_ENCODER_Init(SysEncoderId_t id, SysTimId_t tim,
     GPIO_PinAFConfig(ch2_port, (uint8_t)GPIO_PinSource(ch2_pin), ch2_af);
     GPIO_Init(ch2_port, &gi);
 
-    /* ② 时基：满分频、最大重装（编码器模式不关心"频率"，只关心计数范围） */
+    /* 2) 时基：满分频、最大重装。编码器模式不关心频率，只关心计数范围 */
     enc_clk_enable(t);
     TIM_DeInit(t);
 
@@ -116,12 +109,12 @@ uint8_t SYS_ENCODER_Init(SysEncoderId_t id, SysTimId_t tim,
     tb.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(t, &tb);
 
-    /* ③ 编码器接口：CH1=A 相、CH2=B 相，都按上升沿采样（Ti12 双边沿计数） */
+    /* 3) 编码器接口：CH1=A 相、CH2=B 相，均按上升沿采样，Ti12 双边沿计数 */
     TIM_EncoderInterfaceConfig(t, SYS_ENCODER_MODE,
                                TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
 
-    /* ④ 输入滤波：编码器线长/电机噪声大时把滤波档位调大更稳
-     *    0x0F = 采样频率 fDTS/32、连续 8 次一致才认（最稳） */
+    /* 4) 输入滤波：0x0F = 采样频率 fDTS/32、连续 8 次一致才认
+     *    编码器线长或电机噪声大时提高滤波档位 */
     TIM_ICInitTypeDef ic;
     TIM_ICStructInit(&ic);
     ic.TIM_Channel     = TIM_Channel_1;
@@ -133,7 +126,7 @@ uint8_t SYS_ENCODER_Init(SysEncoderId_t id, SysTimId_t tim,
     TIM_SetCounter(t, 0);
     TIM_Cmd(t, ENABLE);
 
-    /* ⑤ 记录实例状态 */
+    /* 5) 记录实例状态 */
     enc[id].tim      = t;
     enc[id].used     = 1U;
     enc[id].invert   = invert ? 1U : 0U;
@@ -160,7 +153,7 @@ int32_t SYS_ENCODER_GetDelta(SysEncoderId_t id)
 
     now = enc_read_raw(id);
 
-    /* 关键：用"16 位差值 + 符号扩展"，自动处理 65535→0 的回绕 */
+    /* 16 位差值加符号扩展，自动处理 65535 回 0 的回绕 */
     d = (int16_t)(now - enc[id].last_raw);
 
     enc[id].last_raw  = now;
@@ -173,7 +166,7 @@ int32_t SYS_ENCODER_GetTotal(SysEncoderId_t id)
 {
     if (!enc_valid(id)) return 0;
 
-    /* 先同步一次未读走的增量，保证 total 反映"到此刻为止" */
+    /* 先同步一次未读走的增量，使 total 反映到此刻为止的累计 */
     (void)SYS_ENCODER_GetDelta(id);
     return enc[id].total;
 }
@@ -190,7 +183,7 @@ uint8_t SYS_ENCODER_GetDir(SysEncoderId_t id)
 
     if (d != 0) return (d > 0) ? 1U : 0U;
 
-    /* 本周期没动：退回问硬件"计数方向位"（TIM_CR1_DIR 位，1 = 向下计数） */
+    /* 本周期未计数：读硬件计数方向位 TIM_CR1_DIR，1 = 向下计数 */
     return (enc[id].tim->CR1 & TIM_CR1_DIR) ? 0U : 1U;
 }
 
@@ -209,7 +202,7 @@ void SYS_ENCODER_Enable(SysEncoderId_t id, uint8_t enable)
 
     if (enable) {
         TIM_Cmd(enc[id].tim, ENABLE);
-        /* 重新使能时以当前值为基准，避免停用期间的"假大增量" */
+        /* 重新使能时以当前值为基准，避免停用期间的虚假增量 */
         enc[id].last_raw = enc_read_raw(id);
     } else {
         TIM_Cmd(enc[id].tim, DISABLE);
@@ -217,9 +210,7 @@ void SYS_ENCODER_Enable(SysEncoderId_t id, uint8_t enable)
 }
 
 
-/* ================================================================
- *                    区块 3：换算
- * ================================================================ */
+/* 区块 3：换算 */
 int32_t SYS_ENCODER_DeltaToCps(int32_t delta, uint16_t period_ms)
 {
     if (period_ms == 0U) return 0;
@@ -237,6 +228,6 @@ int32_t SYS_ENCODER_DeltaToRpm(int32_t delta, uint16_t lines, uint8_t multiple,
     pulses_per_rev = (int32_t)lines * (int32_t)multiple;   /* 每转的脉冲数 */
     cps = SYS_ENCODER_DeltaToCps(delta, period_ms);        /* 脉冲/秒 */
 
-    /* rpm = (脉冲/秒 ÷ 每转脉冲) × 60 —— 用整数运算，避免浮点 */
+    /* rpm = (脉冲/秒 ÷ 每转脉冲) × 60，用整数运算避免浮点 */
     return (cps * 60L) / pulses_per_rev;
 }

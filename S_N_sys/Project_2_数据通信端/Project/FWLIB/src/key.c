@@ -1,39 +1,23 @@
 #include "key.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
+/* 模块说明与宏定义见 key.h，本文件为接口实现 */
 #include "gpio_core.h"
 #include "delay.h"      /* 延时（delay_ms 等）独立文件 */
 #include "sys_exti.h"   /* 按键中断组合（区块 3）基于外部中断模块 */
 
-/* ================================================================
- *  key.c —— 【板载】按键模块  实现文件
- * ================================================================
- *  对外只暴露 id（0 ~ KEY_COUNT-1），引脚/极性/上下拉都在 key.h 的宏里。
- *
- *  本文件三个设计重点：
- *   ① 每键独立极性：KEYx_ACTIVE_LOW 逐键配置（本板 KEY_UP 高有效、
- *      其余三键低有效），编译期算成 key_press_level[] 表；
- *   ② 边沿检测：靠 key_last[] 记录"上次电平"，识别"刚按下"瞬间，
- *      避免长按期间反复上报（行为特征见 key.h）；
- *   ③ 消抖：检测到候选后延时 10ms 复测，只有仍然按下才上报。
- * ================================================================ */
+/*
+ *  key.c: 板载按键模块实现
+ *  对外只暴露 id（0 ~ KEY_COUNT-1），引脚、极性、上下拉都在 key.h 的宏里。
+ */
 
 
-/* ================================================================
+/*
  *                    硬件映射表
- * ================================================================
  * 数组下标 = 对外暴露的 id（0 ~ KEY_COUNT-1）
- * 四张表一一对应、顺序必须一致（端口 / 引脚 / 上下拉 / 按下电平）
+ * 四张表一一对应，顺序必须一致：端口 / 引脚 / 上下拉 / 按下电平
  *
- * ⚠ 数量一致性（重要）：
- *   表项数必须与 key.h 中的 KEY_COUNT 相同！
- *   增删按键时：key.h 加/删 KEYx 四件套并改 KEY_COUNT，
- *   然后同步在这四张表里加/删对应项。
- *   若只改 KEY_COUNT 而不同步本表（真护栏，两个方向都拦）：
- *     - 改大 → 表项少于数量，编译报错;
- *     - 改小 → 表项多于数量，编译报错。
- *   （数组故意不写 [KEY_COUNT] 尺寸：写了尺寸时 C 会把缺失项
- *     静默补 0（空指针），护栏形同虚设；不写尺寸 sizeof 才反映真实项数）
- * ================================================================ */
+ * 表项数必须与 key.h 中的 KEY_COUNT 相同：增删按键要同时改 key.h 的
+ * KEYx 四件套、KEY_COUNT 和这四张表。四张表都用 typedef 护栏在编译期核对项数。
+ */
 static GPIO_TypeDef* const key_port[] = {KEY0_PORT, KEY1_PORT, KEY2_PORT, KEY3_PORT};
 static const uint16_t      key_pin [] = {KEY0_PIN,  KEY1_PIN,  KEY2_PIN,  KEY3_PIN};
 
@@ -43,7 +27,7 @@ static const uint8_t       key_pull[] = {KEY0_PULL, KEY1_PULL, KEY2_PULL, KEY3_P
 /* 按下电平表：由每键 KEYx_ACTIVE_LOW 在编译期算好
  *   低电平按下（ACTIVE_LOW=1）→ 按下电平 = 0
  *   高电平按下（ACTIVE_LOW=0）→ 按下电平 = 1
- * ⚠ 本板 KEY_UP(id 3) 与其余三键极性相反，所以极性必须逐键存 */
+ * 本板 KEY_UP(id 3) 与其余三键极性相反，所以极性必须逐键存 */
 static const uint8_t       key_press_level[] = {
     KEY0_ACTIVE_LOW ? 0U : 1U,
     KEY1_ACTIVE_LOW ? 0U : 1U,
@@ -62,24 +46,19 @@ typedef char key_level_count_check[(sizeof(key_press_level) / sizeof(key_press_l
 static uint8_t             key_last[KEY_COUNT];
 
 
-/* ================================================================
- *            电平极性换算（每键独立）
- * ================================================================
- * 把"按下/松开"语义翻译成"引脚电平"：
+/* 把按下、松开的语义换算成引脚电平：
  *   某键 KEYx_ACTIVE_LOW=1 → 按下电平 0、松开电平 1
  *   某键 KEYx_ACTIVE_LOW=0 → 按下电平 1、松开电平 0
  * 具体电平已在上方 key_press_level[] 表中编译期算好；
- * 后续逻辑只比较 key_press_level[i]，与极性彻底解耦 */
+ * 后续逻辑只比较 key_press_level[i]，与极性解耦 */
 #define KEY_PRESS_LEVEL(id)  (key_press_level[(id)])
 #define KEY_IDLE_LEVEL(id)   ((uint8_t)(key_press_level[(id)] ^ 1U))
 
 
-/* ================================================================
- *                    基础功能
- * ================================================================ */
-/* 初始化：① 配置引脚为输入 + 每键各自的上下拉（内部自动开时钟）
- *         ② 边沿记录复位为"松开电平"——若不复位，
- *            上电时若引脚恰好为按下电平，会被误判为一次新按下 */
+/* 基础功能 */
+/* 初始化：1) 配置引脚为输入 + 每键各自的上下拉（内部自动开时钟）
+ *         2) 边沿记录复位为"松开电平"；不复位则上电时引脚若恰好为
+ *            按下电平，会被误判为一次新按下 */
 void KEY_Init(void)
 {
     for (uint8_t i = 0; i < KEY_COUNT; i++) {
@@ -96,39 +75,32 @@ uint8_t KEY_ActiveLow(uint8_t id)
 }
 
 /* 即时读取：读引脚真实电平并与"按下电平"比较
- * 说明 : 无消抖——按下瞬间可能读到抖动，适合"按住持续生效"的场景 */
+ * 说明 : 无消抖，按下瞬间可能读到抖动，适合"按住持续生效"的场景 */
 uint8_t KEY_Read(uint8_t id)
 {
     if (id >= KEY_COUNT) return 0;
     return (GPIO_InRead(key_port[id], key_pin[id]) == KEY_PRESS_LEVEL(id)) ? 1 : 0;
 }
 
-/* ================================================================
- * 扫描"新按下"事件（含消抖）—— 完整流程说明
- * ================================================================
- * ① 全量快照：一次性读回所有按键电平，
- *    后续判断基于"同一时刻"的数据，避免边读边判造成状态错乱；
- * ② 找候选：与 key_last[] 比较，定位第一个"松开→按下"的按键；
- * ③ 消抖复测：候选键延时 10ms 再读一次——仍是按下才算有效
- *    （代价：命中时阻塞约 10ms；无候选时不阻塞，速度极快）；
- * ④ 统一更新：把本次快照整体存为"上次电平"——
- *    采用"先全量快照、后统一更新"策略，多键同按也不会错乱；
- * ⑤ 上报结果：只有消抖通过的按键才上报，其余返回 KEY_NONE。
- *
- * 返回值：新按下按键的 id；无事件时返回 KEY_NONE（0xFF）
- * ================================================================ */
+/*
+ * 扫描新按下事件（含消抖）
+ * 一次读回全部按键电平，与 key_last[] 比较定位第一个松开到按下的按键；
+ * 候选键延时 KEY_DEBOUNCE_MS 后复测，仍为按下才上报；
+ * 最后把本次采样整体存为上次电平，多键同按也不会错乱。
+ * 返回：新按下按键的 id；无事件时返回 KEY_NONE（0xFF）
+ */
 uint8_t KEY_Scan(void)
 {
     uint8_t level[KEY_COUNT];
     uint8_t hit  = KEY_NONE;
     uint8_t down = 0;
 
-    /* ① 一次性采样全部按键 */
+    /* 1) 一次性采样全部按键 */
     for (uint8_t i = 0; i < KEY_COUNT; i++) {
         level[i] = GPIO_InRead(key_port[i], key_pin[i]);
     }
 
-    /* ② 查找新按下事件（每键比较各自的按下电平） */
+    /* 2) 查找新按下事件（每键比较各自的按下电平） */
     for (uint8_t i = 0; i < KEY_COUNT; i++) {
         if (key_last[i] != KEY_PRESS_LEVEL(i) && level[i] == KEY_PRESS_LEVEL(i)) {
             hit = i;
@@ -136,26 +108,24 @@ uint8_t KEY_Scan(void)
         }
     }
 
-    /* ③ 消抖：延时 10ms 后复测 */
+    /* 3) 消抖：延时 KEY_DEBOUNCE_MS 后复测 */
     if (hit != KEY_NONE) {
-        delay_ms(10);
+        delay_ms(KEY_DEBOUNCE_MS);
         level[hit] = GPIO_InRead(key_port[hit], key_pin[hit]);
         down = (level[hit] == KEY_PRESS_LEVEL(hit)) ? 1 : 0;
     }
 
-    /* ④ 统一更新所有按键历史电平 */
+    /* 4) 统一更新所有按键历史电平 */
     for (uint8_t i = 0; i < KEY_COUNT; i++) {
         key_last[i] = level[i];
     }
 
-    /* ⑤ 只有消抖通过才上报 */
+    /* 5) 只有消抖通过才上报 */
     return down ? hit : KEY_NONE;
 }
 
 
-/* ================================================================
- *                    扩展功能
- * ================================================================ */
+/* 扩展功能 */
 
 /* 位掩码读取所有按键：逐键即时读取，拼成一个整数
  * （KEY_COUNT ≤ 32 时全覆盖；超过部分不参与） */
@@ -183,7 +153,7 @@ uint8_t KEY_WaitPress(void)
     return k;
 }
 
-/* 长按检测（阻塞）：以 10ms 为步进累计"持续按住"的时长 */
+/* 长按检测（阻塞）：以 KEY_HOLD_STEP_MS 为步进累计"持续按住"的时长 */
 uint8_t KEY_LongPress(uint8_t id, uint32_t hold_ms)
 {
     uint32_t held = 0;
@@ -192,8 +162,8 @@ uint8_t KEY_LongPress(uint8_t id, uint32_t hold_ms)
     if (!KEY_Read(id))   return 0;          /* 当前未按下 → 直接失败 */
 
     while (held < hold_ms) {
-        delay_ms(10);
-        held += 10;
+        delay_ms(KEY_HOLD_STEP_MS);
+        held += KEY_HOLD_STEP_MS;
 
         if (!KEY_Read(id)) return 0;        /* 中途松开 → 不是长按 */
     }
@@ -201,18 +171,14 @@ uint8_t KEY_LongPress(uint8_t id, uint32_t hold_ms)
 }
 
 
-/* ================================================================
+/*
  *      扩展功能：按键中断组合（基于 sys_exti，中断只置标志）
- * ================================================================
- * 设计要点 :
- *   ① 不新增任何 ISR —— EXTI 向量统一归 sys_exti 所有（见 README 5.22），
- *      这里只是给每个按键注册一个"置标志"小回调；
- *   ② 触发沿按每键 KEYx_ACTIVE_LOW 自动配：低电平按下→下降沿，
- *      高电平按下→上升沿（即"进入按下状态"的那条边）；
- *   ③ 标志数组 volatile：ISR 置位、主循环清零。
- * ================================================================ */
+ * 不新增 ISR：EXTI 向量统一由 sys_exti 处理，这里为每个按键注册置标志回调。
+ * 触发沿按每键 KEYx_ACTIVE_LOW 自动配置：即进入按下状态的那条边。
+ * 标志数组 volatile：ISR 置位、主循环清零。
+ */
 /* 每键触发沿表（与 key.h 的按下电平配套，编译期算好）
- * ⚠ 本板 KEY_UP 为高有效，所以它的沿是上升沿、其余三键是下降沿 */
+ * 本板 KEY_UP 为高有效，所以它是上升沿，其余三键是下降沿 */
 #define KEY_EXTI_EDGE_OF(active_low)  ((active_low) ? SYS_EXTI_FALLING : SYS_EXTI_RISING)
 static const SysExtiTrigger_t key_exti_edge[] = {
     KEY_EXTI_EDGE_OF(KEY0_ACTIVE_LOW),
@@ -226,8 +192,8 @@ typedef char key_edge_count_check[(sizeof(key_exti_edge) / sizeof(key_exti_edge[
 static volatile uint8_t key_exti_flag[KEY_COUNT];
 
 /* 每键一个极小回调（sys_exti 的回调不带参数，所以要一键一个函数）
- * 用 X-Macro 批量生成：预置到 8 键——KEY_COUNT ≤ 8 时本段全自动适配，
- * 无需手改;超过 8 键：照样式补 KEY_EXTI_CB(8)… 与表项，护栏会核对数量 */
+ * 用 X-Macro 批量生成，已预置到 8 键：KEY_COUNT ≤ 8 时自动适配。
+ * 超过 8 键：按同样写法补 KEY_EXTI_CB(8) 及表项，护栏会核对数量 */
 #define KEY_EXTI_CB(n)  static void key_exti_cb##n(void) { key_exti_flag[n] = 1U; }
 
 KEY_EXTI_CB(0)
@@ -281,9 +247,6 @@ static void (*const key_exti_cb[])(void) = {
 typedef char key_exti_count_check[(sizeof(key_exti_cb) / sizeof(key_exti_cb[0]) == KEY_COUNT) ? 1 : -1];
 
 #undef KEY_EXTI_CB
-
-/* 引脚掩码 → 中断线号（线号 = 引脚号）：统一走 gpio_core 的 GPIO_PinSource
- * （非法掩码返回 0xFF，SYS_EXTI_InitLine 会拒绝） */
 
 /* 开启全部按键中断：GPIO 打底 → 逐键注册 EXTI 线 → 返回成功数 */
 uint8_t KEY_EXTI_Enable(void)

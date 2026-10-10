@@ -1,34 +1,15 @@
 #include "lcd.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
 #include "delay.h"      /* 延时（delay_ms 等）独立文件 */
 
-/* ================================================================
- *  lcd.c —— 【板载】TFT-LCD 显示屏模块（FSMC + ILI9341）  实现文件
- * ================================================================
- *  实现要点 :
- *    ① 总线用"寄存器直写"配置 FSMC（不依赖 FSMC 标准库组件，
- *       整个模块只用到 GPIO/RCC，换成任意 F4 都照常工作）；
- *    ② 数据线为 F4 固定映射（见下表），控制线/背光走 lcd.h 宏；
- *    ③ ILI9341 初始化用"表驱动"：一条命令一行，改屏/调参直观。
- *
- *  调屏速查（不亮 / 花屏时）:
- *      白屏不亮      → 检查背光引脚/极性、LCD_Init 是否调用;
- *      全黑          → 背光没开、或 0x29 未执行（序列被卡）;
- *      花屏/乱码色块 → 先调大 LCD_FSMC_* 三个时序宏;
- *      颜色红蓝互换  → 改 LCD_MADCTL 的 BGR 位;
- *      镜像/方向不对 → 调 LCD_MADCTL 的 MX/MY/MV 位;
- *      完全没反应    → 核对 RS 接的是哪根地址线（改 LCD_CMD/DATA_ADDR）
- * ================================================================ */
+/* lcd.c — 板载 TFT-LCD 模块（FSMC + ILI9341）实现
+ * FSMC 由寄存器直写（BTCR[6]/BTCR[7]），只依赖 GPIO/RCC；
+ * 数据线 D0~D15 为 F4 固定映射，控制线/背光见 lcd.h 宏；
+ * ILI9341 初始化采用表驱动。 */
 
 
-/* ================================================================
- *                 FSMC 数据线表（F4 固定映射，一般不用改）
- * ================================================================
- * STM32F4 全系的 FSMC_D0 ~ D15 都有固定引脚（改不了），
- * 换板子时保持原样即可；若你板子的接线确实不同（重映射硬件），
- * 改这里的 {端口, 引脚} 即可 */
-/* 表结构说明 : 每行 = 一条数据线的"端口 + 引脚掩码";行号 = D0~D15 */
+/* FSMC 数据线表：F4 的 FSMC_D0~D15 为固定复用引脚，表行号即 D0~D15；
+ * 每行 = 一条数据线的端口 + 引脚掩码。 */
 typedef struct {
     GPIO_TypeDef *port;   /* 数据线端口 */
     uint16_t      pin;    /* 数据线引脚掩码 */
@@ -54,24 +35,17 @@ static const LcdDataPin_t lcd_data_pins[16] = {
 };
 
 
-/* ================================================================
- *                     命令 / 数据 访问接口
- * ================================================================
- * RS 引脚接在 FSMC 地址线上（本板 A6）：
- *   写 LCD_CMD_ADDR → RS=0 → 屏收到"命令"
- *   写 LCD_DATA_ADDR → RS=1 → 屏收到"数据" */
+/* 命令/数据访问：RS 接 FSMC 地址线 A6（本板）。
+ * 写 LCD_CMD_ADDR（RS=0）发命令；写 LCD_DATA_ADDR（RS=1）发数据。 */
 #define LCD_REG   (*(volatile uint16_t *)LCD_CMD_ADDR)
 #define LCD_RAM   (*(volatile uint16_t *)LCD_DATA_ADDR)
 
-/* 写命令 / 写数据（基础版只用写，读时序未配置） */
+/* 写命令 / 写数据（只配置写时序，未配置读时序） */
 static void lcd_write_cmd(uint8_t cmd)   { LCD_REG  = (uint16_t)cmd; }
 static void lcd_write_data(uint16_t dat) { LCD_RAM  = dat; }
 
 
-/* ================================================================
- *                     内部辅助
- * ================================================================ */
-/* 引脚掩码 → 引脚序号：统一走 gpio_core 的 GPIO_PinSource（不再重复实现） */
+/* 内部辅助：引脚掩码转引脚序号由 gpio_core 的 GPIO_PinSource 提供。 */
 
 /* GPIO 复用初始化：把 16 根数据线 + 4 根控制线全部配成 FSMC 复用 */
 static void lcd_gpio_init(void)
@@ -91,7 +65,7 @@ static void lcd_gpio_init(void)
     gi.GPIO_Speed = GPIO_Speed_100MHz;
     gi.GPIO_PuPd  = GPIO_PuPd_NOPULL;
 
-    /* ① 数据线 D0 ~ D15 */
+    /* 数据线 D0~D15 */
     for (i = 0; i < 16U; i++) {
         gi.GPIO_Pin = lcd_data_pins[i].pin;
         GPIO_PinAFConfig(lcd_data_pins[i].port,
@@ -99,7 +73,7 @@ static void lcd_gpio_init(void)
         GPIO_Init(lcd_data_pins[i].port, &gi);
     }
 
-    /* ② 控制线：CS=PG12(NE4)  RS=PF12(A6)  WR=PD5(NWE)  RD=PD4(NOE) */
+    /* 控制线：CS=PG12(NE4)  RS=PF12(A6)  WR=PD5(NWE)  RD=PD4(NOE) */
     gi.GPIO_Pin = GPIO_Pin_12;
     GPIO_PinAFConfig(GPIOG, GPIO_PinSource12, GPIO_AF_FSMC);
     GPIO_Init(GPIOG, &gi);
@@ -117,28 +91,22 @@ static void lcd_gpio_init(void)
     GPIO_Init(GPIOD, &gi);
 }
 
-/* FSMC 寄存器配置（Bank1 · NE4 · 16 位 SRAM · 异步模式 A）
- * 说明 : 直接写 BCR4/BTR4（BTCR[6]/BTCR[7]），不依赖标准库 FSMC 组件 */
+/* FSMC 配置：Bank1 NE4，16 位 SRAM，异步模式 A；
+ * 直接写 BCR4/BTR4（BTCR[6]/BTCR[7]）。 */
 static void lcd_fsmc_init(void)
 {
     uint32_t bcr = 0;
     uint32_t btr = 0;
 
-    /* ---- BCR4（存储器块控制）----
-     *   bit0   MBKEN  = 1        存储器块使能
-     *   bit3:2 MTYP   = 00       SRAM 类型
-     *   bit5:4 MWID   = 01       16 位数据总线（01=16bit！）
-     *   bit12  WREN   = 1        写使能
-     *   其余位保持 0（异步模式 A、无等待、无突发） */
+    /* BCR4：MBKEN(bit0)=1 使能；MTYP(bit3:2)=00 SRAM；MWID(bit5:4)=01
+     * 16 位总线；WREN(bit12)=1 写使能；其余位 0（异步模式 A、无等待） */
     bcr |= (1UL << 0);
     bcr |= (1UL << 4);
     bcr |= (1UL << 12);
     FSMC_Bank1->BTCR[6] = bcr;
 
-    /* ---- BTR4（时序）----
-     *   各字段编码 = 实际周期数 - 1
-     *   ADDSET[3:0]  地址建立   ADDHLD[7:4] 地址保持
-     *   DATAST[15:8] 数据建立   BUSTURN[19:16] 总线回转(先给 1) */
+    /* BTR4（编码 = 实际周期数 - 1）：ADDSET[3:0] 地址建立；ADDHLD[7:4]
+     * 地址保持；DATAST[15:8] 数据建立；BUSTURN[19:16] 总线回转 = 1 */
     btr |= (((uint32_t)LCD_FSMC_ADDR_SETUP - 1UL) & 0xFUL) << 0;
     btr |= (((uint32_t)LCD_FSMC_ADDR_HOLD  - 1UL) & 0xFUL) << 4;
     btr |= (((uint32_t)LCD_FSMC_DATA_SETUP - 1UL) & 0xFFUL) << 8;
@@ -146,27 +114,20 @@ static void lcd_fsmc_init(void)
     FSMC_Bank1->BTCR[7] = btr;
 }
 
-/* 背光引脚初始化（普通推挽输出 GPIO_OType_PP，不额外开灯——由 LCD_BackLight 控制） */
+/* 背光引脚初始化（推挽输出；亮灭由 LCD_BackLight 控制） */
 static void lcd_bl_hw_init(void)
 {
     GPIO_OutInit(LCD_BL_PORT, LCD_BL_PIN);
 }
 
 
-/* ================================================================
- *              ILI9341 初始化序列表（表驱动，改屏最直观）
- * ================================================================
- * 每行 = 一条命令：cmd 命令码 / len 数据长度 / dat 数据 / delay_ms 延时
- * 换屏（如 ILI9486）时整体替换本表即可；
- * 数据均取自公开常用序列，若色彩/对比不满意可从 0xC0/0xE0/0xE1
- * 几条开始微调（不影响"能点亮"） */
+/* ILI9341 初始化序列表：每行一条命令（cmd 命令码 / len 数据长度 /
+ * dat 数据指针 / delay_ms 延时）；数据取自 ILI9341 数据手册典型值。 */
 
 #define LCD_SEQ_END   0xFFFFU    /* 序列表结束哨兵（cmd 字段填它即结束） */
 
-/* 表结构说明（初始化序列表的每一行 = 一条 LCD 命令）:
- *   cmd      = 命令码（0xXX）;len = 参数个数;
- *   dat      = 参数数组指针（无参数填 0）;delay_ms = 发完后等多少毫秒
- * 结束标记 : cmd 填 LCD_SEQ_END 即结束（不用单独写行数） */
+/* 表结构：cmd 命令码；len 参数个数；dat 参数数组（无参数填 0）；
+ * delay_ms 命令后延时（ms）；cmd = LCD_SEQ_END 结束。 */
 typedef struct {
     uint16_t      cmd;        /* 命令码（LCD_SEQ_END = 结束） */
     uint8_t       len;        /* 参数个数（0~255） */
@@ -174,7 +135,7 @@ typedef struct {
     uint8_t       delay_ms;   /* 命令后延时（毫秒;0 = 不等） */
 } LcdSeq_t;
 
-/* —— 各条命令的数据（原样照抄数据手册典型值）—— */
+/* 各条命令的参数（数据手册典型值） */
 static const uint8_t lcd_pw_ctrl_b[]  = { 0x00, 0xC1, 0x30 };             /* CF */
 static const uint8_t lcd_pw_on_seq[]  = { 0x64, 0x03, 0x12, 0x81 };       /* ED */
 static const uint8_t lcd_drv_tim_a[]  = { 0x85, 0x00, 0x78 };             /* E8 */
@@ -222,7 +183,7 @@ static const LcdSeq_t lcd_init_seq[] = {
     { 0xF2, 1, lcd_gam_dis,    0 },
     { 0x26, 1, lcd_gam_set,    0 },
 
-    /* 伽马（不满意可注释掉这两条，改用屏内默认伽马） */
+    /* 伽马校正（可改用屏内默认伽马） */
     { 0xE0, 15, lcd_gamma_pos, 0 },
     { 0xE1, 15, lcd_gamma_neg, 0 },
 
@@ -258,22 +219,19 @@ static void lcd_run_seq(void)
 }
 
 
-/* ================================================================
- *                    区块 2：基础功能
- * ================================================================ */
-/* 初始化顺序：FSMC 总线 → 控制引脚 → 背光 → 屏上电序列 → 清屏 */
+/* 基础功能。初始化顺序：FSMC 总线 → 控制引脚 → 背光 → 屏上电序列 → 清屏 */
 void LCD_Init(void)
 {
     lcd_gpio_init();
     lcd_fsmc_init();
     lcd_bl_hw_init();
 
-    LCD_BackLight(1);        /* 先开背光（不亮时至少能看到"白屏"） */
+    LCD_BackLight(1);        /* 先开背光 */
     delay_ms(50);            /* 等屏内部上电稳定 */
 
     lcd_run_seq();           /* ILI9341 初始化序列（含 2 处必需延时） */
 
-    LCD_Clear(LCD_COLOR_BLACK);   /* 上电清成黑屏，避免雪花噪点 */
+    LCD_Clear(LCD_COLOR_BLACK);   /* 清屏，避免上电噪点 */
 }
 
 /* 背光开关（极性自动适配） */
@@ -288,9 +246,9 @@ void LCD_BackLight(uint8_t on)
 #endif
 }
 
-/* 内部扩展版：交换/截断后设置窗口，并把"实际窗口尺寸"带回
- * 返回 : 1 = 窗口有效（命令已发送）；0 = 起点在屏外（未发送任何命令）
- * 说明 : LCD_SetWindow 与 LCD_FillRect 共用本函数——截断规则只有一份 */
+/* 内部版：交换/截断后设置窗口并回传实际宽高，LCD_SetWindow 与
+ * LCD_FillRect 共用（截断规则只有一份）。
+ * 返回：1 = 窗口有效（命令已发送）；0 = 起点在屏外（未发送命令）。 */
 static uint8_t lcd_set_window_ext(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1,
                                   uint16_t *w, uint16_t *h)
 {
@@ -316,7 +274,7 @@ static uint8_t lcd_set_window_ext(uint16_t x0, uint16_t y0, uint16_t x1, uint16_
     lcd_write_data((uint16_t)(y0 >> 8)); lcd_write_data((uint16_t)(y0 & 0xFFU));
     lcd_write_data((uint16_t)(y1 >> 8)); lcd_write_data((uint16_t)(y1 & 0xFFU));
 
-    /* 进入"准备写显存"（0x2C）：之后的数据按窗口顺序自动填充 */
+    /* 0x2C：进入写显存，之后的数据按窗口顺序自动填充 */
     lcd_write_cmd(0x2C);
 
     return 1U;
@@ -328,7 +286,7 @@ void LCD_SetWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
     (void)lcd_set_window_ext(x0, y0, x1, y1, 0, 0);
 }
 
-/* 全屏清屏：一个窗口 + 连续写像素（比逐点快得多） */
+/* 全屏清屏：单窗口连续写像素 */
 void LCD_Clear(uint16_t color)
 {
     LCD_FillRect(0, 0, LCD_WIDTH - 1U, LCD_HEIGHT - 1U, color);
@@ -343,8 +301,7 @@ void LCD_DrawPoint(uint16_t x, uint16_t y, uint16_t color)
     lcd_write_data(color);
 }
 
-/* 填充矩形：窗内连续写 w×h 个像素（尺寸由扩展版窗口函数带回，
- * 截断规则与 LCD_SetWindow 共用——不存在"两份规则"） */
+/* 填充矩形：按扩展窗口函数回传的 w×h 连续写像素 */
 void LCD_FillRect(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1, uint16_t color)
 {
     uint16_t w;

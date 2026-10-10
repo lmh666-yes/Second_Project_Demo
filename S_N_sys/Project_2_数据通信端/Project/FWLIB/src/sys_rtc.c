@@ -1,42 +1,24 @@
 #include "sys_rtc.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
+/* 实现层；头文件注记见同名 .h */
 #include "gpio_core.h"      /* 引脚/位 */
-#include "delay.h"          /* delay_ms / DWT_GetUs / DWT_ElapsedUs（延时与 DWT 测时） */
+#include "delay.h"          /* 延时与 DWT 测时 */
 #include "sys_nvic.h"       /* SYS_NVIC_SetPriority / EnableIRQ */
 
-/* ================================================================
- *  sys_rtc.c —— RTC 实时时钟  实现文件
- * ================================================================
- *  上电流程（为什么必须这么绕）：
- *
- *      开 PWR 时钟 → 打开备份域写权限(PWR_BackupAccessCmd)
- *            ↓
- *      起 LSE 晶振 → 等 LSERDY → 选 LSE 做 RTC 时钟
- *            ↓
- *      读备份寄存器里的"魔数"
- *        ├── 魔数对 = 备份域没被复位 → 时间还在，直接用 ✔
- *        └── 魔数不对 = 断电/首次上电 → 复位备份域 → 重配 RTC → 写默认时间
- *
- *  ⚠ 为什么要用"魔数"：备份域一旦掉电（没装纽扣电池时就等于每次断电），
- *     RTC 寄存器全部回到 0x000000——读出来是 1970 年或者乱值。
- *     用一个掉电不丢的备份寄存器当"书签"，就能区分"真时间"和"垃圾值"。
- *
- *  ⚠ 备份域复位(RCC_BackupResetCmd)必须在 PWR_BackupAccessCmd(ENABLE) 之后，
- *     否则复位命令会被硬件静默忽略（这是最常见的"怎么都改不动时间"原因）。
- * ================================================================ */
+/* 上电流程：开 PWR 时钟，解锁备份域，起 LSE，等 LSERDY，选 RTC 时钟源，
+ * 读备份寄存器魔数；有效则直接用，无效则复位备份域、重配 RTC、写默认时间
+ * 备份域掉电后 RTC 寄存器全为 0x000000，读出来是 1970 年或乱值，
+ * 用掉电不丢的备份寄存器存魔数，即可区分有效时间与垃圾值
+ * 备份域复位 RCC_BackupResetCmd 必须在 PWR_BackupAccessCmd(ENABLE) 之后，
+ * 否则复位命令被硬件静默忽略 */
 
 
-/* ================================================================
- *                      模块内部状态
- * ================================================================ */
+/* 模块内部状态 */
 static void     (*rtc_wakeup_cb)(void) = 0;
 static void     (*rtc_alarm_cb)(void)  = 0;
 static volatile uint32_t rtc_wakeup_cnt = 0;
 
 
-/* ================================================================
- *                      内部小工具
- * ================================================================ */
+/* 内部小工具 */
 
 /* 等某个 RCC 标志置位，超时返回 0 */
 static uint8_t rtc_wait_flag(uint8_t flag, uint32_t timeout_ms)
@@ -49,19 +31,15 @@ static uint8_t rtc_wait_flag(uint8_t flag, uint32_t timeout_ms)
     return 1U;
 }
 
-/* 给 RTC 配好时钟源与预分频（只在"首次上电"调用）
- * LSE 32768Hz : 128 × 256 = 32768 → 1Hz
- * LSI ~32000Hz: 128 × 250 = 32000 → 1Hz（约数，精度差） */
+/* 配时钟源与预分频，只在首次上电调用
+ * LSE 32768Hz : 128 × 256 = 32768，得 1Hz
+ * LSI ~32000Hz: 128 × 250 = 32000，得 1Hz（约数，精度差）
+ * 返回 0 = 成功，1 = RTC_Init 失败 */
 static uint8_t rtc_config(uint32_t rtc_clk_src)
 {
     RTC_InitTypeDef ri;
 
-    /* ⚠★ 这里**绝对不能**再 RCC_BackupResetCmd()！
-     *    复位备份域会把 BDCR 整个清 0 —— 包括刚刚配好的
-     *    LSEON + RTCSEL + RTCEN，RTC 就彻底没时钟了，
-     *    RTC_Init 必然失败（症状：SYS_RTC_Init 返回 2）。
-     *    备份域复位已挪到 SYS_RTC_Init() 里、配 LSE 之前执行。 */
-
+    /* 本函数内不得调用 RCC_BackupResetCmd */
     PWR_BackupAccessCmd(ENABLE);        /* 写 BDCR 前先解锁 DBP */
     RCC_RTCCLKCmd(ENABLE);
     (void)RTC_WaitForSynchro();
@@ -75,7 +53,7 @@ static uint8_t rtc_config(uint32_t rtc_clk_src)
     return 0U;
 }
 
-/* --- Unix 秒 ↔ 年月日（Howard Hinnant 的算法，无查表、无循环） --- */
+/* Unix 秒 ↔ 年月日：无查表、无循环 */
 static int32_t rtc_days_from_civil(int32_t y, int32_t m, int32_t d)
 {
     int32_t  era;
@@ -124,50 +102,46 @@ static void rtc_put2(char *p, uint8_t v)
 }
 
 
-/* ================================================================
- *                    区块 2：基础功能
- * ================================================================ */
+/* 基础功能 */
+
 uint8_t SYS_RTC_Init(void)
 {
     uint32_t src;
     uint8_t  lse_ok;
 
-    /* ① 开 PWR 时钟 + 解锁备份域（顺序不能颠倒） */
+    /* 1) 开 PWR 时钟，再解锁备份域，顺序不能颠倒 */
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_PWR, ENABLE);
     PWR_BackupAccessCmd(ENABLE);
 
-    /* ② 备份域有效 → 时间还在，只补开唤醒中断线即可 */
+    /* 2) 备份域有效表示时间还在，只补开 RTC 时钟 */
     if (SYS_RTC_IsBackupValid()) {
         RCC_RTCCLKCmd(ENABLE);
         (void)RTC_WaitForSynchro();
         return 0U;
     }
 
-    /* ③ 备份域无效 → 先整体复位一次，让 BDCR 回到干净状态。
-     *    ★★ 必须在"配 LSE / 选 RTC 时钟源"之前做！
-     *    （原来这句在 rtc_config() 里，等于把刚配好的 LSEON+RTCSEL
-     *      又全清一遍 —— RTC 彻底没时钟，Init 一定失败）
-     *    RCC_BackupResetCmd 自身会开关 CR_DBP，退出时可能是 0，
-     *    所以后面每次写 BDCR 前都补一次解锁。 */
+    /* 3) 备份域无效，先整体复位一次让 BDCR 回到干净状态
+     * 必须在配 LSE / 选 RTC 时钟源之前做，否则把刚配好的 LSEON+RTCSEL 清掉
+     * RCC_BackupResetCmd 自身会开关 CR_DBP，退出时可能为 0，
+     * 所以每次写 BDCR 前都补一次解锁 */
     PWR_BackupAccessCmd(ENABLE);
     RCC_BackupResetCmd(ENABLE);
     RCC_BackupResetCmd(DISABLE);
     PWR_BackupAccessCmd(ENABLE);
 
-    /* ④ 起 LSE
-     * ⚠★ RCC_LSEConfig() 内部会动 CR_DBP 位（备份域解锁位），
-     *    退出时 DBP 可能已经是 0。DBP=0 时写 BDCR 完全无效，
-     *    后面 RCC_RTCCLKConfig() 会静默失效 → RTC 拿不到时钟。
-     *    所以每次碰完 LSE/LSI 配置都必须重新解锁一遍。 */
+    /* 4) 起 LSE：RCC_LSEConfig() 内部会动 CR_DBP 位，退出时 DBP 可能为 0，
+     * DBP=0 时写 BDCR 无效，后面 RCC_RTCCLKConfig() 会静默失效，
+     * 所以每次碰完 LSE/LSI 配置后都必须重新解锁
+     * LSERDY 等待超过 SYS_RTC_LSE_TIMEOUT_MS 后，按 SYS_RTC_LSI_FALLBACK 决定是否回退 LSI */
     RCC_LSEConfig(RCC_LSE_ON);
-    PWR_BackupAccessCmd(ENABLE);                  /* ★ 补回解锁 */
+    PWR_BackupAccessCmd(ENABLE);                  /* 补回解锁 */
     lse_ok = rtc_wait_flag(RCC_FLAG_LSERDY, SYS_RTC_LSE_TIMEOUT_MS);
     src    = RCC_RTCCLKSource_LSE;
 
     if (!lse_ok) {
 #if (SYS_RTC_LSI_FALLBACK)
         RCC_LSICmd(ENABLE);
-        PWR_BackupAccessCmd(ENABLE);              /* ★ 同样补回 */
+        PWR_BackupAccessCmd(ENABLE);              /* 同样补回解锁 */
         if (!rtc_wait_flag(RCC_FLAG_LSIRDY, SYS_RTC_LSE_TIMEOUT_MS)) return 2U;
         src = RCC_RTCCLKSource_LSI;
 #else
@@ -175,12 +149,12 @@ uint8_t SYS_RTC_Init(void)
 #endif
     }
 
-    /* ⑤ 选时钟源并配置分频 */
-    PWR_BackupAccessCmd(ENABLE);                  /* ★ 写 BDCR 前再保险一次 */
+    /* 5) 选时钟源并配置分频 */
+    PWR_BackupAccessCmd(ENABLE);                  /* 写 BDCR 前再解锁一次 */
     RCC_RTCCLKConfig(src);
     if (rtc_config(src) != 0U) return 2U;
 
-    /* ⑥ 写默认时间 + 打上"魔数"（下次上电就知道备份域是好的） */
+    /* 6) 写默认时间与魔数，下次上电据此判断备份域有效 */
     SYS_RTC_SetCounter(SYS_RTC_DEFAULT_UNIX);
     RTC_WriteBackupRegister(SYS_RTC_MAGIC_REG, SYS_RTC_MAGIC_VALUE);
 
@@ -234,7 +208,7 @@ uint8_t SYS_RTC_SetTime(const SysRtc_t *in)
                      : SYS_RTC_WeekdayOf(in->year, in->month, in->day);
     if (RTC_SetDate(RTC_Format_BIN, &ds) != SUCCESS) return 1U;
 
-    /* F4 的现象：写完日历要再读一次，影子寄存器才立刻反映新值 */
+    /* F4 要求写完日历后再读一次，影子寄存器才立即更新 */
     RTC_GetTime(RTC_Format_BIN, &ts);
     RTC_GetDate(RTC_Format_BIN, &ds);
 
@@ -257,8 +231,8 @@ uint8_t SYS_RTC_SetOnlyTime(uint8_t hour, uint8_t minute, uint8_t second)
 
 uint32_t SYS_RTC_GetCounter(void)
 {
-    /* ⚠ F4 的 StdPeriph 没有 RTC_GetCounter（那是 F1 的 API），
-     *   所以用"读日历 → 转 Unix 秒"来实现，效果一样 */
+    /* F4 的 StdPeriph 没有 RTC_GetCounter（F1 的 API），
+     * 这里读日历再转 Unix 秒，结果相同 */
     SysRtc_t t;
 
     SYS_RTC_GetTime(&t);
@@ -329,7 +303,7 @@ uint8_t SYS_RTC_WeekdayOf(uint16_t year, uint8_t month, uint8_t day)
 
     days = rtc_days_from_civil((int32_t)year, (int32_t)month, (int32_t)day);
 
-    wd = (days + 3) % 7;                /* 1970-01-01 是周四 → +3 后 0 = 周一 */
+    wd = (days + 3) % 7;                /* 1970-01-01 是周四，+3 后 0 表示周一 */
     if (wd < 0) wd += 7;
 
     return (uint8_t)(wd + 1);
@@ -354,9 +328,7 @@ uint8_t SYS_RTC_DaysInMonth(uint16_t year, uint8_t month)
 }
 
 
-/* ================================================================
- *                    区块 3：备份域数据 + 唤醒/闹钟
- * ================================================================ */
+/* 备份域数据与唤醒/闹钟 */
 void SYS_RTC_WriteBkp(uint8_t reg, uint32_t value)
 {
     if (reg > SYS_RTC_BKP_REG_MAX) return;
@@ -412,7 +384,7 @@ uint8_t SYS_RTC_WakeUpInit(uint16_t period_s, void (*callback)(void))
     RTC_ClearFlag(RTC_FLAG_WUTF);
     EXTI_ClearITPendingBit(EXTI_Line22);
 
-    /* RTC 唤醒走 EXTI 线 22（不属于 EXTI0~15，所以不能走 sys_exti） */
+    /* RTC 唤醒走 EXTI 线 22，不属于 EXTI0~15，不能走 sys_exti */
     ei.EXTI_Line    = EXTI_Line22;
     ei.EXTI_Mode    = EXTI_Mode_Interrupt;
     ei.EXTI_Trigger = EXTI_Trigger_Rising;
@@ -463,8 +435,8 @@ uint8_t SYS_RTC_AlarmSet(uint8_t hour, uint8_t minute, uint8_t second,
     as.RTC_AlarmTime.RTC_Minutes = minute;
     as.RTC_AlarmTime.RTC_Seconds = second;
 
-    /* 掩码位为 0 → 该字段"不比较"（Mask 里对应位置 1） */
-    as.RTC_AlarmMask = RTC_AlarmMask_DateWeekDay;   /* 日期不参与（做"每天"闹钟） */
+    /* 掩码位为 0 表示该字段不参与比较，Mask 里对应位置 1 */
+    as.RTC_AlarmMask = RTC_AlarmMask_DateWeekDay;   /* 日期不参与，做每天闹钟 */
     if ((mask & SYS_RTC_ALARM_MASK_SEC)  == 0U) as.RTC_AlarmMask |= RTC_AlarmMask_Seconds;
     if ((mask & SYS_RTC_ALARM_MASK_MIN)  == 0U) as.RTC_AlarmMask |= RTC_AlarmMask_Minutes;
     if ((mask & SYS_RTC_ALARM_MASK_HOUR) == 0U) as.RTC_AlarmMask |= RTC_AlarmMask_Hours;
@@ -531,12 +503,10 @@ char *SYS_RTC_Format(char *buf, const SysRtc_t *t, uint8_t with_week)
 }
 
 
-/* ================================================================
- *                    中断服务（库里唯一的 RTC 向量）
- * ================================================================ */
-/* 周期唤醒：IRQ 3（向量名与启动文件逐一核对过）
- * 典型用途：Stop 模式下的定时唤醒采样
- * __weak: 你手写同名 RTC_WKUP_IRQHandler 时可直接覆盖本实现（二选一） */
+/* 中断服务：库里唯一的 RTC 向量 */
+/* 周期唤醒：IRQ 3，向量名与启动文件核对过
+ * 用途：Stop 模式下的定时唤醒采样
+ * __weak 修饰，可另写同名 RTC_WKUP_IRQHandler 覆盖本实现（二选一） */
 __weak void RTC_WKUP_IRQHandler(void)
 {
     if (RTC_GetITStatus(RTC_IT_WUT) != RESET) {
@@ -549,8 +519,8 @@ __weak void RTC_WKUP_IRQHandler(void)
     }
 }
 
-/* 闹钟 A/B：IRQ 41（共用同一向量）
- * __weak: 你手写同名 RTC_Alarm_IRQHandler 时可直接覆盖本实现（二选一） */
+/* 闹钟 A/B：IRQ 41，共用同一向量
+ * __weak 修饰，可另写同名 RTC_Alarm_IRQHandler 覆盖本实现（二选一） */
 __weak void RTC_Alarm_IRQHandler(void)
 {
     if (RTC_GetITStatus(RTC_IT_ALRA) != RESET) {

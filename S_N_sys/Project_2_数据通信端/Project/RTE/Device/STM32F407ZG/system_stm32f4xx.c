@@ -252,7 +252,7 @@
 /************************* PLL Parameters *************************************/
 /* PLL_VCO = (HSE_VALUE or HSI_VALUE / PLL_M) * PLL_N
  *
- * ★★ 天马 F407 开发板的 HSE 晶振是 8MHz（板上丝印 Y1 = 8.000），
+ * 天马 F407 开发板的 HSE 晶振是 8MHz（板上丝印 Y1 = 8.000），
  *    所以 PLL_M 必须是 8，不是 ST 模板默认的 25（那是 25MHz 晶振的板子）。
  *    改错会得到：SYSCLK = 8/25×336/2 = 53.76MHz（而不是 168MHz），
  *    后果——所有基于 SystemCoreClock 的延时、SysTick、I2C/1-Wire/SPI
@@ -375,7 +375,7 @@ void SystemInit(void)
      AHB/APBx prescalers and Flash settings ----------------------------------*/
   SetSysClock();
 
-  /* ★ 按真实寄存器刷新 SystemCoreClock（CMSIS 里它初值只是个占位常量
+  /* 按真实寄存器刷新 SystemCoreClock（CMSIS 里它初值只是个占位常量
      16000000，不刷新的话 Delay_us / SYS_TICK_Init 会拿到错的主频） */
   SystemCoreClockUpdate();
 

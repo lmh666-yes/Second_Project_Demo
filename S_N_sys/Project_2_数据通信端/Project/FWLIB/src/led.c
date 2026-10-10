@@ -1,52 +1,27 @@
 #include "led.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
+/* 接口说明见同名 .h，本文件为实现层 */
 #include "gpio_core.h"
 #include "delay.h"      /* 延时（delay_ms 等）独立文件 */
 
-/* ================================================================
- *  led.c —— 【板载】LED 模块  实现文件
- * ================================================================
- *  对外只暴露 id（0 ~ LED_COUNT-1），调用者无需知道具体端口/引脚。
- *  端口引脚映射集中在 led.h 的宏里，本文件只做"用 id 查表 → 操作"。
- *
- *  换板子时本文件的修改规则：
- *    - 换引脚        → 不用改（表引用 led.h 的宏，自动跟随）
- *    - 改极性        → 不用改（下面按 LED_ACTIVE_LOW 自动换算）
- *    - 增删 LED 数量 → 必须同步修改下方引脚表！
- * ================================================================ */
+/* 对外只暴露 id，取值范围 0 ~ LED_COUNT-1
+ * 端口和引脚映射集中在 led.h 的宏，本文件按 id 查表操作；换引脚、改极性不需要改本文件 */
 
 
-/* ================================================================
- *                    硬件映射表
- * ================================================================
- * 数组下标 = 对外暴露的 id（0 ~ LED_COUNT-1）
- * 两张表一一对应、顺序必须一致：led_port[i] 与 led_pin[i] 描述同一引脚
- *
- * ⚠ 数量一致性（重要）：
- *   表项数必须与 led.h 中的 LED_COUNT 相同！
- *   增删 LED 时：led.h 加/删 LEDx 宏并改 LED_COUNT，
- *   然后同步在这里加/删对应项。
- *   若只改 LED_COUNT 而不同步本表：
- *     - 改小 → 多余初始化项，编译期即报错（下方有编译期护栏）
- *     - 改大 → 表尾出现零值项，编译期护栏同样会拦住
- * ================================================================ */
+/* 数组下标 = 对外暴露的 id，两张表一一对应，顺序必须一致：led_port[i] 与 led_pin[i] 描述同一引脚
+ * 表项数必须与 led.h 中的 LED_COUNT 相同，增删 LED 时两处同步修改，只改 LED_COUNT 会被下方编译期护栏拦下 */
 static GPIO_TypeDef* const led_port[LED_COUNT] = {LED0_PORT, LED1_PORT};
 static const uint16_t      led_pin [LED_COUNT] = {LED0_PIN,  LED1_PIN};
 
-/* 编译期护栏：表项数必须与 led.h 的 LED_COUNT 相同（不一致则此行直接编译不过） */
+/* 编译期护栏：表项数与 LED_COUNT 不一致时此行编译报错 */
 typedef char led_table_count_check[(sizeof(led_port) / sizeof(led_port[0]) == LED_COUNT) ? 1 : -1];
 
-/* 流水单步位置（LED_FlowStep 的内部状态）：含义 = 下一次要点亮的 id
- * LED_Init() 复位为 0；其它阻塞式灯效不修改它 */
+/* 流水单步位置，含义为下一次要点亮的 id
+ * LED_Init 复位为 0，其它阻塞式灯效不修改它 */
 static uint8_t             led_flow_pos = 0;
 
 
-/* ================================================================
- *            电平极性换算
- * ================================================================
- * 把"点亮/熄灭"语义翻译成"具体寄存器操作"：
- *   LED_ON_LEVEL / LED_OFF_LEVEL 是宏形式的函数名，
- *   预处理阶段按 LED_ACTIVE_LOW 二选一，运行时零开销。 */
+/* 点亮与熄灭电平换算：LED_ON_LEVEL / LED_OFF_LEVEL 是宏形式的函数名，
+ * 预处理阶段按 LED_ACTIVE_LOW 二选一，运行时无额外开销 */
 #if LED_ACTIVE_LOW
     #define LED_ON_LEVEL    GPIO_ResetBits      /* 低电平点亮 */
     #define LED_OFF_LEVEL   GPIO_SetBits
@@ -55,8 +30,8 @@ static uint8_t             led_flow_pos = 0;
     #define LED_OFF_LEVEL   GPIO_ResetBits
 #endif
 
-/* 内部辅助：按"语义"写电平（on 非 0 = 点亮）
- * 所有公开接口最终都走这里——越界防护与极性适配只有一份实现 */
+/* 内部辅助：按语义写电平，on 非 0 点亮
+ * 所有公开接口最终都走这里，越界防护与极性适配只有一份实现 */
 static void led_write(uint8_t id, uint8_t on)
 {
     if (id >= LED_COUNT) return;
@@ -66,15 +41,12 @@ static void led_write(uint8_t id, uint8_t on)
 }
 
 
-/* ================================================================
- *                    基础功能
- * ================================================================ */
-/* 初始化：逐个配置为推挽输出，并立即写入"熄灭"电平
- * （GPIO_OutInit 内部自动使能对应端口时钟，无需另行开时钟）
- * 先配置、后写电平，避免上电到初始化之间引脚不确定状态点亮 LED */
+/* 逐个配置为推挽输出并立即写熄灭电平
+ * GPIO_OutInit 内部自动使能端口时钟，无需另行开时钟
+ * 先配置后写电平，避免引脚不确定状态点亮 LED */
 void LED_Init(void)
 {
-    led_flow_pos = 0;                             /* 流水单步位置复位 */
+    led_flow_pos = 0;                             /* 位置复位 */
 
     for (uint8_t i = 0; i < LED_COUNT; i++) {
         GPIO_OutInit(led_port[i], led_pin[i]);
@@ -82,18 +54,19 @@ void LED_Init(void)
     }
 }
 
-/* 点亮 / 熄灭：核心逻辑集中在 led_write（含越界防护与极性适配） */
+/* 点亮：核心逻辑在 led_write，含越界防护与极性适配 */
 void LED_On(uint8_t id)
 {
     led_write(id, 1);
 }
 
+/* 熄灭：核心逻辑在 led_write */
 void LED_Off(uint8_t id)
 {
     led_write(id, 0);
 }
 
-/* 翻转：直接操作 ODR，无需经过极性换算（翻转结果与极性无关） */
+/* 翻转：直接操作 ODR，结果是电平取反，与极性无关 */
 void LED_Toggle(uint8_t id)
 {
     if (id >= LED_COUNT) return;
@@ -101,10 +74,7 @@ void LED_Toggle(uint8_t id)
 }
 
 
-/* ================================================================
- *                    扩展功能
- * ================================================================ */
-/* 点亮全部：逐个调用 LED_On，保持与单灯操作一致的语义与极性 */
+/* 点亮全部：逐个调用 LED_On */
 void LED_AllOn(void)
 {
     for (uint8_t i = 0; i < LED_COUNT; i++) LED_On(i);
@@ -117,7 +87,7 @@ void LED_AllOff(void)
 }
 
 /* 按位显示：逐位检查 value，位为 1 点亮对应 LED
- * LED_SHOW_REVERSE 在编译期决定位序（正序：bit i → LED i） */
+ * LED_SHOW_REVERSE 在编译期决定位序，正序为 bit i 对应 LED i */
 void LED_ShowHex(uint8_t value)
 {
     for (uint8_t i = 0; i < LED_COUNT; i++) {
@@ -132,13 +102,10 @@ void LED_ShowHex(uint8_t value)
 }
 
 
-/* ================================================================
- *                    扩展功能（灯效）
- * ================================================================
- * 全部基于 LED_On / LED_Off / LED_AllOn / LED_AllOff 组合，
- * 节奏由 gpio_core 的粗延时控制（阻塞式）；结束后统一全部熄灭。 */
+/* 灯效：全部由 LED_On / LED_Off / LED_AllOn / LED_AllOff 组合而成
+ * 节奏由 delay_ms 阻塞延时控制，结束后统一全部熄灭 */
 
-/* 闪烁：指定灯亮/灭各 interval_ms，重复 times 次 */
+/* 闪烁：指定灯亮、灭各 interval_ms，重复 times 次 */
 void LED_Blink(uint8_t id, uint32_t times, uint32_t interval_ms)
 {
     if (id >= LED_COUNT || interval_ms == 0) return;
@@ -160,7 +127,7 @@ void LED_AllBlink(uint32_t times, uint32_t interval_ms)
     }
 }
 
-/* 交替闪烁：按 id 奇偶分两组，两拍互换，共 times 轮 */
+/* 交替闪烁：按 id 奇偶分两组，每轮两拍互换 */
 void LED_Alternate(uint32_t times, uint32_t interval_ms)
 {
     if (interval_ms == 0) return;
@@ -198,7 +165,7 @@ void LED_Flow(uint32_t times, uint32_t interval_ms)
     LED_AllOff();
 }
 
-/* 跑马灯（往返）：去程 0→N-1、回程 N-2→1，"去回"为一趟 */
+/* 跑马灯（往返）：去程 LED0 到最后一个，回程倒数第二个到 LED1，一去一回为一趟 */
 void LED_Marquee(uint32_t times, uint32_t interval_ms)
 {
     if (interval_ms == 0) return;
@@ -210,7 +177,7 @@ void LED_Marquee(uint32_t times, uint32_t interval_ms)
             LED_On(i);
             delay_ms(interval_ms);
         }
-        /* 回程：倒数第二个 → LED1（两端不重复点亮） */
+        /* 跑马灯回程：LED_COUNT-2 到 1，两端不重复点亮 */
         for (int8_t i = (int8_t)(LED_COUNT - 2); i >= 1; i--) {
             LED_AllOff();
             LED_On((uint8_t)i);
@@ -221,7 +188,7 @@ void LED_Marquee(uint32_t times, uint32_t interval_ms)
 }
 
 /* 流水单步（非阻塞）：点亮当前位置并预计算下一格
- * 位置含义：下一次要点亮的 id（LED_Init 复位为 0 → 首次点亮 LED0） */
+ * 位置含义为下一次要点亮的 id，LED_Init 复位为 0，首次点亮 LED0 */
 uint8_t LED_FlowStep(int8_t dir)
 {
     uint8_t cur = led_flow_pos;
@@ -242,10 +209,9 @@ uint8_t LED_FlowStep(int8_t dir)
     return cur;
 }
 
-/* ================================================================
- *        扩展功能：目标点亮 + 频率/占空比闪灯引擎（非阻塞）
- * ================================================================ */
-/* 点亮 0 ~ n 号（n 超范围 → 全部点亮） */
+/* 扩展功能：目标点亮 + 频率/占空比闪灯引擎（非阻塞） */
+/* 点亮 0 ~ n 号
+ * n 超范围则全部点亮 */
 void LED_OnTo(uint8_t n)
 {
     for (uint8_t i = 0; i < LED_COUNT; i++) {
@@ -254,13 +220,15 @@ void LED_OnTo(uint8_t n)
     }
 }
 
-/* 闪灯引擎状态（按 id 一路一套;数组随 LED_COUNT 自动扩） */
-static uint16_t led_bl_period[LED_COUNT];   /* 周期 ms */
-static uint16_t led_bl_on    [LED_COUNT];   /* 一个周期内"亮"的 ms */
-static uint16_t led_bl_cnt   [LED_COUNT];   /* 当前周期内计到第几 ms */
-static uint8_t  led_bl_en    [LED_COUNT];   /* 1 = 该路闪灯启用中 */
+/* 闪灯引擎状态，按 id 一路一套，数组随 LED_COUNT 自动扩
+ * 全部加 volatile：任务侧改（Start/Stop），中断侧读（BlinkUpdate）
+ * 无 volatile 时编译器会把循环内读到的 led_bl_en 缓存在寄存器，中断里看不到任务写入的新周期或使能位 */
+static volatile uint16_t led_bl_period[LED_COUNT];   /* 周期 ms */
+static volatile uint16_t led_bl_on    [LED_COUNT];   /* 一个周期内"亮"的 ms */
+static volatile uint16_t led_bl_cnt   [LED_COUNT];   /* 当前周期内计到第几 ms */
+static volatile uint8_t  led_bl_en    [LED_COUNT];   /* 1 = 该路闪灯启用中 */
 
-/* 启动:周期 + 占空比（‰）→ 预换算"亮多久" */
+/* 启动：周期与占空比（千分比）换算成一个周期内亮的毫秒数 */
 void LED_BlinkStart(uint8_t id, uint16_t period_ms, uint16_t duty_permille)
 {
     if (id >= LED_COUNT || period_ms == 0U) return;
@@ -272,7 +240,7 @@ void LED_BlinkStart(uint8_t id, uint16_t period_ms, uint16_t duty_permille)
     led_bl_en[id]     = 1U;
 }
 
-/* 停止该路并熄灭（保持"停止=灭"的明确语义） */
+/* 停止该路并熄灭 */
 void LED_BlinkStop(uint8_t id)
 {
     if (id >= LED_COUNT) return;
@@ -280,7 +248,7 @@ void LED_BlinkStop(uint8_t id)
     LED_Off(id);
 }
 
-/* 每 1ms 调一次:按"亮多久/灭多久"逐路翻转,不阻塞 */
+/* 每 1ms 调用一次，按亮的毫秒数逐路翻转，不阻塞 */
 void LED_BlinkUpdate(void)
 {
     for (uint8_t i = 0; i < LED_COUNT; i++) {

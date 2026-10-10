@@ -58,7 +58,7 @@
     - [12.5 信号量（二值/计数）与互斥量](#125-信号量二值计数与互斥量)
     - [12.6 软件定时器与事件组](#126-软件定时器与事件组)
     - [12.7 常用 API 速查](#127-常用-api-速查)
-    - [12.8 与库模块混用的注意事项（重要）](#128-与库模块混用的注意事项重要)
+    - [12.8 与库模块混用的注意事项](#128-与库模块混用的注意事项)
 13. [复用本模板到新工程](#13-复用本模板到新工程)
 14. [附录 A —— 自定义表与结构体索引](#附录-a--自定义表与结构体索引)
 
@@ -68,7 +68,7 @@
 
 这是一套基于 **ST 标准外设库（StdPeriph）的"薄封装"函数库模板**。
 
-**"薄封装"是什么意思？**
+**"薄封装"的含义**
 
 - 不重写、不替代标准库 —— 标准库仍然是唯一的底层实现；
 - 只在它之上加一层"**语义 + 防护**"：
@@ -79,11 +79,11 @@
 
 | 原则 | 说明 |
 |---|---|
-| ① 调用简单 | 对外只暴露 `id`（0/1/2/3），无需对照原理图就能写业务代码 |
-| ② 移植省事 | 引脚映射、电平极性、数量全部集中在头文件"配置区"（或模块引脚表），换板子只动配置、不动逻辑 |
-| ③ 易错点封装 | "忘开时钟""极性反了""消抖漏了"这类高频问题在库内部一次性解决 |
+| 1) 调用简单 | 对外只暴露 `id`（0/1/2/3），无需对照原理图就能写业务代码 |
+| 2) 移植省事 | 引脚映射、电平极性、数量全部集中在头文件"配置区"（或模块引脚表），换板子只动配置、不动逻辑 |
+| 3) 易错点封装 | "忘开时钟""极性反了""消抖漏了"这类高频问题在库内部一次性解决 |
 
-`main()` 目前是空的 —— 这是模板，业务逻辑由你自己写。
+`main()` 目前是空的 —— 这是模板，业务逻辑需自行实现。
 
 ---
 
@@ -220,7 +220,7 @@ graph TD
 `.h` 管"接口与配置"，`.c` 管"实现与映射表"（外接模块的引脚表在 `.c` 中，是区块 1 的延伸）；
 引脚表与 `XXX_COUNT` 宏之间都配了**编译期护栏**：表项数不一致会直接编译不过。
 
-> ⚠️ **重要**：ST 标准库文件**不在本工程目录内**，由 Keil 器件包 `Keil.STM32F4xx_DFP 1.0.8` 提供。
+> **重要**：ST 标准库文件**不在本工程目录内**，由 Keil 器件包 `Keil.STM32F4xx_DFP 1.0.8` 提供。
 > 本工程实际编译了其中 15 个文件：`misc.c`、`stm32f4xx_gpio.c`、`stm32f4xx_rcc.c`、`stm32f4xx_flash.c`、`stm32f4xx_dma.c`、`stm32f4xx_exti.c`、`stm32f4xx_pwr.c`、`stm32f4xx_syscfg.c`、`stm32f4xx_tim.c`、`stm32f4xx_usart.c`、`stm32f4xx_i2c.c`、`stm32f4xx_spi.c`、`stm32f4xx_adc.c`、`stm32f4xx_iwdg.c`、`stm32f4xx_wwdg.c`。
 > 另有独立组件：`ETH\` 目录里的 ST 官方以太网驱动（`STM32F4x7_ETH_Driver V1.1.0`，ST 许可），
 > 与器件包无关、随工程分发；`FreeRTOS\` 与 `ETH\` 均不依赖器件包。
@@ -391,11 +391,11 @@ GPIO_OutInit(GPIOA, GPIO_Pin_5);   /* 内部自动使能 GPIOA 时钟 */
 GPIO_OutSet (GPIOA, GPIO_Pin_5);
 ```
 
-> 💡 **位带（Bit-Band）已独立成文件**：见 **5.32 `sys_bitband.h`**——写法像 51 的 sbit：`GPIO_BB_OUT(GPIOF, 9) = 0;` 或 `PFout(9) = 0;`；编译期算地址、一条指令完成，还能直接操作**任意外设寄存器位**（`BITBAND_PERIPH(&TIM2->CR1, 0) = 1;`）。
+> **位带（Bit-Band）已独立成文件**：见 **5.32 `sys_bitband.h`**——写法像 51 的 sbit：`GPIO_BB_OUT(GPIOF, 9) = 0;` 或 `PFout(9) = 0;`；编译期算地址、一条指令完成，还能直接操作**任意外设寄存器位**（`BITBAND_PERIPH(&TIM2->CR1, 0) = 1;`）。
 > **2026-10-08 调整**：led/key 里的 `LED_BB_*` / `KEY_BB_Read` 已撤除——位带统一直取 `sys_bitband.h` 的宏（`PFout(9) = 0;`、`PAin(0)`）。（F7/H7 无位带，宏不可用——见第 11 节）
-> ⏱ **精准延时（DWT，独立文件 `delay.h`）**：`delay_us / delay_ns / delay_ms_dwt` 基于内核 DWT 周期计数器（硬件计时、每周期 +1）——无需初始化、不占中断，**FreeRTOS 下依然可用**（毫秒级替代 `SYS_TICK_*` 的搭档，见 5.7；超长延时任务里优先 `vTaskDelay`）；误差 ±几十 ns 级，适用单总线（WS2812 / DS18B20）、传感器时序、脉冲宽度等"纳秒 ~ 毫秒"场合。
+> **精准延时（DWT，独立文件 `delay.h`）**：`delay_us / delay_ns / delay_ms_dwt` 基于内核 DWT 周期计数器（硬件计时、每周期 +1）——无需初始化、不占中断，**FreeRTOS 下依然可用**（毫秒级替代 `SYS_TICK_*` 的搭档，见 5.7；超长延时任务里优先 `vTaskDelay`）；误差 ±几十 ns 级，适用单总线（WS2812 / DS18B20）、传感器时序、脉冲宽度等"纳秒 ~ 毫秒"场合。
 
-> 🔌 **GPIO 复用功能（AF）**：引脚要接哪路外设信号，靠“复用号” `GPIO_AF_xxx` 指定——完整的 **AF0~AF15 速查表**、"外设→AF 反查表"、`GPIO_PinAFConfig` **源码逐句解析**（含"脚序号 ≠ 引脚掩码"这个最大坑）都在 `gpio_core.h` 文末附录“附:GPIO 复用功能(AF)速查表”。
+> **GPIO 复用功能（AF）**：引脚要接哪路外设信号，靠“复用号” `GPIO_AF_xxx` 指定——完整的 **AF0~AF15 速查表**、"外设→AF 反查表"、`GPIO_PinAFConfig` **源码逐句解析**（含"脚序号 ≠ 引脚掩码"这一常见错误）都在 `gpio_core.h` 文末附录“附:GPIO 复用功能(AF)速查表”。
 
 ### 5.2 led —— 板载 LED
 
@@ -468,16 +468,16 @@ LED_Blink(0, 3, 200);   /* LED0 闪 3 次，亮/灭各 200ms */
 > ```c
 > KEY_EXTI_Enable();                        // 初始化阶段：挂中断（触发沿自动适配）
 > while (1) {
->     if (KEY_EXTI_HasEvent()) {            // ① 先查"有没有"（快，不取走）
->         uint8_t k = KEY_EXTI_GetEvent();  // ② 再取具体按键（取走即清）
->         if (k == 0) { ... }               // ③ 按键分发
+>     if (KEY_EXTI_HasEvent()) {            // 1) 先查"有没有"（快，不取走）
+>         uint8_t k = KEY_EXTI_GetEvent();  // 2) 再取具体按键（取走即清）
+>         if (k == 0) { ... }               // 3) 按键分发
 >     }
 > }
 > ```
 >
 > 事件回调**预置 8 键自动适配**（`KEY_COUNT` ≤ 8 无需改动 key.c 事件段）。
 
-`KEY_Scan()` 行为特征（重要）：
+`KEY_Scan()` 行为特征：
 
 - 含 **10ms 软件消抖 + 边沿检测**：只在"按下瞬间"返回一次，可直接当单击事件用；
 - **长按不连发**：按下保持期间不会重复返回，松手后才允许下一次触发；
@@ -497,7 +497,7 @@ LED_Blink(0, 3, 200);   /* LED0 闪 3 次，亮/灭各 200ms */
 | `BEEP_KeySound()` | 按键提示音：短促"嘀"一声（约 50ms） |
 | `BEEP_SOS()` | SOS 求救信号：三短三长三短（约 2.8s，节拍由 `BEEP_SOS_UNIT_MS` 控制） |
 
-> ⚠️ 只支持**有源蜂鸣器**（直接通断发声）；无源蜂鸣器需要方波驱动，本库不支持。
+> 只支持**有源蜂鸣器**（直接通断发声）；无源蜂鸣器需要方波驱动，本库不支持。
 
 ### 5.5 ext_io —— 外接模块
 
@@ -577,7 +577,7 @@ EXT_XXX_Init()       ← 第二层：专属覆盖（默认留空），在打底�
 | 计时、超时判断、传感器时序 | `SYS_TICK_*`（精确、跨主频仍准） |
 | 单总线 / 纳秒 ~ 微秒级极短时序 | delay.h 的 `delay_ns / delay_us`（DWT 硬件计时，无需初始化，RTOS 下也可用） |
 
-> ⚠️ SysTick 是内核独占资源：本模块以"中断方式"使用它，`SysTick_Handler` 已在 `sys_tick.c` 中定义（弱定义）。应用代码不要同时再配置 SysTick；想自己接管就直接写同名函数（自动顶替库版——但本模块计时/延时随之停用）。
+> SysTick 是内核独占资源：本模块以"中断方式"使用它，`SysTick_Handler` 已在 `sys_tick.c` 中定义（弱定义）。应用代码不要同时再配置 SysTick；想自己接管就直接写同名函数（自动顶替库版——但本模块计时/延时随之停用）。
 
 ---
 
@@ -604,7 +604,7 @@ EXT_XXX_Init()       ← 第二层：专属覆盖（默认留空），在打底�
 
 - 开启 `SYS_USART_FPUTC_ENABLE` 后，`printf()` 直接输出到 `SYS_USART_1`；
 - DMA 数据流占用（硬件固定）：USART1 → DMA2_Stream7(TX)/DMA2_Stream5(RX)；USART2 → DMA1_Stream6/5；USART3 → DMA1_Stream3/1（通道均为 4）；
-- ⚠ 板上 PA2/PA3 同时复用去以太网 ETH_MDIO —— USART2 与以太网二者选其一。
+- 板上 PA2/PA3 同时复用去以太网 ETH_MDIO —— USART2 与以太网二者选其一。
 
 - 教材对照（《09串口\10串口接收和解析字符串》）：`#` 结束收帧 + 命令解析 + 格式化组包，库版一条流水线：
 
@@ -668,7 +668,7 @@ void OnKeyTick(void) { LED_Toggle(1); }         // 累计 5 次脉冲翻转一�
 
 /* 输入捕获：TIM5_CH1(PA0) 下降沿捕获、10kHz 计数（1 个计数 = 0.1ms）*/
 SYS_TIM_CaptureInit(SYS_TIM_5, 1, GPIOA, GPIO_Pin_0, GPIO_AF_TIM5, TIM_ICPolarity_Falling, 10000);
-if (SYS_TIM_CaptureFlag(SYS_TIM_5, 1)) {            // 捕获到了？
+if (SYS_TIM_CaptureFlag(SYS_TIM_5, 1)) {            // 捕获标志
     uint32_t t = SYS_TIM_CaptureGet(SYS_TIM_5, 1);  // 读值（读 = 顺带清标志）→ t/10 = 毫秒
 }
 
@@ -679,17 +679,17 @@ SYS_TIM_OcInit(SYS_TIM_2, 3, GPIOB, GPIO_Pin_10, GPIO_AF_TIM2, TIM_OCMode_Toggle
 SYS_TIM_TrgoInit(SYS_TIM_3, 10000);
 ```
 
-> ⚠ 定时中断的回调相当于"库替你写好了 IRQHandler"——应用层**可以**自己手写 `TIMx_IRQHandler`（标准库练手）：库内 ISR 全是**弱定义**，你的强定义会自动顶替库版（工程链接器已配 `--muldefweak`，不再报"重复定义"）；但**二选一**——你顶替后，库回调（`SYS_TIM_InitIT` 注册的）就不再执行。
+> 定时中断的回调相当于"库已提供 IRQHandler"——应用层**可以**自己手写 `TIMx_IRQHandler`（等效标准库写法）：库内 ISR 全是**弱定义**，你的强定义会自动顶替库版（工程链接器已配 `--muldefweak`，不再报"重复定义"）；但**二选一**——你顶替后，库回调（`SYS_TIM_InitIT` 注册的）就不再执行。
 
-**✍ 标准库原版写法对照（想手写标准库时照这个抄）**——同样"TIM3 每 1 秒中断一次"，标准库原版是这样：
+**标准库原版写法对照（手写标准库时参考）**——同样"TIM3 每 1 秒中断一次"，标准库原版是这样：
 
 ```c
 /* ---------- 标准库原版:定时中断（TIM3 每 1 秒进一次中断） ---------- */
 
-/* ① 开时钟:TIM3 挂 APB1 总线 */
+/* 1) 开时钟:TIM3 挂 APB1 总线 */
 RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
 
-/* ② 时基:84MHz ÷ 8400 = 10kHz 计数,再数 10000 次 = 1s */
+/* 2) 时基:84MHz ÷ 8400 = 10kHz 计数,再数 10000 次 = 1s */
 TIM_TimeBaseInitTypeDef tb;               // 先定义结构体
 tb.TIM_Prescaler         = 8400 - 1;      // 分频器（寄存器值 = 分频系数 - 1）
 tb.TIM_Period            = 10000 - 1;     // 周期（寄存器值 = 计数次数 - 1）
@@ -698,10 +698,10 @@ tb.TIM_ClockDivision     = TIM_CKD_DIV1;  // 二次分频,一般填 DIV1
 tb.TIM_RepetitionCounter = 0;             // 仅高级定时器用,普通填 0
 TIM_TimeBaseInit(TIM3, &tb);
 
-/* ③ 开"更新中断":计数满一圈触发一次 */
+/* 3) 开"更新中断":计数满一圈触发一次 */
 TIM_ITConfig(TIM3, TIM_IT_Update, ENABLE);
 
-/* ④ NVIC:使能 TIM3 中断向量 + 优先级 */
+/* 4) NVIC:使能 TIM3 中断向量 + 优先级 */
 NVIC_InitTypeDef ni;
 ni.NVIC_IRQChannel                   = TIM3_IRQn;  // 中断号按定时器查 IRQn 表
 ni.NVIC_IRQChannelPreemptionPriority = 2;          // 数值越小越急
@@ -709,10 +709,10 @@ ni.NVIC_IRQChannelSubPriority        = 0;
 ni.NVIC_IRQChannelCmd                = ENABLE;
 NVIC_Init(&ni);
 
-/* ⑤ 启动计数 */
+/* 5) 启动计数 */
 TIM_Cmd(TIM3, ENABLE);
 
-/* ⑥ 中断服务函数:标准库版必须自己写,名字与启动文件严格一致 */
+/* 6) 中断服务函数:标准库版必须自己写,名字与启动文件严格一致 */
 void TIM3_IRQHandler(void) {
     if (TIM_GetITStatus(TIM3, TIM_IT_Update) != RESET) {   // 查:是它触发的吗
         TIM_ClearITPendingBit(TIM3, TIM_IT_Update);        // 清:必须!否则反复进中断
@@ -727,13 +727,13 @@ void TIM3_IRQHandler(void) {
 
 **输入捕获**同理——标准库原版是"时钟+引脚复用+时基+`TIM_ICInit`（结构体 5 字段）+启动"五步；库版一行 `SYS_TIM_CaptureInit(SYS_TIM_5, 1, GPIOA, GPIO_Pin_0, GPIO_AF_TIM5, TIM_ICPolarity_Falling, 10000);`；`TIM_ICInitTypeDef` 五字段速查见 `sys_tim.h` 文末新附录。
 
-**输出比较**同理——标准库原版是"时钟+引脚复用+时基+`TIM_OCInit`（结构体选六种模式之一）+启动"；库版 `SYS_TIM_OcInit(...)`（翻转/冻结/强电平/PWM1/2 任选），`TIM_OCInitTypeDef` 速查见 `sys_tim.h` 文末附录。注意：PWM 只是它的 `TIM_OCMode_PWM1`/`_PWM2` 两个预设模式，日常调占空比仍用 `PwmInit / SetDuty` 更顺手。
+**输出比较**同理——标准库原版是"时钟+引脚复用+时基+`TIM_OCInit`（结构体选六种模式之一）+启动"；库版 `SYS_TIM_OcInit(...)`（翻转/冻结/强电平/PWM1/2 任选），`TIM_OCInitTypeDef` 速查见 `sys_tim.h` 文末附录。注意：PWM 只是它的 `TIM_OCMode_PWM1`/`_PWM2` 两个预设模式，日常调占空比通常用 `PwmInit / SetDuty`。
 
-> 📋 上面 `tb.` 那 5 个字段各是什么、能填哪些值、对应哪个寄存器 → `sys_tim.h` 文末附录"附:标准库结构体速查 —— TIM_TimeBaseInitTypeDef"（逐字段讲解 + 填空对照表）。
+> 上面 `tb.` 那 5 个字段各是什么、能填哪些值、对应哪个寄存器 → `sys_tim.h` 文末附录"附:标准库结构体速查 —— TIM_TimeBaseInitTypeDef"（逐字段讲解 + 填空对照表）。
 
-> ⚠ 两者不要混用：同一路中断，"库回调"与"手写 ISR"**二选一**——你可以直接手写 `TIM3_IRQHandler`（库版弱定义自动让位，不再报"链接报错"）；但你顶替后，`SYS_TIM_InitIT` 的库回调就停用了。
+> 两者不要混用：同一路中断，"库回调"与"手写 ISR"**二选一**——你可以直接手写 `TIM3_IRQHandler`（库版弱定义自动让位，不再报"链接报错"）；但你顶替后，`SYS_TIM_InitIT` 的库回调就停用了。
 
-> 💡 **ETR 还分两种时钟模式**：`TIM_ETRClockMode2Config`（默认，SMCR 的 ECE 位直通）/ `TIM_ETRClockMode1Config`（经触发控制器，SMS+TS）——计数效果等价、占用的配置位不同；由 `sys_tim.h` 宏 `SYS_TIM_ETR_CLKMODE` 选择（填 1/2 即分别对应 Mode1Config/Mode2Config，重编译即可对照体验）。
+> **ETR 还分两种时钟模式**：`TIM_ETRClockMode2Config`（默认，SMCR 的 ECE 位直通）/ `TIM_ETRClockMode1Config`（经触发控制器，SMS+TS）——计数效果等价、占用的配置位不同；由 `sys_tim.h` 宏 `SYS_TIM_ETR_CLKMODE` 选择（填 1/2 即分别对应 Mode1Config/Mode2Config，重编译即可对照体验）。
 
 ### 5.10 sys_exti —— 外部中断（EXTI0 ~ EXTI15）
 
@@ -748,7 +748,7 @@ void TIM3_IRQHandler(void) {
 
 - 触发方式：`SYS_EXTI_RISING` / `SYS_EXTI_FALLING` / `SYS_EXTI_BOTH`；
 - "线号 = 引脚号"，每线只能绑一个引脚；引脚方向/上下拉需自行配置（按键模块已配好）；
-- **回调里要延时怎么办**（教学实验常见）：用 `delay_ms()`（delay.h，纯忙等、不依赖中断，ISR 内安全）；⚠ 别用 `SYS_TICK_Delay_ms()`——它靠 SysTick 中断续时基，优先级不当会在 ISR 里死等；工程惯例是"回调只置标志、耗时处理留给主循环"；
+- **回调中延时的处理**：用 `delay_ms()`（delay.h，纯忙等、不依赖中断，ISR 内安全）；不使用 `SYS_TICK_Delay_ms()`：它靠 SysTick 中断续时基，优先级不当会在 ISR 里死等；工程惯例是"回调只置标志、耗时处理留给主循环"；
 - **EXTI 线占用表（本库现状）**：
 
 | 线号 | 0 | 1 | 2 | 3 | 4 | 5 ~ 15 |
@@ -827,7 +827,7 @@ void TIM3_IRQHandler(void) {
 
 - 返回 0 = 成功，负数 = 错误码；`SYS_I2C_ERR_ADDR` 即"器件无应答"；
 - 常用地址宏：`SYS_I2C_ADDR_24C02 / MPU6050 / AHT10 / SHT30 / SSD1306`；
-- ⚠ 数据手册若给 8 位地址（如 0xD0），**右移 1 位** 再传。
+- 数据手册若给 8 位地址（如 0xD0），**右移 1 位** 再传。
 
 ### 5.15 sys_spi —— SPI 主机（SPI1/2/3）
 
@@ -928,7 +928,7 @@ SYS_ADC_ExtTrigScanInit(ADC3, ADC_ExternalTrigConv_T3_TRGO, chs, 2, wbuf, 200);
 
 - 换板/换 PHY：改区块 1 引脚宏 + `ETH\port\stm32f4x7_eth_conf.h` 的 PHY_SR 三件套（速度/双工判定）；
 - 自测路线：接交换机 → `SYS_ETH_LinkUp()==1` → 与电脑互发原始帧（如 ARP）验证收发；
-- ⚠ PA2(MDIO) 与 USART2_TX 板级复用——网口与 USART2 二选一。
+- PA2(MDIO) 与 USART2_TX 板级复用——网口与 USART2 二选一。
 
 ### 5.19 sys_fault —— CPU 故障捕获诊断（黑匣子）
 
@@ -943,7 +943,7 @@ SYS_ADC_ExtTrigScanInit(ADC3, ADC_ExternalTrigConv_T3_TRGO, chs, 2, wbuf, 200);
 | `SYS_FAULT_Clear()` | 清空记录 |
 | `SYS_FAULT_Report(buf,size)` | （区块 3）生成一行 ASCII 现场报告，供串口发送 |
 
-- 出错后三种定位途径：① Keil Watch 窗口看 `SYS_FAULT_Record`（重点 `.pc` → 反查源码）；② 回调里串口打印 `SYS_FAULT_Report()`；③ 查 `.cfsr` 对照手册看原因位；
+- 出错后三种定位途径：1) Keil Watch 窗口看 `SYS_FAULT_Record`（重点 `.pc` → 反查源码）；2) 回调里串口打印 `SYS_FAULT_Report()`；3) 查 `.cfsr` 对照手册看原因位；
 - 典型用法（串口报警，联动 sys_usart）：
 
 ```c
@@ -975,10 +975,10 @@ SYS_FAULT_SetCallback(on_fault);
 
 - 喂狗位置是灵魂：只放在“所有关键任务都成功跑到”的位置；不要每个任务各喂各的；
 - 调试：初始化自动开启“调试暂停冻结”，Keil 断点/单步不会触发复位；
-- ⚠ 与 `sys_pwr`：Stop 模式下 LSI 继续运行、看门狗继续计数——休眠时间超过超时会直接复位。
-- ⚠ IWDG 超时按 LSI≈32kHz 换算；LSI 实际频率 17~47kHz（芯片特性），**最大误差可达 ±50%**——精度要求高时先实测 LSI 再修改 `SYS_WDG_LSI_HZ`。
-- 💡 **推荐用法（心跳汇总,练习同款思路的强化版）**：区块 1 把 `SYS_WDG_HEARTBEAT_COUNT` 改成任务数（1~32），每个任务循环里 `SYS_WDG_Heartbeat(id)` 报到，主循环只留 `SYS_WDG_HeartbeatPoll()`——全员到齐才喂狗；某任务卡死 → 它的位缺 → 等狗咬复位。开机自报复位原因：`if (SYS_WDG_ResetCause() & SYS_WDG_RST_IWDG) SYS_USART_SendLine(SYS_USART_1, "IWDG!");`（再 `ClearResetFlags()`）。
-- 📋 哪些库函数可能"阻塞超时":喂狗周期对照表见 `sys_wdg.h` 文件头（KEY_WaitPress / 扇区擦除 / ETH 自协商等）。
+- 与 `sys_pwr`：Stop 模式下 LSI 继续运行、看门狗继续计数——休眠时间超过超时会直接复位。
+- IWDG 超时按 LSI≈32kHz 换算；LSI 实际频率 17~47kHz（芯片特性），**最大误差可达 ±50%**——精度要求高时先实测 LSI 再修改 `SYS_WDG_LSI_HZ`。
+- **推荐用法（心跳汇总,练习同款思路的强化版）**：区块 1 把 `SYS_WDG_HEARTBEAT_COUNT` 改成任务数（1~32），每个任务循环里 `SYS_WDG_Heartbeat(id)` 报到，主循环只留 `SYS_WDG_HeartbeatPoll()`——全员到齐才喂狗；某任务卡死 → 它的位缺 → 等狗咬复位。开机自报复位原因：`if (SYS_WDG_ResetCause() & SYS_WDG_RST_IWDG) SYS_USART_SendLine(SYS_USART_1, "IWDG!");`（再 `ClearResetFlags()`）。
+- 哪些库函数可能"阻塞超时":喂狗周期对照表见 `sys_wdg.h` 文件头（KEY_WaitPress / 扇区擦除 / ETH 自协商等）。
 
 ### 5.21 sys_flash —— 内部 Flash 擦写与参数保存
 
@@ -994,7 +994,7 @@ SYS_FAULT_SetCallback(on_fault);
 | `SYS_FLASH_LoadParams(buf,max,&len)` | （区块 3）读回并校验；首次未保存返回 `SYS_FLASH_ERR_EMPTY`（属正常） |
 
 - 默认参数区 = **Sector 11**（`0x080E0000 ~ 0x080FFFFF`，宏可改）：程序代码不要越过 `0x080E0000`（约 896KB 处）——否则被编译进该扇区的代码会被"保存参数"整扇区擦掉；
-- ⚠ 擦写期间 CPU 取指会被硬件暂挂（大扇区擦除可达秒级）：避免在喂狗临界时刻 / 高频中断密集处做擦写，与看门狗同用先评估超时；
+- 擦写期间 CPU 取指会被硬件暂挂（大扇区擦除可达秒级）：避免在喂狗临界时刻 / 高频中断密集处做擦写，与看门狗同用先评估超时；
 - 典型用法：
 
 ```c
@@ -1010,18 +1010,18 @@ SYS_FLASH_SaveParams(&cfg, sizeof(cfg));      /* 掉电不丢 */
 
 ### 5.22 中断向量表与模块对照（ISR 归属总表）
 
-> **为什么附这张表**：不少同学以为"每个外设都要自己写中断函数"——其实不用。
+> **表的用途**：并非每个外设都需要自行编写中断函数。
 > 启动文件（`RTE/Device/STM32F407ZE/startup_stm32f40_41xxx.s`）已给**全部 91 个向量**
 > （9 个内核异常 + 82 个外设中断）配了 `[WEAK]` 弱定义兜底；**谁真正用到中断，谁才提供强定义顶替它**。
 > 本库的约定：**应用层永远不写 ISR**——外设初始化 → 库内 ISR 统一接力 → 分发到你注册的回调。
 > （`sys_fault` 故意顶替故障死循环、`sys_tick` 保持弱定义让 FreeRTOS 顶替，都是这套机制的正确用法）
 
-**① 内核系统异常（9 个，编号为负）**
+**1) 内核系统异常（9 个，编号为负）**
 
 | 向量 | 编号 | 触发来源 | 库里的实现 | 说明 |
 |---|---|---|---|---|
 | NMI | -14 | 硬件异常（时钟失效等） | `sys_fault` | 记录现场后停住 |
-| HardFault | -13 | 程序跑飞兜底 | `sys_fault` | ★ 调试最常看它（`.pc` 反查） |
+| HardFault | -13 | 程序跑飞兜底 | `sys_fault` | 调试最常看它（`.pc` 反查） |
 | MemManage | -12 | MPU 内存保护 | `sys_fault`（细分后） | 默认合并进 HardFault |
 | BusFault | -11 | 总线访问错误 | `sys_fault`（细分后） | 同上 |
 | UsageFault | -10 | 用法错误（可抓除零） | `sys_fault`（细分后） | 同上 |
@@ -1030,24 +1030,24 @@ SYS_FLASH_SaveParams(&cfg, sizeof(cfg));      /* 掉电不丢 */
 | PendSV | -2 | RTOS 上下文切换 | FreeRTOS | 裸机不用 |
 | SysTick | -1 | 系统节拍 | `sys_tick`（弱）→ FreeRTOS 顶替 | 二者只生效一个 |
 
-**② 外设中断（IRQ 0~81）——已实现的（库已使能的中断，100% 有 ISR）**
+**2) 外设中断（IRQ 0~81）——已实现的（库已使能的中断，100% 有 ISR）**
 
 | IRQ | 向量 | 隶属 | 库里的实现 | 接力方式 |
 |---|---|---|---|---|
-| 6~10 | EXTI0~EXTI4 | 外部中断 | ✅ `sys_exti` | 5 条独立线，统一分发到回调 |
-| 23 | EXTI9_5 | 外部中断 | ✅ `sys_exti` | 线 5~9 共享一个向量 |
-| 40 | EXTI15_10 | 外部中断 | ✅ `sys_exti` | 线 10~15 共享一个向量 |
-| 11~17、**47** | DMA1_Stream0~7 | DMA1 | ✅ `sys_dma` | X-Macro 一行生成一个，TC 完成→回调 |
-| 56~60、68~70 | DMA2_Stream0~7 | DMA2 | ✅ `sys_dma` | 同上 |
-| 27、46 | TIM1_CC / TIM8_CC | 定时器（捕获/比较） | ✅ `sys_tim` | TIM1/TIM8 的**捕获/比较**中断（`CaptureInitIT` / `OcInitIT`）；其余定时器的捕获/比较走各自主向量 |
-| 24、25、26、43、44、45 | TIM1/8~14 的六条共享向量 | 定时器（共享向量） | ✅ `sys_tim` | 覆盖 TIM1/8/9/10/11/12/13/14；每向量分发本库定时器的更新/捕获/比较中断 |
-| 28、29、30、50、54、55 | TIM2~5 / TIM6 / TIM7 | 通用/基本定时器 | ✅ `sys_tim` | 更新中断→回调（`SYS_TIM_InitIT`）；54 向量上 DAC 部分不动 |
-| 37、38、39 | USART1 / USART2 / USART3 | 串口 | ✅ `sys_usart` | RXNE 环形缓冲；IDLE+DMA 收帧 |
-| **3、41** | RTC_WKUP / RTC_Alarm | RTC | ✅ `sys_rtc` | 秒中断 / 闹钟中断 → 回调（`SYS_RTC_SetWakeUpCallback / SetAlarmCallback`） |
+| 6~10 | EXTI0~EXTI4 | 外部中断 | `sys_exti` | 5 条独立线，统一分发到回调 |
+| 23 | EXTI9_5 | 外部中断 | `sys_exti` | 线 5~9 共享一个向量 |
+| 40 | EXTI15_10 | 外部中断 | `sys_exti` | 线 10~15 共享一个向量 |
+| 11~17、**47** | DMA1_Stream0~7 | DMA1 | `sys_dma` | X-Macro 一行生成一个，TC 完成→回调 |
+| 56~60、68~70 | DMA2_Stream0~7 | DMA2 | `sys_dma` | 同上 |
+| 27、46 | TIM1_CC / TIM8_CC | 定时器（捕获/比较） | `sys_tim` | TIM1/TIM8 的**捕获/比较**中断（`CaptureInitIT` / `OcInitIT`）；其余定时器的捕获/比较走各自主向量 |
+| 24、25、26、43、44、45 | TIM1/8~14 的六条共享向量 | 定时器（共享向量） | `sys_tim` | 覆盖 TIM1/8/9/10/11/12/13/14；每向量分发本库定时器的更新/捕获/比较中断 |
+| 28、29、30、50、54、55 | TIM2~5 / TIM6 / TIM7 | 通用/基本定时器 | `sys_tim` | 更新中断→回调（`SYS_TIM_InitIT`）；54 向量上 DAC 部分不动 |
+| 37、38、39 | USART1 / USART2 / USART3 | 串口 | `sys_usart` | RXNE 环形缓冲；IDLE+DMA 收帧 |
+| **3、41** | RTC_WKUP / RTC_Alarm | RTC | `sys_rtc` | 秒中断 / 闹钟中断 → 回调（`SYS_RTC_SetWakeUpCallback / SetAlarmCallback`） |
 
-> 💡 冷知识：`DMA1_Stream7` 的向量号是 **47**（ST 把它排在了 TIM8 后面），不跟 11~17 在一起——对着 IRQn 表找它时别找错了。
+> 冷知识：`DMA1_Stream7` 的向量号是 **47**（ST 把它排在了 TIM8 后面），不跟 11~17 在一起——对着 IRQn 表找它时别找错了。
 
-**③ 外设中断——未实现的（轮询/阻塞设计够用；用到再按库风格补）**
+**3) 外设中断——未实现的（轮询/阻塞设计够用；用到再按库风格补）**
 
 | IRQ | 向量 | 现状与说明 |
 |---|---|---|
@@ -1068,7 +1068,7 @@ SYS_FLASH_SaveParams(&cfg, sizeof(cfg));      /* 掉电不丢 */
 
 1. 没写 ISR 的中断 = 启动文件弱定义兜底，**绝不会因为"没写"而出错**；
 2. 库里**已使能的每一个中断都有对应 ISR**（逐一核过 `ITConfig/NVIC` 使能点；ISR 名称与启动文件向量名**逐一核对一致**——均为标准名、未做任何改名；库 ISR 为弱定义，靠工程链接器选项 `--muldefweak` 压过启动文件的 `[WEAK]` 兜底桩）；
-3. 加新中断的两种姿势（二选一）：① 库风格——在**对应模块的 .c** 里加 ISR（清标志 → 调回调），应用不写 ISR；② 手写风格——你自己在任意文件写同名 `XXX_IRQHandler` 即可（库版弱定义自动让位、不再报 multiply defined；2026-09 起），但该中断的库回调随之停用。加前先对照本表。
+3. 加新中断的两种姿势（二选一）：1) 库风格——在**对应模块的 .c** 里加 ISR（清标志 → 调回调），应用不写 ISR；2) 手写风格——你自己在任意文件写同名 `XXX_IRQHandler` 即可（库版弱定义自动让位、不再报 multiply defined；2026-09 起），但该中断的库回调随之停用。加前先对照本表。
 
 ---
 
@@ -1095,7 +1095,7 @@ SYS_OLED_ShowFloat(2, 0, 25.4f, 1);              /* 第 2 行显示 25.4 */
 SYS_OLED_Refresh();                              /* 改完统一刷屏 */
 ```
 
-- 屏不亮的排查顺序：① `Init` 返回值（无应答 → 查四根线 / 地址 0x3C 与 0x3D）→ ② 电荷泵命令（0x8D 0x14，库已带）→ ③ 对比度（0x81 的值）；
+- 屏不亮的排查顺序：1) `Init` 返回值（无应答 → 查四根线 / 地址 0x3C 与 0x3D）→ 2) 电荷泵命令（0x8D 0x14，库已带）→ 3) 对比度（0x81 的值）；
 - 与传感器配合：温度/倾角数值直接 `ShowFloat` 上屏——项目三的“本地显示”链路。
 
 ### 5.24 sys_mpu6050 —— 六轴姿态传感器（板载）
@@ -1188,46 +1188,52 @@ while (1) {
 ```
 
 - 寄存器映射：**数组下标 = 寄存器地址**（40001 ↔ hold[0]、30001 ↔ input[0]，Qt 侧做偏移换算）；
-- 联调三步：① 串口助手发 8 字节读帧（含 CRC）看应答 → ② Modbus Poll / QModMaster 工具连 → ③ Qt 对接；
+- 联调三步：1) 串口助手发 8 字节读帧（含 CRC）看应答 → 2) Modbus Poll / QModMaster 工具连 → 3) Qt 对接；
 - 异常应答：01 功能非法 / 02 地址非法 / 03 数值非法；
 - 不新增任何 ISR（帧字节走 sys_usart 已有的中断接收）；暂不支持广播（地址 0）与线圈类功能码。
 
 ### 5.28 sys_frame —— 串口自定义帧协议
 
-> 文件：`sys_frame.h / sys_frame.c` ｜ 帧格式：`AA | CMD | 长度 | 数据 | 异或校验 | 55`，或教材式简化帧 `AA 数据 校验 55`（宏 `SYS_FRAME_WITH_LEN` 切换）｜ 与 USART1/2/3 任一路配合
+> 文件：`sys_frame.h / sys_frame.c` ｜ 帧格式：`AA 55 | CMD | LEN | DATA | CRC16(低字节在前) | 55 AA`，整帧 = 8 + LEN 字节（LEN 上限 `SYS_FRAME_MAX_PAYLOAD` = 64 → 最大 72 字节）｜ 与 USART1/2/3 任一路配合
+> **协议已定稿（两板 `sys_frame.c/.h` 逐字节同源）**：帧头宏 `SYS_FRAME_HEAD_HI` / `SYS_FRAME_HEAD_LO` = `0xAAU` / `0x55U`，帧尾宏 `SYS_FRAME_TAIL_HI` / `SYS_FRAME_TAIL_LO` = `0x55U` / `0xAAU`（**帧尾与帧头恰好相反**），固定开销宏 `SYS_FRAME_OVERHEAD` = 8U。**没有“简化帧”**：旧宏 `SYS_FRAME_HEAD` / `SYS_FRAME_TAIL` / `SYS_FRAME_WITH_LEN` 与全部简化帧代码路径**已删除**；`SYS_FRAME_SendShort` 现语义 = CMD + 空数据段（8 字节整帧）。
+> CRC = **CRC16-MODBUS**：初值 `0xFFFF`、多项式 `0x8005` 反射为 `0xA001`、末不异或；**计算范围 = 帧内 `[2 .. 4+LEN)`，即 CMD + LEN + DATA**（不含帧头、不含帧尾、不含 CRC 自身）。附带性质：把 CRC 两字节也算进去结果为 0 —— “整帧重算 = 0”可直接当校验通过的判据。
 > 覆盖：组帧、逐字节收帧状态机、帧同步（错帧自动重新找头）、校验、出错计数、整帧检查（Build / Verify）——全部在库内
 
 | 函数 | 说明 |
 |---|---|
-| `SYS_FRAME_Send(uart, cmd, payload, len)` | 组帧并发送（通用帧；简化模式下 cmd 即数据字节） |
-| `SYS_FRAME_SendShort(uart, data)` | 发“单字节数据”帧（简化模式 = 教材式 4 字节帧） |
+| `SYS_FRAME_Send(uart, cmd, payload, len)` | 组帧并发送；线上 `AA 55 cmd len 数据… CRC低 CRC高 55 AA`（共 len + 8 字节） |
+| `SYS_FRAME_SendShort(uart, data)` | 发 `data` 当命令字、**数据段为空**的帧（LEN = 0，整帧 8 字节；本协议没有教材式 4 字节“简化帧”） |
 | `SYS_FRAME_Poll(uart)` | 主循环常刷：吃串口字节喂状态机，返回新完整帧数 |
-| `SYS_FRAME_Available()` | 有没有还没取走的帧 |
-| `SYS_FRAME_Get(&cmd, &payload, &len)` | 取走一帧（拷贝；简化模式数据在 cmd 里） |
-| `SYS_FRAME_Feed(byte)` | 单字节喂状态机（你自己的 ISR 用） |
-| `SYS_FRAME_Reset()` / `SYS_FRAME_ErrCount()` | 复位状态机 / 收帧出错计数（联调排查） |
+| `SYS_FRAME_Available(uart)` | 该路串口有没有还没取走的帧（每路一套独立状态机） |
+| `SYS_FRAME_Get(uart, &cmd, payload, cap, &len)` | 取走一帧（把**数据段**拷进你的缓冲；`cap` 为缓冲容量、必填防越界；0 成功 / 1 当前无帧 / 2 缓冲不够） |
+| `SYS_FRAME_Feed(uart, byte)` | 单字节喂状态机（你自己的 ISR 用；与 `Poll` 二选一，同一路只喂一边） |
+| `SYS_FRAME_Reset(uart)` / `SYS_FRAME_ErrCount(uart)` | 复位状态机 / 收帧出错计数（长度超限·CRC 错·帧尾错；联调排查） |
 | `SYS_FRAME_Build(cmd, payload, len, out, cap)` | （区块 3）**定义数据帧**：组帧到你的缓冲区（不发送），返回帧长——先组后发/入队/统一节奏 |
-| `SYS_FRAME_Verify(buf, len)` | （区块 3）**检查数据帧**：0=合法；1 头/2 尾/3 长度不符（抓住“两帧粘接”）/4 校验错/5 参数 |
+| `SYS_FRAME_Verify(buf, len)` | （区块 3）**检查数据帧**：`SYS_FRAME_OK`(0) 合法 / 1 帧头 / 2 帧尾 / 3 长度不符（抓住“两帧粘接”）/ 4 CRC 错（`SYS_FRAME_ERR_CRC`，旧名 `SYS_FRAME_ERR_CHECK` 保留为别名、值仍 4）/ 5 参数 |
+| `SYS_FRAME_BuildEnv(out, cap, temp_x100, humi_x100, press_x10, light, tvoc, mq135)` | （区块 3）组好一整帧**环境帧**：返回 20（成功）/ 0（`out` 为空或 `cap` < 20） |
+| `SYS_FRAME_UnpackEnv(payload, len, …)` | （区块 3）拆环境帧的**数据段**（仅数据段，非整帧）；返回 `SYS_FRAME_OK` / `SYS_FRAME_ERR_PARAM`，输出指针任一给 0 即跳过该项 |
 
 ```c
 SYS_USART_InitRxIT(SYS_USART_1, 115200);          /* 中断收字节 */
-SYS_FRAME_SendShort(SYS_USART_1, 0x0F);           /* 教材对照:线上 AA 0F A5 55 */
+SYS_FRAME_SendShort(SYS_USART_1, 0x0F);           /* 线上 AA 55 0F 00 CRC低 CRC高 55 AA（8 字节整帧） */
 
 while (1) {
     if (SYS_FRAME_Poll(SYS_USART_1) > 0) {        /* 非阻塞;收到完整帧时 >0 */
-        uint8_t cmd, data[16]; uint16_t n;
-        if (SYS_FRAME_Get(&cmd, data, &n) == 0) {
-            if (cmd & 0x01) LED_On(0); else LED_Off(0);   /* 教材 LED 位掩码例子 */
+        uint8_t cmd, data[SYS_FRAME_MAX_PAYLOAD]; uint16_t n;
+        if (SYS_FRAME_Get(SYS_USART_1, &cmd, data, sizeof(data), &n) == 0) {
+            if (cmd == SYS_FRAME_CMD_ENV) { int16_t t, h, p; uint16_t lx, tv, mq; SYS_FRAME_UnpackEnv(data, n, &t, &h, &p, &lx, &tv, &mq); }   /* t/100 = ℃, p/10 = hPa */
         }
     }
 }
 ```
 
-- **与《20_串口协议设置》对照**：`AA 0F A5 55` ↔ `SYS_FRAME_SendShort(SYS_USART_1, 0x0F)`；帧同步/校验/收帧状态机全在库内（教材 ISR 里的 frame_idx/frame_buf 逻辑不再需要手写）；
-- ⚠ 用库方式时**不要自己再写 `USART1_IRQHandler`**（库已定义）——想用自己的 ISR，把收到的字节喂 `SYS_FRAME_Feed()` 即可；
-- 数据字节避开 `0xAA`/`0x55`（简化帧无转义）；要更强校验（求和/CRC）——换帧尾格式并按注释里的“扩展提示”改两处代码即可。
-- 💡 **防粘包 / 半包**：多帧粘连（`AA…55 AA…55`）由状态机逐帧拆开；半包跨调用累积；丢字节由“长度+异或”拦下自动重找头。想双保险就在收整段后先 `SYS_FRAME_Verify()` 再解析——“两帧粘接”会被报 `ERR_LEN`。
-- 💡 **指定数据帧的传输设定**：用 `SYS_FRAME_Build(cmd, payload, len, buf, cap)` 先组帧到缓冲区（返回帧长），再按你的节奏统一发出（`SendBuf`/DMA/RS485 均可）——上下位机联调最稳。
+- **与《20_串口协议设置》对照**：教材那种 4 字节 `AA 数据 校验 55` 帧在本协议里**已不存在**——`SYS_FRAME_SendShort(SYS_USART_1, 0x0F)` 现在线上是 `AA 55 0F 00 CRC低 CRC高 55 AA`；帧同步/校验/收帧状态机全在库内（教材 ISR 里的 frame_idx/frame_buf 逻辑不再需要手写）；
+- 用库方式时**不要自己再写 `USART1_IRQHandler`**（库已定义）——想用自己的 ISR，把收到的字节喂 `SYS_FRAME_Feed()` 即可；
+- **数据段可以放心出现 `0xAA` / `0x55`**：本格式靠“长度 + CRC16”定界，不像教材那种四字节帧要求数据避开帧头帧尾。
+- **防粘包 / 半包**：多帧粘连（接缝处 `… 55 AA AA 55 …`）由状态机逐帧拆开；半包跨调用累积；丢字节 / 误码由“长度自洽 + CRC16”拦下，自动重找帧头。想双保险就在收整段后先 `SYS_FRAME_Verify()` 再解析——“两帧粘接”报 `SYS_FRAME_ERR_LEN`、帧内比特错报 `SYS_FRAME_ERR_CRC`。
+- **指定数据帧的传输设定**：用 `SYS_FRAME_Build(cmd, payload, len, buf, cap)` 先组帧到缓冲区（返回帧长），再按原定节奏统一发出（`SendBuf`/DMA/RS485 均可）——上下位机联调推荐此方式。
+- **解析约束（上位机与对方固件需一致）**：帧尾 `0x55AA` 与下一帧帧头 `0xAA55` 相邻时会拼出 `… 55 AA AA 55 …`，所以不能仅凭 `0xAA55` 判定帧头——必须靠 **1) 连续两字节帧头 `0xAA 0x55` + 2) 长度自洽（`LEN + 8 == 实际帧长`）+ 3) 从 CMD 起重算 CRC16 相等** 这**三重确认**（`SYS_FRAME_Verify()` 一次把三条都查了）。
+- **环境数据帧（`SYS_FRAME_CMD_ENV` = `0x01U`、`SYS_FRAME_ENV_LEN` = `0x0CU`）**：数据段 12 字节、**全部大端（高字节在前）**；数据段内偏移 `SYS_FRAME_ENV_TEMP_OFF` 0 / `HUMI_OFF` 2 / `PRESS_OFF` 4 / `LIGHT_OFF` 6 / `TVOC_OFF` 8 / `MQ135_OFF` 10（对应**整帧**内 4/6/8/10/12/14，CRC 在帧内 16/17，帧尾 18/19，**整帧 20 字节**）。`TEMP`/`HUMI` 是 int16（℃×100 / %RH×100），`LIGHT`/`TVOC`/`MQ135` 是 uint16；**`PRESS` 是 hPa × 10（不是 ×100）** —— ×100 时 1013.25 hPa → 101325 会当场溢出 uint16（现象：气压恒显示成 101.3 hPa 这种“永远偏低”的怪值）。
 
 ---
 
@@ -1278,8 +1284,8 @@ if (SYS_STR_Find(line, "SET-DATE") && SYS_STR_Split(line, ":", a, 4) >= 2) {
 | `SYS_RTC_BackupWrite(n,v)` / `BackupRead(n)` | 备份寄存器 0~19（复位不丢,存首次标记/校准值） |
 | `SYS_RTC_WeekdayFromDate(y,m,d)` | 蔡勒公式（1=周一 … 7=周日） |
 
-- 💡 典型（练习同款）：`Init` → 判 `BackupRead(0)!=0x8888` 说明首次上电，再 `SetDate/SetTime/BackupWrite(0,0x8888)`；
-- 💡 联动：`SetWakeUpCallback(On1s)` 里刷 OLED/打印时间；`SetAlarmCallback(OnAlarm)` 里 `BEEP_BeepEx + LED_AllBlink`（练习的“闹钟叫铃”）。
+- 典型（练习同款）：`Init` → 判 `BackupRead(0)!=0x8888` 说明首次上电，再 `SetDate/SetTime/BackupWrite(0,0x8888)`；
+- 联动：`SetWakeUpCallback(On1s)` 里刷 OLED/打印时间；`SetAlarmCallback(OnAlarm)` 里 `BEEP_BeepEx + LED_AllBlink`（练习的“闹钟叫铃”）。
 
 ### 5.31 sys_softimer —— 软定时器（模块联动引擎）
 
@@ -1298,7 +1304,7 @@ SYS_TICK_Init();
 SYS_SOFTIMER_Add(On1ms,    1);   // 里调 LED_BlinkUpdate / BEEP_Update
 SYS_SOFTIMER_Add(On10ms,  10);   // 里调 KEY_Scan 消抖
 SYS_SOFTIMER_Add(On100ms,100);   // 里调 ADC/传感器采样
-SYS_SOFTIMER_Add(On1s,  1000);   // 里刷 OLED / 打印时间（联动 sys_rtc 秒中断又可反过来）
+SYS_SOFTIMER_Add(On1s,  1000);   // 刷 OLED / 打印时间（联动 sys_rtc 秒中断）
 while (1) { SYS_SOFTIMER_Poll(); /* 主循环只干重活 */ }
 ```
 - 放 TIM 中断里轮询也成（回调必须短小）；硬实时请用 `SYS_TIM_InitIT` 硬件定时器。
@@ -1324,8 +1330,8 @@ if (PAin(0) == 0) { ... }              // 直读 PA0 电平
 BITBAND_PERIPH(&TIM2->CR1, 0) = 1;     // 任意寄存器位也能写
 ```
 
-- ⚠ 仅外设区（0x40000000~0x400FFFFF,GPIO 在内）与 SRAM 区（0x20000000~0x200FFFFF）可位带;**F7/H7（M7）已取消位带**;
-- 📌 led/key 原 `LED_BB_*` / `KEY_BB_Read` 已撤除——统一改用本文件宏;日常用 led/key 函数版即可。
+- 仅外设区（0x40000000~0x400FFFFF,GPIO 在内）与 SRAM 区（0x20000000~0x200FFFFF）可位带;**F7/H7（M7）已取消位带**;
+- led/key 原 `LED_BB_*` / `KEY_BB_Read` 已撤除——统一改用本文件宏;日常用 led/key 函数版即可。
 
 ### 5.33 delay —— 延时函数（粗延时 + DWT 精准延时）
 
@@ -1338,7 +1344,7 @@ BITBAND_PERIPH(&TIM2->CR1, 0) = 1;     // 任意寄存器位也能写
 | `delay_cycles(n)` / `delay_us(us)` / `delay_ns(ns)` / `delay_ms_dwt(ms)` | **DWT 硬件计时精准延时**：免初始化、不占中断,**RTOS 下可用**;`delay_ms_dwt` 单次 ≤ 约 25.5s |
 
 - 三类延时怎么选：粗延时 `delay_ms`（不敏感场合）→ DWT 忙等（纳秒~毫秒精准、RTOS 可用）→ `SYS_TICK_Delay_ms/us`（中断计时、不占 CPU,需先 Init,裸机毫秒级以上首选,见 5.7）;
-- ⚠ DWT 需 M3/M4/M7（CM0 无）;主频切换自动跟随（换算用 `SystemCoreClock`）。
+- DWT 需 M3/M4/M7（CM0 无）;主频切换自动跟随（换算用 `SystemCoreClock`）。
 
 ## 6. 可移植性配置总表
 
@@ -1377,12 +1383,12 @@ BITBAND_PERIPH(&TIM2->CR1, 0) = 1;     // 任意寄存器位也能写
 | `sys_dht11.h` | 引脚宏 `SYS_DHT11_PORT/PIN`、`SYS_DHT11_LOCK_IRQ` | 换引脚 / 时序策略 |
 | `sys_rs485.h` | 方向脚极性参考宏（实际以 Init 参数为准） | 换收发器 |
 | `sys_modbus.h` | 帧缓冲大小 `SYS_MODBUS_BUF_SIZE` | 超长帧场景 |
-| `sys_frame.h` | 帧头/帧尾宏、`SYS_FRAME_WITH_LEN`（是否带长度字段）、负载上限 | 换帧格式 |
+| `sys_frame.h` | 帧头/帧尾宏 `SYS_FRAME_HEAD_HI/LO`、`SYS_FRAME_TAIL_HI/LO`；`SYS_FRAME_OVERHEAD`、负载上限 `SYS_FRAME_MAX_PAYLOAD` | 换帧格式 |
 | `sys_str.h` | 无（纯软件工具，不用改） | —— |
 | `gpio_core.h / .c` | **不用改** | —— |
 | `main.c` | 业务逻辑（与移植无关） | —— |
 
-**⚠️ 数量同步规则（最高频的坑）**
+**数量同步规则**
 
 `LED_COUNT` / `KEY_COUNT` / `EXT_XXX_COUNT` 与对应"引脚表"的项数**必须一致**：
 
@@ -1430,7 +1436,7 @@ BITBAND_PERIPH(&TIM2->CR1, 0) = 1;     // 任意寄存器位也能写
 
 > **场景**：把 LED0 从 PF9 改到 PB0。
 
-**① 打开 `led.h`，修改引脚宏：**
+**1) 打开 `led.h`，修改引脚宏：**
 
 ```c
 /* 改前 */
@@ -1442,7 +1448,7 @@ BITBAND_PERIPH(&TIM2->CR1, 0) = 1;     // 任意寄存器位也能写
 #define LED0_PIN    GPIO_Pin_0
 ```
 
-**② 完成。**
+**2) 完成。**
 
 不需要改时钟语句（`GPIO_OutInit` 内部自动使能 `GPIOB` 时钟）、不需要改 `led.c`、不需要改 `main.c`。
 
@@ -1461,7 +1467,7 @@ BITBAND_PERIPH(&TIM2->CR1, 0) = 1;     // 任意寄存器位也能写
 ```mermaid
 flowchart TD
     A["1. 读原理图<br/>记录每个外设的端口+引脚+极性"] --> B["2. 改 led.h / key.h / beep.h<br/>引脚宏 + 极性开关"]
-    B --> C{"数量有变化吗？"}
+    B --> C{"数量是否变化"}
     C -->|有| D["3. 同步改 led.c / key.c 引脚表项"]
     C -->|没有| E["跳过"]
     D --> F["4. 改 ext_io.c 引脚表<br/>+ ext_io.h 数量 / 极性"]
@@ -1483,12 +1489,12 @@ flowchart TD
 
 **第 5 步：编译验证清单**
 
-1. `LED_AllOn()` → 全部灯亮？
-2. `LED_AllOff()` → 全部灯灭？
-3. 按住时 `KEY_Read(0)` 返回 1、松开返回 0？
-4. `BEEP_Beep(1)` → 叫一声？（有源蜂鸣器）
-5. `EXT_IR_Detected(0)` → 遮挡红外时返回 1？
-6. `SYS_TICK_Delay_ms(1000)` → 秒表测接近 1 秒？（验证时钟）
+1. `LED_AllOn()` → 全部灯亮
+2. `LED_AllOff()` → 全部灯灭
+3. 按住时 `KEY_Read(0)` 返回 1、松开返回 0
+4. `BEEP_Beep(1)` → 鸣叫一声（有源蜂鸣器）
+5. `EXT_IR_Detected(0)` → 遮挡红外时返回 1
+6. `SYS_TICK_Delay_ms(1000)` → 秒表测量接近 1 秒（验证时钟）
 
 ---
 
@@ -1496,9 +1502,9 @@ flowchart TD
 
 ### 9.1 新增一个 LED（id = 4，接 PE5）
 
-> ⚠ 示例选 PE5（板上空闲脚）；不要选 PB5——那是 SPI1 的 MOSI（见 5.15）。
+> 示例选 PE5（板上空闲脚）；不要选 PB5——那是 SPI1 的 MOSI（见 5.15）。
 
-**① `led.h` —— 加宏 + 改数量：**
+**1) `led.h` —— 加宏 + 改数量：**
 
 ```c
 #define LED4_PORT   GPIOE
@@ -1506,14 +1512,14 @@ flowchart TD
 #define LED_COUNT   5
 ```
 
-**② `led.c` —— 引脚表补一项：**
+**2) `led.c` —— 引脚表补一项：**
 
 ```c
 static GPIO_TypeDef* const led_port[LED_COUNT] = {LED0_PORT, LED1_PORT, LED2_PORT, LED3_PORT, LED4_PORT};
 static const uint16_t      led_pin [LED_COUNT] = {LED0_PIN,  LED1_PIN,  LED2_PIN,  LED3_PIN,  LED4_PIN};
 ```
 
-**③ 完成。** `LED_On(4)` 即可使用；`LED_AllOn` / `LED_AllOff` 自动包含它。
+**3) 完成。** `LED_On(4)` 即可使用；`LED_AllOn` / `LED_AllOff` 自动包含它。
 
 > `LED_ShowHex` 最多支持 8 个灯（`LED_COUNT` 有编译期检查）。
 
@@ -1525,9 +1531,9 @@ static const uint16_t      led_pin [LED_COUNT] = {LED0_PIN,  LED1_PIN,  LED2_PIN
 
 ### 9.3 新增一类外接模块（例：激光接收 2 路，接 PE6 / PE7）
 
-> ⚠ 示例改用空闲的 PE6/PE7；PD0/PD1 在板上是 CAN 用途，别照抄旧例。
+> 示例改用空闲的 PE6/PE7；PD0/PD1 在板上为 CAN 用途，不可沿用手册默认值。
 
-**① `ext_io.h` —— 声明数量与极性：**
+**1) `ext_io.h` —— 声明数量与极性：**
 
 ```c
 #define EXT_LASER_COUNT 2
@@ -1537,16 +1543,19 @@ void    EXT_LASER_Init   (void);
 uint8_t EXT_LASER_Detected(uint8_t id);
 ```
 
-**② `ext_io.c` —— 加引脚表：**
+**2) `ext_io.c` —— 加引脚表：**
 
 ```c
 static const ExtPin_t ext_laser_list[EXT_LASER_COUNT] = {
-    { GPIOE, GPIO_Pin_6, RCC_AHB1Periph_GPIOE },
-    { GPIOE, GPIO_Pin_7, RCC_AHB1Periph_GPIOE },
+    { GPIOE, GPIO_Pin_6 },
+    { GPIOE, GPIO_Pin_7 },
 };
 ```
 
-**③ `ext_io.c` —— 加入打底流程：**
+> `ExtPin_t` 只有 `port` / `pin` 两个字段 —— 引脚时钟由 `GPIO_InInit()` 内部调用
+> `GPIO_ClockEnable()` 自动打开，表里**不用**（也没有）`RCC_AHB1Periph_*` 那一列。
+
+**3) `ext_io.c` —— 加入打底流程：**
 
 ```c
 void EXT_IO_Init(void)
@@ -1556,7 +1565,7 @@ void EXT_IO_Init(void)
 }
 ```
 
-**④ `ext_io.c` —— 加初始化与检测函数（复用现成辅助）：**
+**4) `ext_io.c` —— 加初始化与检测函数（复用现成辅助）：**
 
 ```c
 void EXT_LASER_Init(void) { }
@@ -1569,7 +1578,7 @@ uint8_t EXT_LASER_Detected(uint8_t id)
 }
 ```
 
-**⑤ 完成。** 底层复用 `ext_base_init()` / `ext_to_detected()`，不需要写任何新底层代码。
+**5) 完成。** 底层复用 `ext_base_init()` / `ext_to_detected()`，不需要写任何新底层代码。
 
 ---
 
@@ -1577,16 +1586,16 @@ uint8_t EXT_LASER_Detected(uint8_t id)
 
 | 现象 | 可能原因 | 处理 |
 |---|---|---|
-| LED 完全不亮 / 引脚无反应 | ① 没调用 `LED_Init()`<br/>② 引脚被其它外设占用<br/>③ 端口不存在 | ① 主循环前初始化<br/>② 查原理图<br/>③ F407ZE 只有 A~G |
+| LED 完全不亮 / 引脚无反应 | 1) 没调用 `LED_Init()`<br/>2) 引脚被其它外设占用<br/>3) 端口不存在 | 1) 主循环前初始化<br/>2) 查原理图<br/>3) F407ZE 只有 A~G |
 | LED 亮灭颠倒 | 极性反了 | 翻转 `LED_ACTIVE_LOW` |
 | 按键不按也触发 | 极性 / 上下拉不配套 | 低电平按下：`KEY_ACTIVE_LOW=1` + `KEY_PULL=1`；高电平按下：`0` + `2` |
 | 按键按一次触发多次 | 抖动较大 | `KEY_Scan` 已含 10ms 消抖；仍不稳可加大 `key.c` 中的复测延时 |
 | 长按只触发一次 | —— | 设计行为（边沿触发）；长按功能请自行实现 |
-| 蜂鸣器不响 | ① 极性反了<br/>② 无源蜂鸣器 | ① 翻转 `BEEP_ACTIVE_LOW`<br/>② 换有源蜂鸣器或改用 PWM 驱动 |
+| 蜂鸣器不响 | 1) 极性反了<br/>2) 无源蜂鸣器 | 1) 翻转 `BEEP_ACTIVE_LOW`<br/>2) 换有源蜂鸣器或改用 PWM 驱动 |
 | 蜂鸣器上电就响 | 极性反了 | 翻转 `BEEP_ACTIVE_LOW` |
 | 传感器没接就乱触发 | 引脚悬空 | 低电平有效：`EXT_BASE_PULL=1`；高电平有效：`2` |
 | 传感器结果与实际相反 | 触发极性反了 | 翻转对应 `EXT_XXX_ACTIVE_LOW` |
-| 延时不准（比预期长 / 短） | ① `delay_ms` 未标定<br/>② 切换过主频 | ① 精确场景用 `SYS_TICK_Delay_ms`<br/>② 切时钟后重调 `SYS_TICK_Init()` |
+| 延时不准（比预期长 / 短） | 1) `delay_ms` 未标定<br/>2) 切换过主频 | 1) 精确场景用 `SYS_TICK_Delay_ms`<br/>2) 切时钟后重调 `SYS_TICK_Init()` |
 | `SYS_TICK_Delay_ms` 完全不走 | 没调 `SYS_TICK_Init()` | 初始化后再使用 |
 | 编译报 `A9555E: Failed to check out a license` | Keil 许可证未激活 | Keil → File → License Management 激活 |
 | 编译找不到 `stm32f4xx.h` | 器件包缺失 | 安装 `Keil.STM32F4xx_DFP 1.0.8` |
@@ -1602,8 +1611,8 @@ uint8_t EXT_LASER_Detected(uint8_t id)
 | 看门狗频繁复位 | 喂狗位置 / 超时 / Stop 休眠 | 喂狗只放“所有关键任务都到”处；休眠前评估超时（见 5.20） |
 | 调试断点一停就被复位 | 看门狗在计数 | 默认已开调试冻结（`SYS_WDG_DEBUG_FREEZE=1`），确认调试器连接后再下断点 |
 | 参数存不进 / 读回一直 EMPTY | 地址不在有效扇区 / 从未保存过 | 首次读回 `SYS_FLASH_ERR_EMPTY` 属正常；核对 `SYS_FLASH_PARAM_ADDR`（见 5.21） |
-| 中断服务函数要不要自己写？ | 库约定：应用不写 ISR | 外设初始化 → 库内 ISR → 你的回调；全库向量归属见 5.22 |
-| 手写 `TIMx_IRQHandler` 报重复定义？ | 工程未开"弱定义共存"选项 | 库 ISR 全是弱定义——链接器 Misc 需含 `--muldefweak --diag_suppress=L6439W`（模板工程已内置；手工建工程按 13 节方式 B 补上）；开好后手写同名函数自动顶替库版 |
+| 中断服务函数是否需要自行编写 | 库约定：应用不写 ISR | 外设初始化 → 库内 ISR → 你的回调；全库向量归属见 5.22 |
+| 手写 `TIMx_IRQHandler` 报重复定义 | 工程未开"弱定义共存"选项 | 库 ISR 全是弱定义——链接器 Misc 需含 `--muldefweak --diag_suppress=L6439W`（模板工程已内置；手工建工程按 13 节方式 B 补上）；开好后手写同名函数自动顶替库版 |
 | 上了其它 RTOS / 调度器后 `SYS_TICK_*` 失灵 | SysTick 是全芯片独占资源 | 本模块为弱定义，节拍被抢占即静默失效；查 `SYS_TICK_GetTick()` 是否推进，延时改用该 RTOS 自身接口 |
 
 ---
@@ -1622,14 +1631,14 @@ uint8_t EXT_LASER_Detected(uint8_t id)
 - **DWT 精准延时**：`delay_ns / delay_us / delay_ms_dwt / delay_cycles` 依赖内核的 DWT 部件（Cortex-M3/M4/M7 均有，CM0/CM0+ 没有）——换到无 DWT 的内核时不可用。
 - `SYS_TICK_PERIOD_MS` 已参数化：毫秒时基按该周期工作（推荐保持 1）。
 - **中断资源占用（全为弱定义，可被你的强定义顶替）**：本库已实现的中断服务函数：`SysTick_Handler`（sys_tick）、`USART1/2/3_IRQHandler`（sys_usart）、`TIM2/3/4/5_IRQHandler`、`TIM6_DAC_IRQHandler`、`TIM7_IRQHandler` 及 6 个定时器共享向量（sys_tim）、`EXTI0~15` 统一分发（sys_exti）、`DMA1/2_Stream0~7` 全 16 个（sys_dma）、5 个故障异常（sys_fault）。**你手写同名函数 = 自动顶替库版**（靠工程链接器 `--muldefweak`；不再报 multiply defined）——顶替后该中断的库回调停用，**二选一**；全库向量归属见 5.22。
-- **源码编码限制（重要）**：AC5 编译器对源码里的 **UTF-8 中文字符串字面量**解析会报错（`#870-D / missing closing quote`）——**字符串一律用 ASCII**，中文说明放注释里（本库 `SYS_I2C_ErrStr` 等即按此约定）。
+- **源码编码限制**：AC5 编译器对源码里的 **UTF-8 中文字符串字面量**解析会报错（`#870-D / missing closing quote`）——**字符串一律用 ASCII**，中文说明放注释里（本库 `SYS_I2C_ErrStr` 等即按此约定）。
 - **FreeRTOS 混用约束**：SysTick 归 RTOS（`sys_tick` 弱定义让位），`SYS_TICK_Delay_*` 失效改用 `vTaskDelay`；ISR 里只能调用 `FromISR` 接口且该中断优先级数值 ≥ 5；NVIC 分组建议 `NVIC_PriorityGroup_4`（详见 12.8）。
 - **低功耗唤醒后**：外设时钟被改动——Stop 唤醒已自动恢复 168MHz，但 SysTick / 串口 / 定时器必须重新 Init（详见 5.11）。
 
 ### 设计说明与取舍
 
 - `delay_ms()`（delay.h）是**未标定**的软件空循环（经验值：50000 次内层 ≈ 1ms @168MHz + AC5 默认优化）；换主频 / 优化等级后需要重新标定；需要精确定时请使用 `sys_tick` 模块。
-- `ext_io.c` 中 `ExtPin_t.clk` 字段当前冗余（`GPIO_InInit` 会自动开时钟），保留作为双保险，也便于按表集中查改。
+- `ext_io.c` 的 `ExtPin_t` 只有 `port` / `pin` 两个字段：引脚时钟由 `GPIO_InInit()` 内部调用 `GPIO_ClockEnable()` 自动打开（2026-10-11 去掉了原先冗余的 `clk` 字段和表里手写的 `RCC_AHB1PeriphClockCmd`；两处都开时钟属于重复代码，且漏改一处就是"某个脚时好时坏"）。
 - `led.c` / `key.c` 的引脚表逐个引用宏（而非遍历宏），牺牲一点书写量，换取"数量不一致时容易被发现"的约束力 —— 请严格遵守数量同步规则。
 - **位带已统一在 `sys_bitband.h`（2026-10-08 拆分）**：led/key 的 `LED_BB_*` / `KEY_BB_Read` 已撤除——位带收益只在“高频单比特”场景才明显;需要时直接用宏：`PFout(9) = 0;` / `PAin(0)` / `BITBAND_PERIPH`（任意寄存器位）。
 
@@ -1656,10 +1665,10 @@ ST 标准外设库**不在本工程目录内**，由 Keil 器件包提供（`Kei
 | 延时 | 忙等（占着 CPU 空转） | `vTaskDelay()` **让出 CPU**，延时期间 CPU 给别的任务用 |
 | 优先级 | 不存在 | 高优先级任务就绪即抢占低优先级（实时性的来源） |
 | 共享资源 | 全局变量随便用 | 多任务竞争同一资源要用**队列/信号量/互斥量**保护 |
-| 栈 | 全局一套 | **每个任务一套**（创建时指定深度，注意别爆） |
+| 栈 | 全局一套 | **每个任务一套**（创建时指定深度，防止溢出） |
 | 崩溃典型 | 逻辑写错 | 栈溢出 / 堆不够 / 中断里调了非 FromISR 接口 |
 
-一句话：**FreeRTOS 把"轮询标志位"的苦活，变成了"写任务 + 等事件"**。
+**FreeRTOS 以"写任务 + 等事件"替代轮询标志位。**
 
 ### 12.2 最小工程 —— 任务创建 / 延时 / 删除
 
@@ -1707,7 +1716,7 @@ int main(void)
 ```
 
 要点：
-- `xTaskCreate` 的**栈深度单位是"字"**（1 字 = 4 字节）：128 字 = 512 字节，入门够用；任务里有大数组/大结构体要加大；
+- `xTaskCreate` 的**栈深度单位是"字"**（1 字 = 4 字节）：128 字 = 512 字节，可满足一般需求；任务里有大数组/大结构体要加大；
 - 任务函数**永不返回**（死循环 + `vTaskDelay`）；要退出用 `vTaskDelete`；
 - `pdMS_TO_TICKS(500)` 把毫秒换算成节拍数（节拍 1kHz 时即 500）。
 
@@ -1873,11 +1882,11 @@ EventBits_t bits = xEventGroupWaitBits(
 | 短临界区 | `taskENTER_CRITICAL()` / `taskEXIT_CRITICAL()` |
 | 启动调度器 | `vTaskStartScheduler()`（main 最后一步） |
 
-### 12.8 与库模块混用的注意事项（重要）
+### 12.8 与库模块混用的注意事项
 
 1. **SysTick 归 RTOS**：`sys_tick.c` 的 `SysTick_Handler` 是弱定义，会被 FreeRTOS 端口层自动顶替 → `SYS_TICK_Delay_ms / GetTick / GetUs` 等**全部失效**，延时请改用 `vTaskDelay(pdMS_TO_TICKS(ms))`；
 2. **中断优先级**：ISR 里要调用 `xxxFromISR` 接口时，该中断的**优先级数值必须 ≥ 5**（`configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`）。库模块默认 `SYS_XXX_IRQ_PRE_PRIO = 2`（数值小=优先级高，**不能**调 RTOS 接口）——需要时把对应模块头文件里的优先宏改为 `5`，并把 `sys_nvic.h` 的分组宏改成 `NVIC_PriorityGroup_4`（4 位全抢占）后调用 `SYS_NVIC_Init()`；
-3. **不要在中断/回调里用非 FromISR 接口**（`vTaskDelay`、`xQueueSend`……），否则 `configASSERT` 会把你停在死循环里；
+3. **不要在中断/回调里用非 FromISR 接口**（`vTaskDelay`、`xQueueSend`……），否则 `configASSERT` 会停在死循环里；
 4. **库的阻塞函数在任务里慎用**：`BEEP_SOS()`、`LED_Marquee()`、`KEY_WaitPress()`、`delay_ms()` 这类"死等"函数会霸占 CPU——任务里请改用"状态机 + `vTaskDelay`"风格；
 5. **栈溢出 / 堆不足**会自动跳到 `FreeRTOS\port\freertos_hooks.c` 并打印到串口 1（`[FreeRTOS] !! ...`）——看到提示先加大任务栈深度或调大 `configTOTAL_HEAP_SIZE`；
 6. **调试提示**：`configASSERT` 失败会停在断言处，看调用栈即知原因（最常见：中断优先级违规、临界区里调阻塞接口）。
@@ -1897,13 +1906,13 @@ EventBits_t bits = xEventGroupWaitBits(
 
 | 步骤 | 操作 |
 |---|---|
-| ① 拷库 | 把 `FWLIB\` 复制到新工程目录（用网口就一并拷 `ETH\`；用 RTOS 就一并拷 `FreeRTOS\`） |
-| ② 加源文件 | Keil 新建 "Src" 组，把 `FWLIB\src` 下所有 `.c` 加进去（FreeRTOS：`FreeRTOS\src` 的 5 个内核 .c + `FreeRTOS\port` 的 port.c / heap_4.c / freertos_hooks.c，共 8 个；用网口再加 `ETH\src\stm32f4x7_eth.c`） |
-| ③ 加头文件路径 | Options → C/C++ → Include Paths：`\FWLIB\inc`（+ FreeRTOS 两条：`\FreeRTOS\inc`、`\FreeRTOS\port`；+ ETH 两条：`\ETH\inc`、`\ETH\port`，若用网口） |
-| ④ 加全局宏 | `USE_STDPERIPH_DRIVER, STM32F40_41xxx, HSE_VALUE=8000000`（晶振不同就改数字） |
-| ⑤ RTE 勾选 | Manage Run-Time Environment：CMSIS `CORE` + `Startup` + StdPeriph 的 `GPIO/RCC/USART/TIM/EXTI/PWR/SYSCFG/Flash/DMA/I2C/SPI/ADC/IWDG/WWDG/Framework`（看门狗模块需 IWDG/WWDG） |
-| ⑥ 链接器选项 | Options → Linker → Misc controls 填 `--muldefweak --diag_suppress=L6439W`（库 ISR 全是弱定义，必须有它；漏填会报 multiply defined） |
-| ⑦ 验证 | 全量编译应为 0 Error；`build_keil.bat` 可顺便拷过去（双击即用） |
+| 1) 拷库 | 把 `FWLIB\` 复制到新工程目录（用网口就一并拷 `ETH\`；用 RTOS 就一并拷 `FreeRTOS\`） |
+| 2) 加源文件 | Keil 新建 "Src" 组，把 `FWLIB\src` 下所有 `.c` 加进去（FreeRTOS：`FreeRTOS\src` 的 5 个内核 .c + `FreeRTOS\port` 的 port.c / heap_4.c / freertos_hooks.c，共 8 个；用网口再加 `ETH\src\stm32f4x7_eth.c`） |
+| 3) 加头文件路径 | Options → C/C++ → Include Paths：`\FWLIB\inc`（+ FreeRTOS 两条：`\FreeRTOS\inc`、`\FreeRTOS\port`；+ ETH 两条：`\ETH\inc`、`\ETH\port`，若用网口） |
+| 4) 加全局宏 | `USE_STDPERIPH_DRIVER, STM32F40_41xxx, HSE_VALUE=8000000`（晶振不同就改数字） |
+| 5) RTE 勾选 | Manage Run-Time Environment：CMSIS `CORE` + `Startup` + StdPeriph 的 `GPIO/RCC/USART/TIM/EXTI/PWR/SYSCFG/Flash/DMA/I2C/SPI/ADC/IWDG/WWDG/Framework`（看门狗模块需 IWDG/WWDG） |
+| 6) 链接器选项 | Options → Linker → Misc controls 填 `--muldefweak --diag_suppress=L6439W`（库 ISR 全是弱定义，必须有它；漏填会报 multiply defined） |
+| 7) 验证 | 全量编译应为 0 Error；`build_keil.bat` 可直接拷贝使用（双击运行） |
 
 **换板必改 / 不必改（速查）**
 
@@ -1921,10 +1930,10 @@ EventBits_t bits = xEventGroupWaitBits(
 
 ## 附录 A —— 自定义表与结构体索引
 
-> **约定**：库内每一张表、每一个自定义结构体，在**定义处**都必须写明【用途 / 字段含义 / 何时改】；本附录帮你“找到它在哪”。
+> **约定**：库内每一张表、每一个自定义结构体，在**定义处**都必须写明【用途 / 字段含义 / 何时改】；本附录用于定位其定义位置。
 > 找不到某个名字时：先来这里查文件 → 再到对应文件的定义处看逐字段说明。
 
-| 位置 | 名称 | 用途（一句话） |
+| 位置 | 名称 | 用途 |
 |---|---|---|
 | `gpio_core.c` | `PortClock_t / port_clock_map` | 端口指针 → AHB1 时钟位换算表（自动开时钟用） |
 | `led.c` | `led_port / led_pin` | LED 编号→引脚表 |
@@ -1948,7 +1957,7 @@ EventBits_t bits = xEventGroupWaitBits(
 | `sys_mpu6050.c` | `mpu_gyro_lsb / mpu_accel_lsb` | 灵敏度换算表（量程→LSB 系数） |
 | `sys_modbus.c` | `ModbusCtx_t`（变量 `mb`） | 协议运行上下文（串口/地址/数组/钩子/统计） |
 | `sys_frame.c` | `fx_*` 收帧状态机 | 帧同步状态机（头/命令/长度/数据/校验/尾） |
-| `sys_rtc.c` | `bkp_reg[20]` | 备份寄存器 0~19 → `RTC_BKP_DRx` 编号表 |
+| `sys_rtc.c` | `rtc_bkp_reg[19]` | 备份寄存器 1~19 → `RTC_BKP_DR1`~`RTC_BKP_DR19` 编号表（刻意跳过 DR0，读写共用同一张表） |
 | `sys_softimer.c` | `Softimer_t / softimer_tbl` | 软定时器表（回调/周期/下次到点） |
 | 各 `.h` | `SysTimId_t / SysUsartId_t / SysI2cId_t / SysSpiId_t` 等 | 编号枚举：值与数组下标一一对应 |
 | 各 `.h` | `SysI2cErr_t`、`SYS_FAULT_Record_t`、`SysAdcCh_t`、`SYS_MPU6050_Raw_t/Data_t` | 公开类型：定义处均有逐字段/逐值说明 |

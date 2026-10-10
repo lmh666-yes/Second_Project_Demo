@@ -1,24 +1,1074 @@
-/* èŠ¯ç‰‡å¯„å­˜å™¨å®šä¹‰ */
+/* ================================================================
+ *  °å1 ¼ì²â¶Ë / °å2 Êı¾İÍ¨ĞÅ¶ËÍ¨ÓÃ£ºÉÏ°å×Ô¼ìÓë×îĞ¡±Õ»·Áªµ÷³ÌĞò
+ *  Ä¿±ê°å STM32F407ZE£¨°å1 GEC-M4£©/ STM32F407ZG£¨°å2 ÆÕÖĞ-ÌìÂí£©
+ *  ±àÒë Keil MDK(AC5) + SPL + FreeRTOS£»±¾ÎÄ¼ş GBK(936)¡¢LF »»ĞĞ
+ *  ×Ô¼ìÇåµ¥ÓëÓ²¼ş½ÓÏß¼û Project_1_¼ì²â¶Ë\¼ì²âÊı¾İ¶ËÉè¼Æ.md
+ * ================================================================ */
+
 #include "stm32f4xx.h"
-//ç‰ˆè®¾é…ç½®
-#include "gpio_core.h"    
-#include "led.h"         
-#include "key.h"           
+#include <stdio.h>
+#include <string.h>
+
+#include "gpio_core.h"
+#include "led.h"
+#include "delay.h"
+#include "sys_clock.h"
+#include "sys_tick.h"
+#include "sys_nvic.h"
 #include "sys_usart.h"
-#include "sys_bitband.h"
-#include "string.h"
-#include "stdio.h"
-#include "stdlib.h"
+#include "sys_wdg.h"
+#include "sys_rtc.h"      /* °å1 ÓÃ GetDate+GetTime£¬°å2 ÓÃµ¥¸ö SysRtc_t£¬¼û test_rtc() */
+#include "lora_e22.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
+#include "queue.h"
+
+
+/* ---------------- 0. °åºÅÓëµ÷ÊÔ¿Ú ---------------- */
+/* °åºÅ£º±ØĞëÓÉ Keil ¹¤³ÌÉèÖÃÌá¹©£¨Options for Target -> C/C++ -> Define ¼Ó SYS_TEST_BOARD=1(°å1) »ò =2(°å2)£©¡£
+ * ÎÄ¼şÄÚ²»Ğ´Ä¬ÈÏÖµ£¬·ñÔò¿½½ø±ğµÄ¹¤³Ì»á¾²Ä¬±à³ÉÁíÒ»¿é°å£¬ÉÏ°å²Å·¢ÏÖ´®¿ÚÓë LoRa ¿ØÖÆ½Å²»¶Ô¡£
+ * Íü¼ÓÔò±¨ÏÂÃæµÄ #error¡£ÆäÓà Define Ïî²»¶¯£ºUSE_STDPERIPH_DRIVER¡¢STM32F40_41xxx¡¢HSE_VALUE=8000000¡£
+ * ±¾µØ¹¤¾ß\²Ö¿âÑ²¼ì\sync_main.py ÒÔÎÄ¼şÀïÃ»ÓĞ¸Ãºê¶¨ÒåÀ´ÅĞ¶Ï°åºÅÒÑ½»¸ø¹¤³ÌÉèÖÃ¡£ */
+#ifndef SYS_TEST_BOARD
+  #error "Ã»ÓĞ¶¨Òå SYS_TEST_BOARD£ºÇëÔÚ Keil ¹¤³Ì Options for Target -> C/C++ -> Define Àï¼Ó SYS_TEST_BOARD=1 (°å1) »ò =2 (°å2)"
+#elif ((SYS_TEST_BOARD != 1) && (SYS_TEST_BOARD != 2))
+  #error "SYS_TEST_BOARD Ö»ÄÜÊÇ 1 (°å1 ¼ì²â¶Ë) »ò 2 (°å2 Êı¾İÍ¨ĞÅ¶Ë)"
+#endif
+
+#if (SYS_TEST_BOARD == 1)
+  #define BOARD_NAME   "°å1 ¼ì²â¶Ë (Project_1_¼ì²â¶Ë)"
+  #include "sys_dht11.h"
+  #include "sys_modbus.h"        /* ½èËüµÄ CRC16 ×éÖ¡ */
+  #define HAS_DHT11   1
+#else
+  #define BOARD_NAME   "°å2 Êı¾İÍ¨ĞÅ¶Ë (Project_2_Êı¾İÍ¨ĞÅ¶Ë)"
+  #include "w25qxx.h"
+  #include "w25qxx_log.h"
+  #include "modbus.h"            /* °å2 µÄ CRC16 ÔÚ modbus.h Àï */
+  #define HAS_W25QXX  1
+#endif
+
+/* Òı½ÅÕ¼ÓÃ±í£¨±¾¹¤³Ì main.c ÕæÕıÓÃµ½µÄ½Å£©£ºÖ»ÁĞ±¾¹¤³Ì main.c Êµ¼Ê³õÊ¼»¯»òÊ¹ÓÃµÄ½Å£¬²»ÊÇÈ«¿âÇåµ¥¡£
+ * ¿âÄÚÉùÃ÷µÄÈ«Á¿Çåµ¥ÓÉ ±¾µØ¹¤¾ß\²Ö¿âÑ²¼ì\pin_audit.py É¨ FWLIB\inc\*.h µÄ *_PORT / *_PIN Éú³É£»
+ * ÔËĞĞÆÚÊµ¼ÊÅäÖÃÓÉ gpio_core µÄ GPIO_Claim µÇ¼Ç£¬main() Àï GPIO_ClaimDump() ´òÓ¡¡£
+ *
+ * °å1 STM32F407ZE£¨GEC-M4£©
+ *   USART1 PA9/PA10 µ÷ÊÔ¿Ú£¬°åÔØ CH340C£¬115200 8N1
+ *   USART2 PA2/PA3  RS485 »òÉÏÎ»»ú£¬°åÉÏÌøÏßÑ¡ SP3485 / SP3232
+ *   USART3 PB10/PB11 LoRa E22£»M0/M1/AUX = PB0/PB1/PB2£¨ÆÕÍ¨ IO£©
+ *   DHT11 PG9£¨µ¥×ÜÏß£¬Ğè 4.7k ÉÏÀ­£©£»LED0~LED3 = PF9/PF10/PE13/PE14
+ *   °´¼ü KEY1~KEY4 = PA0/PE2/PE3/PE4£¨main.c Î´³õÊ¼»¯£©
+ *   ¹Ì¶¨½Å PH0/PH1 = 8MHz HSE£¬PC14/PC15 = 32.768kHz LSE£¬PA13/PA14 = SWD
+ *   ¿âÄÚÒÑÉùÃ÷µ«±¾¹¤³ÌÎ´³õÊ¼»¯£ºSPI1 Óë SPI3 Í¬Îª PB3/PB4/PB5£¬SPI2 = PB13/PB14/PB15£¬
+ *     I2C1 = PB8/PB9£¬I2C2 = PB10/PB11£¨Óë LoRa µÄ USART3 Í¬½Å£©£¬LCD_BL = PB15£¬
+ *     ÒÔÌ«Íø PA1/PA2/PC1/PA7/PC4/PC5/PG11/PG13/PG14/PD3£¬UART4 = PC10/PC11£¬USART6 = PC6/PC7
+ *
+ * °å2 STM32F407ZG£¨ÆÕÖĞ-ÌìÂí£©
+ *   USART1 PA9/PA10 µ÷ÊÔ¿Ú£¬°åÔØ CH340C£¬115200 8N1
+ *   USART2 PA2/PA3  RS485 »òÉÏÎ»»ú£¬°åÉÏ P6 ÌøÏßÑ¡ SP3485 / SP3232
+ *   W25Q128 ×ß SPI1£ºSCK/MISO/MOSI = PB3/PB4/PB5£¨ÉÏµçÎª JTAG£¬¿âÄÚ×Ô¶¯¹Ø±Õ£©£¬CS = PB14
+ *   ESP8266 ×ß USART3 PB10/PB11£»DHT11 PG9£»LED0/LED1 = PF9/PF10
+ *   LoRa E22 ×ß USART6 PC6/PC7£»M0/M1/AUX = PE5/PE6/PE7
+ *   ¹Ì¶¨½Å PH0/PH1 = 8MHz HSE£¬PC14/PC15 = 32.768kHz LSE£¬PA13/PA14 = SWD
+ *   °åÉÏÁíÓĞÓÃÍ¾²»ÒªÕ¼ÓÃ£ºPA15 = USB_PWR£¬PA4/PA5 = Ä£ÄâÌøÏß J8 ¹«¹²¶Ë£¬PA11/PA12 = OTG_FS£¬PD0/PD1 = °åÉÏ CAN
+ *   ¿âÄÚÒÑÉùÃ÷µ«±¾¹¤³ÌÎ´³õÊ¼»¯£ºSPI2 = PB13/PB14/PB15£¨PB14 Óë W25QXX_CS Í¬½Å£¬PB15 Óë LCD_BL Í¬½Å£©£¬
+ *     I2C2 = PB10/PB11£¨Óë ESP8266 µÄ USART3 Í¬½Å£©£¬SPI3 = PB3/PB4/PB5£¨Óë SPI1 Í¬½Å£©£¬
+ *     DS18B20 = PG9£¨Óë DHT11 Í¬½Å£©£¬µç»ú ULN2003 = PC1/PC4£¬TB6612_STBY = PG13£¬RGB5X5_DATA = PC5
+ *
+ * PA2/PA3 ¶şÑ¡Ò»£¨°å1 A4 Ïî£©£ºPA2 ¼ÈÊÇ USART2_TX ÓÖÊÇÒÔÌ«Íø ETH_MDIO¡£
+ * ±¾¹¤³Ì main.c Î´³õÊ¼»¯ USART2£¬Ôİ²»³åÍ»£»ÈôÍ¬Ê±ÆôÓÃ£¬ºó³õÊ¼»¯Õß¸ÄĞ´Òı½ÅÄ£Ê½£¬ÁíÒ»¸ö¾²Ä¬Ê§Ğ§¡£
+ * ¸ÃÔ¼ÊøÓÉÈı´¦ÌáÊ¾£ºsys_eth.h µÚ 25 ĞĞµÄ×ÔÊö¡¢±¾±í¡¢ÔËĞĞÆÚ GPIO_Claim ³åÍ»´òÓ¡¡£
+ * ²»ÓÃ±àÒëÆÚ¶ÏÑÔ£ºSPL µÄ GPIOA ÊÇÖ¸Õë¡¢GPIO_Pin_2 º¬Ç¿ÖÆ×ª»»£¬AC5 ±¨ #183£¬Ô¤´¦ÀíÆ÷±¨ #29/#59/#18¡£
+ * ±¾±íÓÉÈË¹¤Î¬»¤£»¸ÄÒı½ÅºóÍ¬²½¸üĞÂ±¾±í¡£ */
+#if (SYS_TEST_BOARD == 2)
+/* ±àÒëÆÚ¶ÏÑÔ£¨°å2 °æ£©£ºÌõ¼şÎª¼ÙÔòÊı×é³¤¶È±ä¸º£¬±àÒë±¨´í¡£
+ * ´Ë´¦¿ÉÓÃÊÇÒòÎª SYS_LORA_UART Óë ESP8266_USART ¶¼ÊÇÕûÊıºê£¬±È½Ï½á¹ûÊÇÕûĞÍ³£Á¿±í´ïÊ½£»
+ * »»³É´øÇ¿ÖÆ×ª»»»òÖ¸ÕëµÄ SPL ºê»á±¨ #183¡£ */
+typedef char PIN_ASSERT_LORA_UART_MUST_NOT_BE_ESP8266_UART[
+    (SYS_LORA_UART != ESP8266_USART) ? 1 : -1];
+#endif
+
+
+/* ±¾³ÌĞò²ÎÓëĞÄÌø»ã×ÜµÄÈÎÎñ¸öÊı£º°å1 = Sensor/Process/Comm Èı¸ö£»¼à¿ØÈÎÎñ²»Õ¼±¨µ½Î»
+ * £¨¼û vTaskMonitor£©¡£
+ * ÕâÀï²»¸Ä¿âÀïµÄ SYS_WDG_HEARTBEAT_COUNT£¬Ö»ÔÚ±¾ÎÄ¼ş¼ÇÒ»¸öÊıÓÃÓÚÄ£Äâ±¨µ½£º
+ * ËüÊÇ sys_wdg.h µÄ±àÒëÆÚ³£Á¿£¬¸Ä¶¯»á¸Ä±äÕû¸ö¿âµÄÓïÒå£¨ËùÓĞ SYS_WDG_Heartbeat(id) µÄºÏ·¨·¶Î§£©¡£ */
+#if (SYS_TEST_BOARD == 1)
+  #define APP_TASK_COUNT   3
+#else
+  #error "±¾Ä¿Â¼µÄ main.c ÊÇ°å1£¨¼ì²â¶Ë£©°æ±¾£»°å2 Çë±àÒë S_N_sys/Project_2_Êı¾İÍ¨ĞÅ¶Ë/Project/main.c"
+#endif
+
+/* µ÷ÊÔ¿Ú : Á½°å¶¼ÊÇ USART1 ½Ó°åÔØ CH340C */
+#define DBG          SYS_USART_1
+#define DBG_BAUD     115200U
+
+/* ¿´ÃÅ¹·³¬Ê± 4s£º¼à¿ØÈÎÎñ 1s Ò»ÂÖ£¬È¡ 4 ¸öÖÜÆÚ¡£DHT11 ¶ÁÈ¡×î³¤ 8.4ms ¹ØÖĞ¶Ï¼Ó
+ * 2.2s ÖØÊÔ¼ä¸ô£¬´ËÖµ²»ÒËµÍÓÚ 3s¡£ */
+#define APP_WDG_TIMEOUT_MS   4000U
+
+
+/* ---------------- 1. ´òÓ¡ÓëÍ³¼ÆĞ¡¹¤¾ß ---------------- */
+static uint16_t s_pass;
+static uint16_t s_fail;
+
+/* Í³Ò»×ß SYS_USART_Printf£¬ËüÄÚ²¿´øÁË TX ³¬Ê±£¨²»»á¿¨ËÀ£© */
+#define P(...)   (void)SYS_USART_Printf(DBG, __VA_ARGS__)
+
+static void banner(const char *title)
+{
+    P("\r\n------------------------------------------------\r\n");
+    P("  %s\r\n", title);
+    P("------------------------------------------------\r\n");
+}
+
+static void check(const char *name, uint8_t ok)
+{
+    if (ok) { s_pass++; P("  [ OK ] %s\r\n", name); }
+    else    { s_fail++; P("  [FAIL] %s\r\n", name); }
+}
+
+
+/* ---------------- 2. ×Ô¼ì 01~05£ºÄÚºË¡¢Ê±»ù¡¢¿´ÃÅ¹· ---------------- */
+
+/* 01 ¸´Î»Ô­Òò£º¶ÁÈ¡²¢½âÂëÉÏ´Î¸´Î»À´Ô´ */
+static void test_reset_cause(void)
+{
+    uint32_t cause;
+    char     txt[128];
+
+    banner("01 ¸´Î»Ô­Òò ");
+
+    cause = SYS_WDG_ResetCause();
+    P("  ¸´Î»±êÖ¾ = 0x%08X\r\n", (unsigned)cause);
+
+    if (SYS_WDG_ResetCauseDecode(cause, txt, sizeof(txt)) != 0U) {
+        P("  ½âÂë     = %s\r\n", txt);
+    } else {
+        P("  (½âÂëº¯Êı·µ»Ø 0£¬Çë¶ÔÕÕ sys_wdg.h µÄ SYS_WDG_RST_* Î»¶¨Òå)\r\n");
+    }
+    check("¸´Î»Ô­Òò¿É¶Á ", (cause != 0xFFFFFFFFUL));
+    if ((cause & SYS_WDG_RST_IWDG) != 0U) {
+        P("  ÉÏ´ÎÎª¶ÀÁ¢¿´ÃÅ¹·¸´Î»£ºÓĞÈÎÎñÎ´°´Ê±±¨µ½£¬\r\n");
+        P("    ÈôÎªÊ×´ÎÉÕÂ¼ºóµÄµÚÒ»´ÎÉÏµç£¬ÏÈÇå±êÖ¾ÔÙ¹Û²ì¡£\r\n");
+        SYS_WDG_ClearResetFlags();
+    }
+}
+
+/* 02 RTC : ±¸·İÓòÓĞµçÊ±Ê±¼äÓ¦¸Ã»¹ÔÚ */
+static void test_rtc(void)
+{
+#if (SYS_TEST_BOARD == 1)   /* °å1 ÓÃ GetDate+GetTime£¬ĞèÒªÕâ¼¸¸ö±äÁ¿£»°å2 ÓÃµ¥¸ö SysRtc_t */
+    uint8_t  h = 0, m = 0, s = 0;
+    uint16_t y = 0;
+    uint8_t  mo = 0, d = 0, wd = 0;
+#endif
+    uint8_t  r;
+
+    banner("02 RTC Óë±¸·İÓò ");
+
+    r = SYS_RTC_Init();
+    /* 0 = Ê±¼ä»¹ÔÚ(±¸·İÓòÓĞµç) / 1 = Ê×´ÎÉÏµçÒÑ³õÊ¼»¯ / 2 = Ê§°Ü */
+    P("  SYS_RTC_Init() = %u  (%s)\r\n", r,
+      (r == 0U) ? "Ê±¼ä±£Áô " : ((r == 1U) ? "Ê×´ÎÉÏµçÒÑ³õÊ¼»¯ " : "Ê§°Ü "));
+    check("RTC ³õÊ¼»¯ ", (r != 2U));
+
+    if (r != 2U) {
+#if (SYS_TEST_BOARD == 1)
+        /* °å1£ºsys_rtc ²ğ³É GetDate + GetTime Á½¸öº¯Êı */
+        SYS_RTC_GetDate(&y, &mo, &d, &wd);
+        SYS_RTC_GetTime(&h, &m, &s);
+        P("  µ±Ç°Ê±¼ä = %04u-%02u-%02u ÖÜ%u  %02u:%02u:%02u\r\n",
+          y, mo, d, wd, h, m, s);
+#else
+        /* °å2£ºsys_rtc ÓÃÒ»¸ö SysRtc_t ½á¹¹ÌåÒ»´Î¶ÁÈ«¡£
+         * Á½°å API ²»Í¬ÊÇÀúÊ·ÒÅÁô£¬main.c ÓÃÌõ¼ş±àÒëÄ¨Æ½²îÒì¡£ */
+        {
+            SysRtc_t t;
+            SYS_RTC_GetTime(&t);
+            P("  µ±Ç°Ê±¼ä = %04u-%02u-%02u ÖÜ%u  %02u:%02u:%02u\r\n",
+              t.year, t.month, t.day, t.weekday,
+              t.hour, t.minute, t.second);
+        }
+#endif
+    }
+}
+
+/* 03 ºÁÃëÊ±»ù£ºÑéÖ¤ T1 ĞŞ¸´¡£ĞŞ¸´Ç° sys_tick.c µÄ __weak SysTick_Handler ±»
+ * FreeRTOS port.c µÄÇ¿¶¨Òå¶¥Ìæ£¬systick_ms ºã 0£»RTOS Ä£Ê½ÏÂ¸Ä×ß xTaskGetTickCount()
+ * ºó tick Õı³£Ôö³¤¡£ */
+static void test_tick(void)
+{
+    uint32_t t0, t1;
+
+    banner("03 ºÁÃëÊ±»ù£¨T1 ĞŞ¸´ÑéÖ¤£© ");
+
+    t0 = SYS_TICK_GetTick();
+    delay_ms_dwt(50);                   /* ÓÃ DWT ÑÓÊ±£¬²»ÒÀÀµ SysTick */
+    t1 = SYS_TICK_GetTick();
+
+    P("  T0 = %u ms\r\n", (unsigned)t0);
+    P("  T1 = %u ms   (¼ä¸ô %u ms£¬Êµ¼ÊµÈÁË 50ms)\r\n",
+      (unsigned)t1, (unsigned)(t1 - t0));
+
+    check("SYS_TICK_GetTick() »á×ß ", (t1 != t0));
+    check("SYS_TICK_GetTick() ×ßµÃ×¼ ", ((t1 - t0) >= 40U) && ((t1 - t0) <= 60U));
+
+    if (t1 == t0) {
+        P("  tick ²»Ôö³¤£º¼ì²é FreeRTOSConfig.h µÄ configTICK_RATE_HZ£¬\r\n");
+        P("    ÒÔ¼° sys_tick.c µÄ SYS_TICK_USE_RTOS Ä£Ê½ÅĞ¶¨¡£\r\n");
+    }
+}
+
+/* 04 Î¢ÃëÑÓÊ± : DWT ÖÜÆÚ¼ÆÊıÆ÷£¨Óë SysTick ÎŞ¹Ø£¬RTOS ÏÂÒ²ÄÜÓÃ£© */
+static void test_us_delay(void)
+{
+    uint32_t c0, c1, us;
+
+    banner("04 Î¢Ãë¼¶ÑÓÊ±£¨DWT£© ");
+
+    c0 = DWT->CYCCNT;
+    delay_us(100);
+    c1 = DWT->CYCCNT;
+    us = (uint32_t)((c1 - c0) / (SystemCoreClock / 1000000U));
+
+    P("  SystemCoreClock = %u Hz\r\n", (unsigned)SystemCoreClock);
+    P("  delay_us(100) Êµ²â ¡Ö %u us\r\n", (unsigned)us);
+    check("DWT ÖÜÆÚ¼ÆÊı¿ÉÓÃ ", ((us >= 80U) && (us <= 130U)));
+    if (SystemCoreClock != 168000000UL) {
+        P("  Ö÷Æµ²»ÊÇ 168MHz£º¼ì²é PLL_M ÊÇ·ñÎª 8£¨±¾°å HSE=8MHz£©¡£\r\n");
+    }
+}
+
+/* 05 ¿´ÃÅ¹·£ºÑéÖ¤ W1 ĞŞ¸´¡£ĞŞ¸´Ç° SYS_WDG_HEARTBEAT_COUNT=0 Ê± HeartbeatPoll()
+ * Ö±½Ó return 0U ÇÒ²»Î¹¹·£¬°´ sys_wdg.h µÄÊ¾ÀıĞ´Ö÷Ñ­»·»á·´¸´¸´Î»£»ĞŞ¸´ºó¸ÃÇéĞÎ
+ * ÍË»¯ÎªÖ±½ÓÎ¹¹·¡£´Ë´¦²»Æô¶¯¿´ÃÅ¹·£ººóÃæ DHT11/LoRa ×Ô¼ìÒªÊ®¼¸Ãë£¬
+ * SYS_WDG_Init ·ÅÔÚÆô¶¯µ÷¶ÈÆ÷Ö®Ç°¡£ */
+static void test_watchdog(void)
+{
+    uint8_t i;
+
+    banner("05 ¿´ÃÅ¹·£¨W1 ĞŞ¸´ÑéÖ¤£© ");
+
+    P("  SYS_WDG_HEARTBEAT_COUNT = %u  (0 = ¿âÄ¬ÈÏ£¬Î´ÆôÓÃĞÄÌø»ã×Ü)\r\n",
+      (unsigned)SYS_WDG_HEARTBEAT_COUNT);
+    P("  ±¾³ÌĞòÓÃÄ£Ê½¼×£º%u ¸öÈÎÎñ¸÷±¨×Ô¼ºµÄÎ»£¬¼à¿ØÈÎÎñ\r\n",
+      (unsigned)APP_TASK_COUNT);
+    P("  £¨ÓÅÏÈ¼¶×î¸ß£©ÅÜ HeartbeatPoll()£¬È«Ô±µ½Æë²ÅÎ¹¹·¡£\r\n");
+
+    /* ´Ë´¦Î´µ÷ SYS_WDG_Init()£»HeartbeatPoll Ö»×ö±¨µ½¼ÆÊıÓëÎ¹¹·£¬²»·ÃÎÊÎ´³õÊ¼»¯Ó²¼ş¡£ */
+    SYS_WDG_HeartbeatClear();
+    P("  Ò»¸öÈË¶¼Ã»±¨µ½Ê± HeartbeatPoll() = %u\r\n",
+      (unsigned)SYS_WDG_HeartbeatPoll());
+    check("Ä£Ê½¼×£ºÎ´µ½Æë²»Î¹¹·£¨»ã×ÜÉúĞ§£© ",
+          (SYS_WDG_HeartbeatPending() != 0U));
+
+    /* ËùÓĞÈÎÎñÎ»¸÷±¨µ½Ò»´Î£¬Pending Ó¦¹é 0 */
+    for (i = 0U; i < APP_TASK_COUNT; i++) {
+        SYS_WDG_Heartbeat(i);
+    }
+    P("  %u ¸öÈÎÎñÎ»±¨Íêºó Pending = 0x%08X\r\n",
+      (unsigned)APP_TASK_COUNT, (unsigned)SYS_WDG_HeartbeatPending());
+    P("  Pending ÈÔÎªÈ« 1 ÊôÕı³££º¿âµÄ SYS_WDG_HEARTBEAT_COUNT\r\n");
+    P("    ÈÔÎª 0£¬ĞÄÌø»ã×ÜÎ´ÆôÓÃ£¬¼´Ä£Ê½ÒÒ¡£\r\n");
+    P("    ÒªÆôÓÃÄ£Ê½¼×£º°Ñ sys_wdg.h µÄºê¸Ä³É %u¡£\r\n",
+      (unsigned)APP_TASK_COUNT);
+
+    /* W1 ĞŞ¸´µã£ºCOUNT=0 Ê± HeartbeatPoll ²»ÄÜÊÇ¿Õ²Ù×÷£¬ĞŞ¸´Ç°²»Î¹¹·£¬ÕÕÎÄµµĞ´»á¸´Î»Ñ­»·¡£ */
+    SYS_WDG_HeartbeatClear();
+    P("  ¿âÄ¬ÈÏÅäÖÃÏÂ HeartbeatPoll() = %u  (ĞŞ¸´Ç°ºãÎª 0 ÇÒ²»Î¹¹·)\r\n",
+      (unsigned)SYS_WDG_HeartbeatPoll());
+    check("¿âÄ¬ÈÏÅäÖÃÏÂ HeartbeatPoll »áÎ¹¹·£¨W1 ĞŞ¸´µã£© ",
+          (SYS_WDG_HeartbeatPoll() != 0U));
+}
+
+
+/* ---------------- 3. ×Ô¼ì 06~07£ºW25QXX£¨½ö°å2£© ---------------- */
+#if HAS_W25QXX
+static void test_flash_id(void)
+{
+    uint32_t id;
+    uint8_t  r;
+    uint8_t  vendor;
+
+    banner("06 Flash Éí·İ£¨S4 ĞŞ¸´ÑéÖ¤£© ");
+
+    id     = W25QXX_ReadID();
+    vendor = (uint8_t)((id >> 16) & 0xFFUL);
+
+    P("  JEDEC ID = 0x%06X\r\n", (unsigned)(id & 0xFFFFFFUL));
+    P("  ³§ÉÌ     = 0x%02X  (%s)\r\n", (unsigned)vendor,
+      (vendor == 0xC8U) ? "GigaDevice Õ×Ò×´´ĞÂ " :
+      ((vendor == 0xEFU) ? "Winbond »ª°î " : "Î´Öª/Î´Ê¶±ğ "));
+    P("  ÈİÁ¿×Ö½Ú = 0x%02X  (0x18 = 128Mbit = 16MB£¬¼´ GD25Q128)\r\n",
+      (unsigned)(id & 0xFFUL));
+
+    /* S4 ĞŞ¸´µã£ºĞŞ¸´Ç° W25QXX_Init Ö»ÈÏ Winbond µÄ 0xEF4018£¬±¾°å GD25Q128(0xC84018)
+ * »áÒ»Ö±·µ»Ø 1£¬µ÷ÓÃ·½°´ w25qxx.h Ê¾ÀıÖ±½ÓÌø¹ıÕû¸ö¶ÏÍø»º´æÄ£¿é£»ĞŞ¸´ºóÖ»¿´ÈİÁ¿×Ö½Ú¡£ */
+    r = W25QXX_Init(0U);
+    P("  W25QXX_Init() = %u  (0=³É¹¦ 1=Ã»Æ÷¼ş 2=ÈİÁ¿²»·û)\r\n", r);
+    check("W25QXX_Init ½ÓÊÜ·Ç Winbond µÄ 128Mbit Æ÷¼ş ", (r == 0U));
+
+    if ((id == 0xFFFFFFFFUL) || (id == 0x00000000UL)) {
+        P("  ID È« 0/È« F£ºFlash ÎŞÓ¦´ğ¡£²é SPI1 ½ÓÏß¡¢Æ¬Ñ¡½Å£¬\r\n");
+        P("    ÒÔ¼° SPI1 ÊÇ·ñ±» NRF24L01 Õ¼ÓÃ£¨Ô­ÀíÍ¼ÉÏ¹²ÓÃÒ»×é½Å£©¡£\r\n");
+    }
+}
+
+/* 07 ¶ÏÍø»º´æ±Õ»·£ºÑéÖ¤ S1 ×´Ì¬×ÖÓë S2 ÉÈÇø²Á³ıĞŞ¸´¡£
+ * Á÷³ÌÎªĞ´Èë¡¢¶Á»Ø¡¢¶ÏµçÖØÆôºóÈÔ¿É¶Á³ö¡£
+ * ĞŞ¸´Ç°×´Ì¬×ÖºãĞ´Îª 0xFFFFFFFF(EMPTY)£¬Ã¿Ìõ¼ÇÂ¼¶¼ÅĞÎª¿Õ²Û£¬LogCount Êı³ö 0 Ìõ£¬
+ * Ğ´Èë±¨³É¹¦¶ø²¹´«ÓÀÔ¶ 0 Ìõ¡£ */
+static void test_flash_log(void)
+{
+    uint8_t  buf[W25QXX_LOG_PAYLOAD + 1];   /* ±ØĞë +1£º¶Áº¯Êı»áÔÚ½áÎ²Ğ´ 0 */
+    uint32_t ts = 0;
+    uint16_t n = 0, count, cap, head, lost;
+    uint8_t  r;
+    uint16_t i;
+
+    banner("07 ¶ÏÍø»º´æÈÕÖ¾£¨S1/S2 ĞŞ¸´ÑéÖ¤£© ");
+
+    r = W25QXX_LogInit();
+    P("  W25QXX_LogInit() = %u  (0=OK 2=ÍüÁËÏÈ W25QXX_Init)\r\n", r);
+
+    /* W25QXX_LogStat Ö»ÓĞ 3 ¸ö³ö²Î£¬¶ªÊ§ÌõÊıµ¥¶Àµ÷ W25QXX_LogLost */
+    W25QXX_LogStat(&count, &cap, &head);
+    lost = W25QXX_LogLost();
+    P("  ÉÏµçÊ±ÒÑÓĞ %u Ìõ / ÈİÁ¿ %u Ìõ / Ğ´Ö¸Õë %u / ÒÑ¶ª %u Ìõ\r\n",
+      count, cap, head, lost);
+    if (lost > 0U) {
+        P("  ÒÑ¶ª¹ı %u Ìõ£º»º´æ±»ÈÆÈ¦¸²¸Ç£¨¶ÏÍøÌ«¾Ã»ò²¹´«Ì«Âı£©£¬\r\n",
+          lost);
+    }
+    if (count > 0U) {
+        P("  ÒÔÉÏ %u ÌõÊÇÉÏ´Î¶ÏµçÇ°ÁôÏÂµÄ£¬µôµç²»¶ªÊı¾İ\r\n", count);
+    }
+
+    /* Ğ´ 3 ÌõĞÂ¼ÇÂ¼ */
+    for (i = 0U; i < 3U; i++) {
+        memset(buf, 0, sizeof(buf));
+        (void)snprintf((char *)buf, sizeof(buf), "TEST-REC-%u", (unsigned)i);
+        r = W25QXX_LogWrite(1000U + (uint32_t)i, buf,
+                            (uint16_t)strlen((char *)buf));
+        if (r != W25QXX_LOG_OK) {
+            P("  µÚ %u ÌõĞ´ÈëÊ§°Ü£¬·µ»Ø %u\r\n", (unsigned)i, r);
+        }
+    }
+
+    count = W25QXX_LogCount();
+    P("  Ğ´Èëºó W25QXX_LogCount() = %u\r\n", count);
+    /* ĞŞ¸´Ç°ÕâÀïºãÎª 0£ºËùÓĞ¼ÇÂ¼¶¼±»µ±³É¿Õ²Û£¨×´Ì¬×ÖÎª EMPTY£© */
+    check("Ğ´ÈëµÄ¼ÇÂ¼ÄÜ±»Êı³öÀ´£¨×´Ì¬×ÖĞ´³É VALID ÁË£© ", (count > 0U));
+
+    if (count > 0U) {
+        memset(buf, 0, sizeof(buf));
+        n = 0;
+        r = W25QXX_LogRead((uint16_t)(count - 1U), &ts, buf, &n);
+        if (r == W25QXX_LOG_OK) {
+            P("  ¶Á»Ø index=%u ts=%u len=%u text=\"%s\"\r\n",
+              (unsigned)(count - 1U), (unsigned)ts, (unsigned)n, (char *)buf);
+            check("¶Á»ØÄÚÈİÓëĞ´ÈëÒ»ÖÂ ",
+                  (strncmp((char *)buf, "TEST-REC-", 9) == 0));
+        } else {
+            P("  ¶ÁÈ¡Ê§°Ü£¬·µ»Ø %u  (5=¿Õ²Û 6=CRC Ğ£Ñé´í)\r\n", r);
+            check("¶Á»Ø¸ÕĞ´µÄ¼ÇÂ¼ ", 0U);
+        }
+    }
+
+    P("\r\n  ÏÖÔÚ¶ÏµçÔÙÉÏµç£¬ÖØ¿´ÕâÒ»¶Î£º\r\n");
+    P("    ÈôÉÏµçÊ± count ¡İ 3 ÇÒÄÜ¶Á³ö TEST-REC-2£¬S1/S2 Í¨¹ı¡£\r\n");
+    P("    ÈôÉÏµçÊ± count ÈÔÎª 0£¬×´Ì¬×ÖÃ»ÂäÅÌ£¬°´ S1 ÅÅ²é¡£\r\n");
+}
+#endif  /* HAS_W25QXX */
+
+
+/* ---------------- 4. ×Ô¼ì 08£ºDHT11£¨½ö°å1£© ---------------- */
+#if HAS_DHT11
+static void test_dht11(void)
+{
+    float   t = 0.0f, h = 0.0f;
+    uint8_t raw[5];
+    int     r = 0;
+    uint8_t try_n;
+    uint8_t ok = 0U;
+
+    banner("08 DHT11 ÎÂÊª¶È£¨D1 ĞŞ¸´ÑéÖ¤£© ");
+
+    SYS_DHT11_Init(SYS_DHT11_PORT, SYS_DHT11_PIN);
+    delay_ms_dwt(1500);          /* Æ÷¼şÉÏµçĞèÎÈ¶¨Ô¼ 1s ²ÅÄÜ¶Á */
+
+    /* ×î¶àÖØÊÔ 3 ´Î£ºµ¥×ÜÏß¶ÔÊ±ĞòÃô¸Ğ£¬Å¼·¢Ê§°ÜÕı³££»Á¬Ğø 3 ´ÎÊ§°ÜÔò»ù±¾ÊÇ½ÓÏß»òÊ±ĞòÎÊÌâ¡£ */
+    for (try_n = 0U; try_n < 3U; try_n++) {
+        r = SYS_DHT11_Read(&t, &h);
+        SYS_DHT11_GetRaw(raw);
+        P("  µÚ %u ´Î: ·µ»Ø %d  Âã×Ö½Ú %02X %02X %02X %02X %02X\r\n",
+          (unsigned)(try_n + 1U), r,
+          raw[0], raw[1], raw[2], raw[3], raw[4]);
+        if (r == 0) { ok = 1U; break; }
+        delay_ms_dwt(2200);      /* DHT11 ²ÉÑùÂÊ 1Hz£¬¼ä¸ô²»×ã»á¶Áµ½¾ÉÖµ */
+    }
+
+    if (ok) {
+        P("  ÎÂ¶È = %.1f ¡æ   Êª¶È = %.1f %%RH\r\n", t, h);
+        P("  (DHT11 µÄĞ¡ÊıÎ»Êµ¼ÊÎª 0£¬ÕâÊÇÆ÷¼şÌØĞÔ²»ÊÇ¶Á´í)\r\n");
+    } else if (r == -1) {
+        P("  ÎŞÏìÓ¦£º²é PG9 ½ÓÏßÓëÆ÷¼ş·½Ïò\r\n");
+        P("    (ÍøÃæ³¯×Ô¼º£º×óÆğ 1=VCC 2=DATA 3=NC 4=GND)\r\n");
+    } else if (r == -2) {
+        P("  Ğ£ÑéÊ§°Ü£¬°´Âã×Ö½ÚÅĞ¶Ï£º\r\n");
+        P("     1) È« FF£ºÆ÷¼şÎ´Ó¦´ğ£¨½ÓÏß/¹©µç/Ã»ÉÏÀ­£©\r\n");
+        P("     2) È« 00£ºÒı½Å±»À­ËÀ»ò·½ÏòÉè´í\r\n");
+        P("     3) ¸ö±ğÎ»²»Í¬£ºÊ±Ğò±»´ò¶Ï£¬È·ÈÏ SYS_DHT11_LOCK_IRQ=1\r\n");
+    }
+    /* ĞŞ¸´Ç°±ØÈ»Ê§°Ü£ºÎ»ÏàÎ»´íÒ»Î»£¬Ğ£ÑéºÍºã²»³ÉÁ¢£¬·µ»Ø -2 */
+    check("DHT11 ¶Á³É¹¦£¨Î»ÏàÎ»ÒÑĞŞÕı£© ", ok);
+}
+#endif  /* HAS_DHT11 */
+
+
+/* ---------------- 5. ×Ô¼ì 09£ºLoRa E22 ---------------- */
+static void test_lora(void)
+{
+    char    cfg[128];
+    uint8_t r;
+
+    banner("09 LoRa E22");
+
+    r = LORA_E22_Init();
+    P("  LORA_E22_Init() = %u  (0=OK 1=AUXÒ»Ö±Ã¦ 2=Ã»Ä£¿é)\r\n", r);
+    if (r != LORA_E22_OK) {
+        P("  ÅÅ²éË³Ğò£º\r\n");
+        P("     1) Ä£¿éÊÇ·ñÏÈ½ÓÌìÏßÔÙÉÏµç£¨²»½ÓÌìÏß·¢Éä»áÉÕ¹¦·Å£©\r\n");
+        P("     2) M0/M1 ÊÇ·ñ½ÓºÃ£¨Ğü¿Õ»áËæ»ú½øÅäÖÃÄ£Ê½£©\r\n");
+        P("     3) ±¾¶ËÓëÄ£¿é²¨ÌØÂÊÊÇ·ñ¶¼ÊÇ 9600\r\n");
+        P("     4) TXD/RXD ÊÇ·ñ½Ó·´£¨Ä£¿é TXD ¡ú MCU RX£©\r\n");
+        check("LoRa ³õÊ¼»¯ ", 0U);
+        return;
+    }
+    check("LoRa ³õÊ¼»¯ ", 1U);
+
+    /* ¶ÁÒ»´ÎÅäÖÃ£ººË¶ÔµØÖ·/ÍøÂçID/ĞÅµÀÊÇ·ñÓë¶Ô¶ËÒ»ÖÂ */
+    memset(cfg, 0, sizeof(cfg));
+    r = LORA_E22_ReadConfig(cfg, sizeof(cfg));
+    P("  LORA_E22_ReadConfig() = %u\r\n", r);
+    if (r == LORA_E22_OK) {
+        P("  Ä£¿éÅäÖÃ = %s\r\n", cfg);
+    }
+    P("  Á½¶Ë»¥Í¨ÒªÇóÍøÂçID / ĞÅµÀ / µØÖ· ÈıÏîÍêÈ«ÏàÍ¬¡£\r\n");
+
+    /* AT Á¬Í¨ĞÔ£ºÄÜ»Ø OK ËµÃ÷ÇĞÅäÖÃÄ£Ê½Óë´®¿ÚÊÕ·¢¾ùÕı³£ */
+    r = LORA_E22_SendAT("AT");
+    P("  AT ·µ»Ø = %u  (0=OK 2=ÎŞ»ØÓ¦ 3=Ä£¿é»ØERROR)\r\n", r);
+    check("AT Ö¸Áî¿ÉÍ¨£¨ÇĞÅäÖÃÄ£Ê½Ã»ÎÊÌâ£© ", (r == LORA_E22_OK));
+
+    r = LORA_E22_SetMode(LORA_E22_MODE_TRANSPARENT);
+    check("ÄÜÇĞ»ØÍ¸´«Ä£Ê½ ", (r == LORA_E22_OK));
+    P("  µ±Ç° AUX = %u  (1=Ä£¿éÃ¦£¬²»ÄÜ¹àÊı¾İ)\r\n", LORA_E22_IsBusy());
+}
+
+#if (SYS_TEST_BOARD == 2)
+/* ================================================================
+ *          5b. ×Ô¼ì 10£ºMQTT Í¨µÀÓëÅĞ»îĞŞ¸´ÑéÖ¤£¨½ö°å2£©
+ * mqtt.c Ô­À´Ö»·¢ PINGREQ¡¢²»¿´ PINGRESP£¬Ò²Ã»ÓĞ¶à¾ÃÃ»ÊÕµ½Êı¾İËãµôÏßµÄÅĞ¶¨¡£
+ * TCP °ë¿ªÊ±£¨ÍøÏß°Î³ö¡¢Â·ÓÉÆ÷ÖØÆô¡¢NAT ±í±»Çå£©±¾µØÊÕ²»µ½ÈÎºÎÍ¨Öª£¬AT Ò²²»±¨´í£¬
+ * MQTT_IsConnected() ºãÎª 1£¬¶øËüÕıÊÇ¶ÏÍø×ª W25QXX »º´æµÄÅĞ¾İ£¬ÅĞ¾İÊ§Ğ§¼´¾²Ä¬¶ªÊı¾İ¡£
+ * ĞŞ¸´ºó MQTT_IsAlive() °´¾àÉÏ´ÎÊÕµ½ broker ÈÎÒâ×Ö½ÚµÄÊ±³¤ÅĞ»î£¬
+ * MQTT_KeepAliveService() ¸ºÔğÅĞËÀ²¢ÇåÁã s_connected¡£
+ * ÓÃ·¨£ºÌîºÃÏÂÃæ 4 ¸öºêºóÔËĞĞ£¬Î´Ìî»á´òÓ¡ SKIP£»Á¬ÉÏºó°ÎµôÍøÏßµÈ 2 ·ÖÖÓ
+ * £¨MQTT_ALIVE_TIMEOUT_S = 120s£©£¬KeepAliveService() Ó¦·µ»Ø 8¡¢IsConnected() ±ä 0¡£
+ * ================================================================ */
+#define SYS_MQTT_TEST     1
+#define ST_WIFI_SSID      "wifi-name-here"
+#define ST_WIFI_PASS      "wifi-pass-here"
+#define ST_MQTT_HOST      "broker.emqx.io"
+#define ST_MQTT_CLIENT    "f407-board2-test"
+
+static void test_mqtt(void)
+{
+    MqttMsg_t m;
+    uint16_t  i;
+    uint16_t  n_pub  = 0U;
+    uint16_t  n_alive = 0U;
+    uint8_t   got;
+    uint8_t   r;
+    uint8_t   hb;
+
+    banner("10 MQTT channel (liveness fix)");
+
+#if (SYS_MQTT_TEST == 0)
+    P("  SYS_MQTT_TEST = 0, skipped.\r\n");
+    P("  [SKIP] MQTT test not enabled\r\n");
+#else
+    if (strcmp(ST_WIFI_SSID, "wifi-name-here") == 0) {
+        P("  WiFi not filled in. Edit these 4 macros at the top of main.c:\r\n");
+        P("    ST_WIFI_SSID / ST_WIFI_PASS / ST_MQTT_HOST / ST_MQTT_CLIENT\r\n");
+        P("  Then this section will check:\r\n");
+        P("    1) ESP8266 joins the AP and gets an IP\r\n");
+        P("    2) TCP + CONNACK to the broker\r\n");
+        P("    3) whether IsAlive() really watches for incoming bytes\r\n");
+        P("       -- after it runs, UNPLUG THE CABLE and wait 2 minutes:\r\n");
+        P("          KeepAliveService() should return 8 (ALIVE_TIMEOUT)\r\n");
+        P("          IsConnected() should become 0 -> fall back to W25QXX\r\n");
+        P("  [SKIP] MQTT test not configured\r\n");
+        return;
+    }
+
+    /* ---- 1) ESP8266 ---- */
+    if (ESP8266_Init(115200U) != 0U) {
+        P("  [FAIL] ESP8266_Init: check power (200mA+ peak) and TXD/RXD\r\n");
+        check("ESP8266 init", 0U);
+        return;
+    }
+    check("ESP8266 init", 1U);
+
+    if (ESP8266_SetMode(ESP8266_MODE_STA) != 0U) {
+        P("  [FAIL] set STA mode failed\r\n");
+        check("ESP8266 set STA", 0U);
+        return;
+    }
+    check("ESP8266 set STA", 1U);
+
+    P("  joining AP, up to 15s...\r\n");
+    if (ESP8266_JoinAP(ST_WIFI_SSID, ST_WIFI_PASS) != 0U) {
+        P("  [FAIL] cannot join AP: check name/pass/band (2.4G only)\r\n");
+        check("ESP8266 join AP", 0U);
+        return;
+    }
+    check("ESP8266 join AP", 1U);
+
+    /* ---- 2) MQTT CONNECT / CONNACK ---- */
+    r = MQTT_ConnectSimple(ST_MQTT_HOST, ST_MQTT_CLIENT);
+    P("  MQTT_ConnectSimple() = %u (%s)\r\n", r, MQTT_ErrStr(r));
+    if (r != MQTT_OK) {
+        P("  CONNACK code = %u (0=ok 1=bad proto 2=id rejected 4=bad user/pass)\r\n",
+          MQTT_GetConnackCode());
+        check("MQTT connect", 0U);
+        return;
+    }
+    check("MQTT connect", 1U);
+    check("MQTT_IsConnected() = 1", (MQTT_IsConnected() != 0U));
+    check("MQTT_IsAlive() = 1", (MQTT_IsAlive() != 0U));
+    P("  note: IsConnected only means *we think* we are online;\r\n");
+    P("        IsAlive counts how long since we last HEARD something.\r\n");
+
+    (void)MQTT_Subscribe("cmd/f407-001", 0U);
+
+    /* ---- 3) run 3s of keepalive ---- */
+    P("  running 3s of keepalive...\r\n");
+    for (i = 0U; i < 150U; i++) {
+        if (MQTT_Poll(&m) == MQTT_OK) {
+            n_pub++;
+            P("  [rx] %s = %s\r\n", m.topic, m.payload);
+        }
+
+        hb = MQTT_KeepAliveService();
+        if (hb == MQTT_ERR_ALIVE_TIMEOUT) {
+            P("  * liveness timeout: link is dead, s_connected cleared\r\n");
+            break;
+        }
+        if (MQTT_IsAlive() != 0U) n_alive++;
+
+        if ((i % 25U) == 0U) {
+            (void)MQTT_PublishStr("data/f407-002", "alive-test");
+        }
+        delay_ms_dwt(20U);
+    }
+
+    P("  3s: %u downlink msgs, %u alive probes\r\n", n_pub, n_alive);
+    check("still alive after 3s", (MQTT_IsAlive() != 0U));
+
+    got = MQTT_IsConnected();
+    P("  for reference: MQTT_IsConnected() = %u\r\n", got);
+    check("IsConnected and IsAlive agree (both 1)", (got != 0U));
+    P("  Now UNPLUG the cable and wait 2 minutes:\r\n");
+    P("     before the fix IsConnected() stayed 1 (silent data loss)\r\n");
+    P("     after  the fix KeepAliveService() returns 8, IsConnected() -> 0\r\n");
+#endif  /* SYS_MQTT_TEST */
+}
+#endif  /* SYS_TEST_BOARD == 2 */
 
 
 
+/* ================================================================
+ *                    6. ×éÖ¡£¨Á½°å¹²ÓÃ£©
+ * 20 ×Ö½ÚÕûÖ¡£¬Ğ­Òé¼û¡¶¼ì²âÊı¾İ¶ËÉè¼Æ.md¡·¡ì5£º
+ *   [0][1] = 0xAA55 Ö¡Í·£»[2] = ÃüÁî 0x01 »·¾³Êı¾İÉÏ±¨£»[3] = ³¤¶È 0x0C£¬Êı¾İ¶Î 12 ×Ö½Ú£»
+ *   [4..15] Êı¾İ¶Î£¨´ó¶Ë£¬¸ß×Ö½ÚÔÚÇ°£©£»[16][17] = CRC16-MODBUS£¨µÍ×Ö½ÚÔÚÇ°£¬
+ *   ·¶Î§ [2..15] ¹² 14 ×Ö½Ú£©£»[18][19] = Ö¡Î² 0x55AA¡£
+ * Ö¡Î² 0x55AA ÓëÏÂÒ»Ö¡Ö¡Í· 0xAA55 »áÆ´³É 55 AA AA 55£¬½âÎö±ØĞëÓÃÖ¡Í·+³¤¶È+CRC ÈıÖØÈ·ÈÏ¡£
+ * ÆøÑ¹±ØĞë ¡Á10 ¶ø·Ç ¡Á100£º1013.25¡Á100 = 101325 ³¬³ö uint16 ÉÏÏŞ¡£
+ * ================================================================ */
+#define FRAME_CMD_ENV     0x01U
+#define FRAME_LEN_ENV     0x0CU
+#define FRAME_TOTAL       20U
+#define FRAME_TEMP_OFF    4U
+#define FRAME_HUMI_OFF    6U
+#define FRAME_PRESS_OFF   8U
+#define FRAME_LIGHT_OFF   10U
+#define FRAME_TVOC_OFF    12U
+#define FRAME_MQ135_OFF   14U
+#define FRAME_CRC_OFF     16U
 
-static USART_InitTypeDef USART_InitStructure;
-static NVIC_InitTypeDef NVIC_InitStructure;
-static GPIO_InitTypeDef GPIO_InitStructure;
+#if (SYS_TEST_BOARD == 1)   /* ×éÖ¡Ö»ÓĞ°å1£¨·¢ËÍ¶Ë£©ÓÃµ½£»°å2 Ö»½âÎö£¬²»×éÖ¡ */
+static void put_u16_be(uint8_t *p, uint16_t v)
+{
+    p[0] = (uint8_t)(v >> 8);
+    p[1] = (uint8_t)(v & 0xFFU);
+}
 
-int main(void) {
-	
+static uint16_t frame_crc16(const uint8_t *buf, uint16_t len)
+{
+#if (SYS_TEST_BOARD == 1)
+    return SYS_MODBUS_Crc16(buf, len);      /* °å1£ºsys_modbus.h */
+#else
+    return MODBUS_CRC16(buf, len);          /* °å2£ºmodbus.h£¨Í¬Ãû²»Í¬ÎÄ¼ş£© */
+#endif
+}
+
+/* ×éÒ»Ö¡£»ÔİÊ±ÄÃ²»µ½µÄÏîÌî 0£¨°å1 Ä¿Ç°Ö»ÓĞ DHT11 ÄÜ³öÊı£© */
+static void frame_build(uint8_t *f, float temp_c, float humi_rh,
+                        float press_hpa, uint16_t light_lx,
+                        uint16_t tvoc_ppb, uint16_t mq135_raw)
+{
+    uint16_t crc;
+
+    memset(f, 0, FRAME_TOTAL);
+
+    f[0] = 0xAAU;
+    f[1] = 0x55U;
+    f[2] = FRAME_CMD_ENV;
+    f[3] = FRAME_LEN_ENV;
+
+    /* ÎÂ¶È int16 ¡Á100£¨¸ºÊıÎª²¹Âë£»-5.00¡æ ¡ú 0xFE0C£© */
+    put_u16_be(&f[FRAME_TEMP_OFF], (uint16_t)(int16_t)(temp_c * 100.0f));
+    /* Êª¶È uint16 ¡Á100 */
+    put_u16_be(&f[FRAME_HUMI_OFF], (uint16_t)(humi_rh * 100.0f));
+    /* ÆøÑ¹ uint16 ¡Á10£»²»ÄÜ ¡Á100£¬»á³¬ uint16 ÉÏÏŞ */
+    put_u16_be(&f[FRAME_PRESS_OFF], (uint16_t)(press_hpa * 10.0f));
+    put_u16_be(&f[FRAME_LIGHT_OFF], light_lx);
+    put_u16_be(&f[FRAME_TVOC_OFF],  tvoc_ppb);
+    put_u16_be(&f[FRAME_MQ135_OFF], mq135_raw);
+
+    /* CRC ·¶Î§ = ÃüÁî + ³¤¶È + Êı¾İ¶Î£¨¹² 14 ×Ö½Ú£©£¬²»º¬Ö¡Í·Ö¡Î² */
+    crc = frame_crc16(&f[2], 14U);
+    f[FRAME_CRC_OFF]      = (uint8_t)(crc & 0xFFU);   /* µÍ×Ö½ÚÔÚÇ° */
+    f[FRAME_CRC_OFF + 1U] = (uint8_t)(crc >> 8);
+
+    f[18] = 0x55U;
+    f[19] = 0xAAU;
+}
+#endif  /* ×éÖ¡¶Î£¨½ö°å1£© */
+
+/* ---------------- 7. ÈÎÎñ²ã£¨Á½°å¸÷Ò»Ì×£© ---------------- */
+/* Í³¼ÆÁ¿£¨volatile£ºÈÎÎñÀïĞ´¡¢¼à¿ØÈÎÎñÀï¶Á£© */
+static volatile uint32_t s_tx_ok, s_tx_fail;
+static volatile uint32_t s_rx_ok, s_rx_bad;
+static volatile uint32_t s_cache_ok, s_cache_fail;
+
+#if (SYS_TEST_BOARD == 1)
+/* ---------------- °å1£º²É¼¯ ¡ú ¶ÓÁĞ ¡ú ´¦Àí ¡ú ·¢ËÍ ---------------- */
+typedef struct {
+    float    temp_c;
+    float    humi_rh;
+    uint8_t  valid;          /* 0 = ±¾ÂÖÃ»¶Áµ½£¨ÏÂÓÎ¾İ´ËÌø¹ı×éÖ¡£© */
+    uint32_t tick;
+} SensorMsg_t;
+
+static QueueHandle_t s_q_sensor;   /* ²É¼¯ ¡ú ´¦Àí */
+static QueueHandle_t s_q_frame;    /* ´¦Àí ¡ú ·¢ËÍ£¨Ã¿Ïî 20 ×Ö½ÚÖ¡£© */
+
+/* ²É¼¯ÈÎÎñ£ºÃ¿ 2s ¶ÁÒ»´Î DHT11£¨Æ÷¼ş²ÉÑùÂÊ 1Hz£¬¼ä¸ô²»×ã»á¶Áµ½¾ÉÖµ£© */
+static void vTaskSensor(void *pv)
+{
+    SensorMsg_t m;
+    float   t, h;
+    int     r;
+    uint8_t retry;
+
+    (void)pv;
+    P("[ÈÎÎñ] SensorTask Æô¶¯£¨ÓÅÏÈ¼¶ %u£©\r\n", (unsigned)uxTaskPriorityGet(NULL));
+
+    for (;;) {
+        r = -1;
+        for (retry = 0U; retry < 3U; retry++) {   /* Á¬Ğø 3 ´ÎÊ§°Ü²ÅÖÃÎŞĞ§ */
+            r = SYS_DHT11_Read(&t, &h);
+            if (r == 0) break;
+            vTaskDelay(pdMS_TO_TICKS(2200));
+        }
+
+        if (r == 0) {
+            m.temp_c  = t;
+            m.humi_rh = h;
+            m.valid   = 1U;
+        } else {
+            m.temp_c  = 0.0f;
+            m.humi_rh = 0.0f;
+            m.valid   = 0U;
+        }
+        m.tick = SYS_TICK_GetTick();
+
+        /* ¶ÓÁĞÂúÊ±¶ª×î¾É£¬²»ÈÃ²É¼¯ÈÎÎñ×èÈû */
+        if (xQueueSend(s_q_sensor, &m, 0) != pdPASS) {
+            SensorMsg_t drop;
+            (void)xQueueReceive(s_q_sensor, &drop, 0);
+            (void)xQueueSend(s_q_sensor, &m, 0);
+        }
+
+        LED_Toggle(0);
+        SYS_WDG_Heartbeat(0U);
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    }
+}
+
+/* ´¦ÀíÈÎÎñ£ºÊÕµ½²É¼¯½á¹û ¡ú ×éÖ¡ ¡ú ½»¸ø·¢ËÍÈÎÎñ */
+static void vTaskProcess(void *pv)
+{
+    SensorMsg_t m;
+    uint8_t     f[FRAME_TOTAL];
+    int16_t     t100;
+    uint16_t    h100;
+
+    (void)pv;
+    P("[ÈÎÎñ] ProcessTask Æô¶¯\r\n");
+
+    for (;;) {
+        if (xQueueReceive(s_q_sensor, &m, portMAX_DELAY) == pdPASS) {
+            if (m.valid == 0U) {
+                P("[´¦Àí] ±¾ÂÖ DHT11 Ã»¶Áµ½£¬Ìø¹ı×éÖ¡\r\n");
+            } else {
+                frame_build(f, m.temp_c, m.humi_rh, 0.0f, 0U, 0U, 0U);
+
+                t100 = (int16_t)((uint16_t)((f[FRAME_TEMP_OFF] << 8) |
+                                             f[FRAME_TEMP_OFF + 1U]));
+                h100 = (uint16_t)((f[FRAME_HUMI_OFF] << 8) |
+                                   f[FRAME_HUMI_OFF + 1U]);
+
+                P("[´¦Àí] ×éÖ¡ 20B: %02X %02X %02X %02X ... | "
+                  "T=%d.%02d¡æ H=%u.%02u%%RH | CRC=%02X%02X\r\n",
+                  f[0], f[1], f[2], f[3],
+                  (int)(t100 / 100),
+                  (int)((t100 < 0 ? -t100 : t100) % 100),
+                  (unsigned)(h100 / 100U), (unsigned)(h100 % 100U),
+                  f[FRAME_CRC_OFF + 1U], f[FRAME_CRC_OFF]);
+
+                (void)xQueueSend(s_q_frame, f, 0);
+            }
+            SYS_WDG_Heartbeat(1U);
+        }
+    }
+}
+
+/* ·¢ËÍÈÎÎñ£º·¢³öÇ°ÏÈ×Ô¼ì CRC£¨¶ÔÕûÖ¡ÔÙËãÒ»±éÓ¦Îª 0£© */
+static void vTaskComm(void *pv)
+{
+    uint8_t f[FRAME_TOTAL];
+    uint8_t r;
+
+    (void)pv;
+    P("[ÈÎÎñ] CommTask Æô¶¯\r\n");
+
+    for (;;) {
+        if (xQueueReceive(s_q_frame, f, portMAX_DELAY) == pdPASS) {
+            /* ×Ô¼ì£ºCRC ¸²¸Ç [2..17]£¨ÃüÁî+³¤¶È+Êı¾İ¶Î+CRC ×ÔÉí£©£¬Õû¶ÎÔÙËãÒ»±éÓ¦Îª 0¡£ */
+            if (frame_crc16(&f[2], 16U) == 0U) {
+                P("[·¢ËÍ] Ö¡×Ô¼ì OK£¨Õû¶Î CRC = 0£©\r\n");
+            } else {
+                P("[·¢ËÍ] Ö¡×Ô¼ìÊ§°Ü£º×éÖ¡Óë CRC ²»×ÔÇ¢\r\n");
+            }
+
+            r = LORA_E22_Send(f, FRAME_TOTAL);
+            if (r == LORA_E22_OK) {
+                s_tx_ok++;
+                P("[·¢ËÍ] ÒÑ·¢³öµÚ %u Ö¡\r\n", (unsigned)s_tx_ok);
+            } else {
+                s_tx_fail++;
+                P("[·¢ËÍ] Ê§°Ü(·µ»Ø %u)£¬ÀÛ¼ÆÊ§°Ü %u ´Î\r\n",
+                  (unsigned)r, (unsigned)s_tx_fail);
+            }
+            LED_Toggle(1);
+            SYS_WDG_Heartbeat(2U);
+        }
+    }
+}
+
+#else
+/* ---------------- °å2£ºLoRa ½ÓÊÕ ¡ú ½âÎö ¡ú »º´æ / ×ª·¢ ---------------- */
+static QueueHandle_t s_q_frame;      /* LoRa ÊÕµ½ ¡ú ´¦Àí */
+
+/* ½âÎöÒ»Ö¡£º·µ»Ø 1 = ºÏ·¨¡£ÈıÖØÈ·ÈÏ£ºÖ¡Í· + ³¤¶È + CRC¡£ */
+static uint8_t frame_parse(const uint8_t *f, uint16_t n,
+                           int16_t *temp100, uint16_t *humi100)
+{
+    if (n != FRAME_TOTAL)                       return 0U;   /* ³¤¶È²»¶Ô */
+    if ((f[0] != 0xAAU) || (f[1] != 0x55U))     return 0U;   /* Ö¡Í·²»¶Ô */
+    if ((f[18] != 0x55U) || (f[19] != 0xAAU))   return 0U;   /* Ö¡Î²²»¶Ô */
+    if (f[2] != FRAME_CMD_ENV)                  return 0U;   /* ÃüÁî²»ÈÏÊ¶ */
+    if (f[3] != FRAME_LEN_ENV)                  return 0U;   /* ³¤¶È×Ö¶Î²»¶Ô */
+
+    /* µÚÈıÖØÈ·ÈÏ£º¶Ôº¬ CRC µÄÕû¶ÎÔÙËãÒ»±é±ØĞëÎª 0¡£
+ * ÕâÒ»ÌõÍ¬Ê±µ²µôÖ¡Î² 0x55AA ÓëÏÂÒ»Ö¡Ö¡Í· 0xAA55 ´íÎ»Æ´½ÓµÄÇé¿ö£¬´íÎ»ºó CRC ±Ø²»Îª 0¡£ */
+    if (MODBUS_CRC16(&f[2], 16U) != 0U)         return 0U;
+
+    *temp100 = (int16_t)((uint16_t)((f[FRAME_TEMP_OFF] << 8) |
+                                     f[FRAME_TEMP_OFF + 1U]));
+    *humi100 = (uint16_t)((f[FRAME_HUMI_OFF] << 8) | f[FRAME_HUMI_OFF + 1U]);
+    return 1U;
+}
+
+/* ½ÓÊÕÈÎÎñ£ºÖÜÆÚĞÔÂÖÑ¯ LoRa¡£E22 Í¸´«Ä£Ê½²»Êä³ö°ü±ß½ç±ê¼Ç£¬Ö»ÄÜ¿¿×Ö½Ú¼äÍ£¶ÙÇĞÖ¡£¬
+ * ±ØĞëÃ¿ 10~50ms µ÷ÓÃÒ»´Î Recv£»µ÷ÓÃ¼ä¸ô¹ı³¤»á°ÑÁ½Ö¡Õ³ÔÚÒ»Æğ¡£ */
+static void vTaskLoraRx(void *pv)
+{
+    uint8_t  buf[64];
+    uint16_t n;
+    uint8_t  r;
+    int16_t  t100 = 0;
+    uint16_t h100 = 0;
+
+    (void)pv;
+    P("[ÈÎÎñ] LoraRxTask Æô¶¯\r\n");
+
+    for (;;) {
+        n = 0;
+        r = LORA_E22_Recv(buf, (uint16_t)sizeof(buf), &n);
+        if (r == LORA_E22_OK) {
+            if (frame_parse(buf, n, &t100, &h100)) {
+                s_rx_ok++;
+                P("[½ÓÊÕ] µÚ %u Ö¡ºÏ·¨: T=%d.%02d¡æ H=%u.%02u%%RH\r\n",
+                  (unsigned)s_rx_ok,
+                  (int)(t100 / 100), (int)((t100 < 0 ? -t100 : t100) % 100),
+                  (unsigned)(h100 / 100U), (unsigned)(h100 % 100U));
+                (void)xQueueSend(s_q_frame, buf, 0);   /* Âú¾Í¶ª£¬²»×èÈû½ÓÊÕ */
+            } else {
+                s_rx_bad++;
+                P("[½ÓÊÕ] µÚ %u ¸ö»µÖ¡£¨%u ×Ö½Ú£¬Ö¡Í·/³¤¶È/CRC ²»·û£©£¬¶ªÆú\r\n",
+                  (unsigned)s_rx_bad, (unsigned)n);
+            }
+        } else if (r == LORA_E22_ERR_OVERFLOW) {
+            s_rx_bad++;
+            P("[½ÓÊÕ] ÊÕµ½³¬³¤Êı¾İ£¨%u ×Ö½Ú£©£¬ÕûÖ¡¶ªÆú\r\n", (unsigned)n);
+        }
+        LED_Toggle(0);
+        SYS_WDG_Heartbeat(0U);
+        vTaskDelay(pdMS_TO_TICKS(20));   /* 20ms << 1s Ö¡¼ä¸ô£¬²»»áÕ³Ö¡ */
+    }
+}
+
+/* ´¦ÀíÈÎÎñ£ºÊı¾İ ¡ú ¢Ù Âä Flash£¨¶ÏÍø»º´æ£©¢Ú ×ª·¢ Qt£¨Áªµ÷½×¶ÎÏÈ´òÓ¡£© */
+static void vTaskForward(void *pv)
+{
+    uint8_t  f[FRAME_TOTAL];
+    uint8_t  r;
+    uint8_t  hh, mm, ss;
+    uint32_t ts;
+
+    (void)pv;
+    P("[ÈÎÎñ] ForwardTask Æô¶¯\r\n");
+
+    for (;;) {
+        if (xQueueReceive(s_q_frame, f, portMAX_DELAY) == pdPASS) {
+            SYS_RTC_GetTime(&hh, &mm, &ss);
+            ts = ((uint32_t)hh * 10000UL) + ((uint32_t)mm * 100UL) + ss;
+
+            r = W25QXX_LogWrite(ts, f, FRAME_TOTAL);
+            if (r == W25QXX_LOG_OK) {
+                s_cache_ok++;
+            } else {
+                s_cache_fail++;
+                P("[´¦Àí] ÂäÅÌÊ§°Ü£¬·µ»Ø %u\r\n", (unsigned)r);
+            }
+
+            /* ÕâÀï±¾Ó¦ UART2 ×ª·¢¸ø Qt ÉÏÎ»»ú£¬Áªµ÷½×¶ÎÏÈ´òÓ¡ */
+            P("[´¦Àí] ÒÑ»º´æ %u Ìõ / Ê§°Ü %u Ìõ£¬Flash Àï¹² %u Ìõ´ı²¹´«\r\n",
+              (unsigned)s_cache_ok, (unsigned)s_cache_fail,
+              (unsigned)W25QXX_LogCount());
+            SYS_WDG_Heartbeat(1U);
+        }
+    }
+}
+#endif  /* SYS_TEST_BOARD */
 
 
+/* ¼à¿ØÈÎÎñ£¨Á½°å¹²ÓÃ£©£ºÓÅÏÈ¼¶×î¸ß(5)£¬1s Ò»ÂÖ£¬»ã×ÜĞÄÌø²¢´òÓ¡Í³¼Æ¡£
+ * ĞÄÌø»ã×ÜÄ£Ê½ÏÂÈÎÒ»ÈÎÎñ¿¨ËÀ¶¼»áµ¼ÖÂÎ»²»µ½Æë¡¢²»Î¹¹·£¬½ø¶ø¿´ÃÅ¹·¸´Î»¡£ */
+static void test_after_scheduler(void);   /* Ç°ÏòÉùÃ÷£ºMonitorTask ÀïÒªµ÷ */
+
+static void vTaskMonitor(void *pv)
+{
+    (void)pv;
+    P("[ÈÎÎñ] MonitorTask Æô¶¯£¨ÓÅÏÈ¼¶ %u£©\r\n",
+      (unsigned)uxTaskPriorityGet(NULL));
+
+    /* µ÷¶ÈÆ÷ÒÑÔËĞĞ£¬ÔÚ´Ë²¹×ö¶àÈÎÎñ»·¾³²ÅÄÜÑéµÄÁ½Ïî£ºvTaskDelay ÊÇ·ñÕı³£¡¢
+ * SYS_TICK_Delay_ms ÔÚ RTOS ÏÂ»á²»»áËÀµÈ¡£´ËÈÎÎñÓÅÏÈ¼¶×î¸ß£¬
+ * ×Ô¼ìÆÚ¼äÆäËûÈÎÎñÇÀ²»µ½ CPU£¬´®¿ÚÊä³ö²»»á»¥Ïà´©²å¡£ */
+    test_after_scheduler();
+
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+
+        /* ¼à¿ØÈÎÎñ²»Õ¼±¨µ½Î»£¬´Ë´¦²»µ÷ÓÃ SYS_WDG_Heartbeat£º¿âÀïÃ¿¸ö²ÎÓë»ã×ÜµÄ
+ * ÈÎÎñÕ¼ 0~SYS_WDG_HEARTBEAT_COUNT-1 Ò»¸ñ£¬¼à¿ØÈÎÎñÖ»µ÷ HeartbeatPoll£»¼à¿Ø
+ * ×Ô¼º¿¨ËÀÊ±Ã»ÈËµ÷ Poll£¬¹·Ò»ÑùÎ¹²»ÉÏ£¬ËùÒÔËü²»ĞèÒª±¨µ½¡£Ô­ÏÈÔÚÕâÀïÓÃ
+ * APP_TASK_COUNT-1 ±¨µ½»áÓëµÚ 3 ¸öÈÎÎñ×²Í¬Ò»¸ñ£¬Ê¹ÄÇ¸öÈÎÎñ¿¨ËÀÒ²²»µôÎ»¡£ */
+
+        if (SYS_WDG_HeartbeatPoll() != 0U) {
+            /* È«Ô±µ½Æë£¬HeartbeatPoll ÄÚ²¿ÒÑÎ¹¹· */
+        } else {
+            P("[¼à¿Ø] ÓĞÈÎÎñÃ»±¨µ½£ºPending = 0x%08X\r\n",
+              (unsigned)SYS_WDG_HeartbeatPending());
+        }
+
+#if (SYS_TEST_BOARD == 1)
+        P("[¼à¿Ø] tick=%u  DHT11/¶ÓÁĞ: ·¢³ö %u Ö¡ / Ê§°Ü %u ´Î\r\n",
+          (unsigned)SYS_TICK_GetTick(),
+          (unsigned)s_tx_ok, (unsigned)s_tx_fail);
+#else
+        P("[¼à¿Ø] tick=%u  LoRa: ÊÕµ½ %u Ö¡ / »µÖ¡ %u ¸ö | "
+          "Flash: »º´æ %u Ìõ / Ê§°Ü %u Ìõ\r\n",
+          (unsigned)SYS_TICK_GetTick(),
+          (unsigned)s_rx_ok, (unsigned)s_rx_bad,
+          (unsigned)s_cache_ok, (unsigned)s_cache_fail);
+#endif
+        LED_Toggle(3);
+    }
+}
+
+
+/* ---------------- 8. ×Ô¼ì 10~11£ºµ÷¶ÈÆ÷ÆğÀ´Ö®ºó ---------------- */
+static void test_after_scheduler(void)
+{
+    uint32_t t0, t1;
+
+    banner("10 ÈÎÎñÓëµ÷¶ÈÆ÷ ");
+
+    /* µ÷¶ÈÆ÷ÒÑÔÚÔËĞĞ£ºvTaskDelay ÄÜ·µ»ØËµÃ÷ port.c µÄ SysTick ÖĞ¶ÏÕı³£¡£ */
+    t0 = SYS_TICK_GetTick();
+    vTaskDelay(pdMS_TO_TICKS(200));
+    t1 = SYS_TICK_GetTick();
+
+    P("  vTaskDelay(200ms) Ç°ºó SYS_TICK_GetTick(): %u ¡ú %u\r\n",
+      (unsigned)t0, (unsigned)t1);
+    check("vTaskDelay Õı³£ÔËĞĞ ", ((t1 - t0) >= 150U));
+    check("SYS_TICK ÓëÄÚºË tick Í¬²½ ", ((t1 - t0) <= 260U));
+
+    /* T1 ĞŞ¸´µã£ºĞŞ¸´Ç° SYS_TICK_Delay_ms ±È½ÏµÄÊÇ systick_ms(ºã 0)£¬(0-0) < ms ÓÀÕæ£¬»áÓÀ¾ÃËÀµÈ¡£ */
+    t0 = SYS_TICK_GetTick();
+    SYS_TICK_Delay_ms(200U);
+    t1 = SYS_TICK_GetTick();
+    P("  SYS_TICK_Delay_ms(200) Êµ²â %u ms\r\n", (unsigned)(t1 - t0));
+    check("SYS_TICK_Delay_ms ÔÚ RTOS ÏÂ²»ÔÙËÀµÈ ", ((t1 - t0) >= 150U));
+
+    banner("11 ±Õ»·Áªµ÷ ");
+#if (SYS_TEST_BOARD == 1)
+    P("  ½ÓÏÂÀ´Ã¿ 2 Ãë£ºDHT11 ¡ú ×é 20 ×Ö½ÚÖ¡ ¡ú LoRa ·¢³ö¡£\r\n");
+    P("  °å2 ÄÇ±ßÓ¦¸ÃÃ¿ÊÕµ½Ò»Ö¡¾Í´òÓ¡Ò»ĞĞ [½ÓÊÕ]¡£\r\n");
+#else
+    P("  ÕıÔÚ¼àÌı LoRa¡£°å1 Ã¿ 2 Ãë·¢Ò»Ö¡£¬ÕâÀïÓ¦³ÖĞø´òÓ¡ [½ÓÊÕ]¡£\r\n");
+    P("  Ã¿Ö¡¶¼»áÂä½ø W25QXX »º´æ£¬¿ÉËæÊ±¶ÏµçÖØÆôÑéÖ¤µôµç²»¶ª¡£\r\n");
+#endif
+    P("\r\n  ×Ô¼ì»ã×Ü: OK=%u  FAIL=%u\r\n", s_pass, s_fail);
+    if (s_fail > 0U) {
+        P("  ÓĞ %u ÏîÊ§°Ü£¬°´Ã¿ÌõºóÃæµÄÅÅ²éÌáÊ¾´¦Àí¡£\r\n", s_fail);
+    } else {
+        P("  È«²¿×Ô¼ìÏîÍ¨¹ı¡£\r\n");
+    }
+    P("================================================\r\n\r\n");
+}
+
+
+/* ---------------- 9. main ---------------- */
+int main(void)
+{
+    /* ---------- ½×¶ÎÒ»£ºµ÷¶ÈÆ÷»¹Ã»ÆğÀ´£¬ÏÈ°Ñ×Ô¼ì×öÍê ---------- */
+    /* SYS_NVIC_Init() ±ØĞëÊÇµÚÒ»¾ä£ºËü°Ñ NVIC ÓÅÏÈ¼¶·Ö×éÉèÎª Group_4¡£
+ * ·Ö×é´íÎ»»á°ÑËùÓĞÖĞ¶ÏµÄÇÀÕ¼ÓÅÏÈ¼¶Ñ¹µ½µÍÎ»£¬Ô½¹ı FreeRTOS µÄ BASEPRI ãĞÖµ£¬
+ * ´Ó¶øËº¿ªÄÚºËÁÙ½çÇø¡£ */
+    SYS_NVIC_Init();
+
+    SYS_USART_Init(DBG, DBG_BAUD);
+    SYS_USART_InitRxIT(DBG, DBG_BAUD);
+
+    delay_ms_dwt(200);              /* µÈ CH340C Ã¶¾Ù + ´®¿ÚÖúÊÖ´ò¿ª */
+
+    P("\r\n\r\n");
+    P("################################################\r\n");
+    P("#   SPL + FreeRTOS Ä£°å¿â   ÉÏ°å×Ô¼ìÓë±Õ»·Áªµ÷   #\r\n");
+    P("#   °åºÅ : %d / %s\r\n", SYS_TEST_BOARD, BOARD_NAME);
+    P("#   ±àÒë : %s %s\r\n", __DATE__, __TIME__);
+    P("################################################\r\n");
+
+    LED_Init();
+    LED_AllOn();
+    delay_ms_dwt(200);
+    LED_AllOff();
+
+    test_reset_cause();
+    test_rtc();
+    test_tick();
+    test_us_delay();
+    test_watchdog();
+
+#if HAS_W25QXX
+    test_flash_id();
+    test_flash_log();
+#endif
+#if HAS_DHT11
+    test_dht11();
+#endif
+    test_lora();
+#if (SYS_TEST_BOARD == 2)
+    test_mqtt();        /* MQTT + liveness (SKIPs if no WiFi) */
+#endif
+
+    /* Òı½ÅÕ¼ÓÃµÇ¼Ç±í£ºÉÏÃæ¸÷Ä£¿éÒÑ°Ñ×Ô¼ºÓÃµ½µÄ½ÅÅä¹ıÒ»±é£¬ÇÒµ÷¶ÈÆ÷ÉĞÎ´Æô¶¯£¬ÈÔÊÇµ¥Ïß³Ì¡£
+ * ´ø taken by N files ±ê¼ÇµÄĞĞ±íÊ¾Í¬Ò»¸ö½Å±»Á½¸öÔ´ÎÄ¼şÅä¹ı£¬ºóÅäÕßÉúĞ§£¬Ç°Õß¾²Ä¬Ê§Ğ§¡£
+ * Ä©ĞĞÓ¦Îª "==== target : conflict 0 / lost 0 ===="£¬²»Îª 0 Ê±°´´òÓ¡µÄ ÎÄ¼ş:ĞĞºÅ ĞŞ¸ÄÒı½Åºê¡£ */
+    GPIO_ClaimDump();
+
+    /* ---------- ½×¶Î¶ş£º½¨¶ÓÁĞ¡¢½¨ÈÎÎñ¡¢Æô¶¯µ÷¶ÈÆ÷ ---------- */
+    banner("×¼±¸Æô¶¯ FreeRTOS µ÷¶ÈÆ÷ ");
+    P("  configTOTAL_HEAP_SIZE = %u ×Ö½Ú\r\n", (unsigned)configTOTAL_HEAP_SIZE);
+
+    s_q_frame = xQueueCreate(4, FRAME_TOTAL);
+    if (s_q_frame == NULL) {
+        P("  [FAIL] Ö¡¶ÓÁĞ´´½¨Ê§°Ü£¨¶Ñ²»¹»£©£¬Í£ÔÚ×Ô¼ì½×¶Î\r\n");
+        for (;;) { SYS_WDG_Feed(); LED_Toggle(0); delay_ms_dwt(500); }
+    }
+
+#if (SYS_TEST_BOARD == 1)
+    s_q_sensor = xQueueCreate(4, sizeof(SensorMsg_t));
+    if (s_q_sensor == NULL) {
+        P("  [FAIL] ²É¼¯¶ÓÁĞ´´½¨Ê§°Ü£¨¶Ñ²»¹»£©\r\n");
+        for (;;) { SYS_WDG_Feed(); LED_Toggle(1); delay_ms_dwt(500); }
+    }
+    P("  ¶ÓÁĞ¾ÍĞ÷£º²É¼¯¡ú´¦Àí(4 Ïî) / ´¦Àí¡ú·¢ËÍ(4¡Á20B)\r\n");
+
+    (void)xTaskCreate(vTaskSensor,  "Sensor",  512, NULL, 3, NULL);
+    (void)xTaskCreate(vTaskProcess, "Process", 512, NULL, 3, NULL);
+    (void)xTaskCreate(vTaskComm,    "Comm",    512, NULL, 4, NULL);
+#else
+    P("  ¶ÓÁĞ¾ÍĞ÷£ºLoRa¡ú´¦Àí(4¡Á20B)\r\n");
+
+    (void)xTaskCreate(vTaskLoraRx,  "LoraRx",  512, NULL, 3, NULL);
+    (void)xTaskCreate(vTaskForward, "Forward", 512, NULL, 4, NULL);
+#endif
+
+    /* ¼à¿ØÈÎÎñ£ºÓÅÏÈ¼¶×î¸ß(5)£¬1s Ò»´Î»ã×ÜĞÄÌø + ´òÓ¡Í³¼Æ */
+    (void)xTaskCreate(vTaskMonitor, "Monitor", 256, NULL, 5, NULL);
+
+    P("  ¶ÓÁĞ %u ¸öÈÎÎñÒÑ½¨£¬Æô¶¯µ÷¶ÈÆ÷¡­¡­\r\n", (unsigned)(APP_TASK_COUNT));
+
+    /* ¿´ÃÅ¹·ÔÚÕâÀï²Å¿ª£ºÇ°Ãæ DHT11/LoRa ×Ô¼ìÒªÊ®¼¸Ãë£¬ÌáÇ°¿ª¹·»áÔÚ×Ô¼ìÍ¾ÖĞ¸´Î»¡£ */
+    SYS_WDG_Init(APP_WDG_TIMEOUT_MS);
+    P("  ¶ÀÁ¢¿´ÃÅ¹·ÒÑÆô¶¯£¬³¬Ê± %u ms\r\n", (unsigned)APP_WDG_TIMEOUT_MS);
+
+    vTaskStartScheduler();
+
+    /* Õı³£µ½²»ÁËÕâÀï£º¶Ñ²»¹»Ê± vTaskStartScheduler Ö±½Ó·µ»Ø£¬²¢´¥·¢ freertos_hooks.c ÀïµÄ
+ * vApplicationMallocFailedHook¡£ */
+    P("\r\n  [FAIL] µ÷¶ÈÆ÷Ã»Æô¶¯£¬¼¸ºõÒ»¶¨ÊÇ configTOTAL_HEAP_SIZE ²»¹»\r\n");
+    for (;;) { SYS_WDG_Feed(); LED_Toggle(3); delay_ms_dwt(500); }
 }

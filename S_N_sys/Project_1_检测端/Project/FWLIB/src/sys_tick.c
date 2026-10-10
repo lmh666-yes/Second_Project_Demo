@@ -1,32 +1,36 @@
 #include "sys_tick.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include <stddef.h>     /* NULL（周期节拍辅助的指针判断） */
+#include "sys_rtos.h"   /* SYS_RTOS_PRESENT：统一的"有没有上 FreeRTOS"判定 */
+
+/* RTOS 模式需 FreeRTOS.h + task.h 提供 xTaskGetTickCount()；不依赖端口层私有符号 */
+#if defined(SYS_TICK_USE_RTOS) && (SYS_TICK_USE_RTOS != 0)
+#include "FreeRTOS.h"
+#include "task.h"
+#endif
 
 /* ================================================================
- *  sys_tick.c —— 【系统】SysTick 硬件定时器模块  实现文件
+ *  sys_tick.c — 【系统】SysTick 硬件定时器模块  实现文件
  * ================================================================
- *  时基原理 : SysTick 每计满 1ms 触发中断 → systick_ms++，
- *  延时/计时全部基于这个毫秒计数器做"差值判断"，
- *  因此不受主频变化影响（重新 Init 后依然精确）。
+ *  裸机：SysTick 每 1ms 中断累加 systick_ms，延时/计时按差值判断。
+ *  RTOS：FreeRTOSConfig.h 的 xPortSysTickHandler → SysTick_Handler 为强定义，
+ *  顶掉此处的 __weak 版；时基改读 xTaskGetTickCount()。
  * ================================================================ */
 
-/* 毫秒计数器（中断里累加，主循环里读取）
- *  必须 volatile：跨"中断/主循环"共享，防止编译器把变量缓存到
- *  寄存器导致读到旧值；无符号 32 位，约 49.7 天自然回绕，
- *  所有"差值读取"在回绕瞬间依然正确。 */
+/* 毫秒计数器（中断累加，主循环读取）；仅裸机模式使用 */
+#if !defined(SYS_TICK_USE_RTOS) || (SYS_TICK_USE_RTOS == 0)
+/* 必须 volatile：中断/主循环共享，防编译器缓存到寄存器；uint32 约 49.7 天回绕 */
 static volatile uint32_t systick_ms = 0;
+#endif
 
 
-/* ================================================================
- *                    区块 2：基础功能
- * ================================================================ */
-/* 初始化：按 SYS_TICK_PERIOD_MS 配置周期中断（默认 1ms）
- *   重装值 = SystemCoreClock / 1000 × 周期ms - 1
- *     （168MHz、1ms → 167999，24 位计数器上限 0xFFFFFF，满足要求）
- *   CTRL 位：HCLK 时钟源 + 中断使能 + 计数器使能
- *   最后清零毫秒计数器：从 0 重新计时 */
+/* ---------------------- 区块 2：基础功能 ---------------------- */
+/* 初始化：按 SYS_TICK_PERIOD_MS 配置周期中断（默认 1ms）。
+ *  重装值 = SystemCoreClock / 1000 × 周期ms - 1（168MHz → 167999，24 位满 0xFFFFFF）。
+ *  CTRL：HCLK 时钟源 + 中断使能 + 计数器使能；最后清零 systick_ms。
+ *  RTOS 模式为空操作：写 LOAD/CTRL 会与内核调度抢 SysTick。 */
 void SYS_TICK_Init(void)
 {
+#if !defined(SYS_TICK_USE_RTOS) || (SYS_TICK_USE_RTOS == 0)
     uint32_t reload = (SystemCoreClock / 1000U) * SYS_TICK_PERIOD_MS - 1U;
 
     SysTick->LOAD = reload;
@@ -36,55 +40,53 @@ void SYS_TICK_Init(void)
                     SysTick_CTRL_ENABLE_Msk;
 
     systick_ms = 0;
+#endif
 }
 
-/* 中断服务函数：函数名由启动文件固定，不可改名；保持最轻量——
- * 中断内只做累加，耗时越短对系统影响越小
- *
- * __weak（弱定义）说明 : 
- *   ① 单独使用本库时：它就是 SysTick 中断入口，行为与普通函数无异；
- *   ② 与 FreeRTOS 混用时：FreeRTOS 端口层提供"强定义"的
- *      SysTick_Handler，链接器自动用强符号覆盖本函数 → SysTick
- *      交给 RTOS 做调度节拍；此时 systick_ms 不再累加，
- *      SYS_TICK_Delay_ms / GetTick 等失效，延时请改用 vTaskDelay。 */
+#if !defined(SYS_TICK_USE_RTOS) || (SYS_TICK_USE_RTOS == 0)
+/* 中断服务函数（仅裸机模式定义）：函数名由启动文件固定，不可改名。
+ * 弱定义：单独用时即 SysTick 中断入口；RTOS 模式下被上面的 #if 排除编译，
+ * 不与 port.c 强定义抢符号。中断内只累加。 */
 __weak void SysTick_Handler(void)
 {
     systick_ms += SYS_TICK_PERIOD_MS;    /* 每个中断周期累加对应毫秒数 */
 }
+#endif
 
-/* 阻塞延时：记下起始时刻，等待计数器差值达到 ms
- * 差值判断天然处理回绕：即使期间计数器归零也不影响结果 */
+/* 阻塞延时：等待计数器差值达到 ms；差值判断在回绕时依然正确 */
 void SYS_TICK_Delay_ms(uint32_t ms)
 {
-    uint32_t start = systick_ms;
-    while ((systick_ms - start) < ms);
+    uint32_t start = SYS_TICK_GetTick();
+    while ((SYS_TICK_GetTick() - start) < ms);
 }
 
-/* 取当前时间戳 */
+/* 取当前时间戳（毫秒）
+ *   RTOS 模式  : 直接换算内核节拍（本工程 1 tick = 1ms）
+ *   裸机模式  : 读中断累加的 systick_ms */
 uint32_t SYS_TICK_GetTick(void)
 {
+#if defined(SYS_TICK_USE_RTOS) && (SYS_TICK_USE_RTOS != 0)
+    return (uint32_t)xTaskGetTickCount();
+#else
     return systick_ms;
+#endif
 }
 
 /* 已过去的时间：无符号减法，回绕安全 */
 uint32_t SYS_TICK_Elapsed(uint32_t start_tick)
 {
-    return systick_ms - start_tick;
+    return SYS_TICK_GetTick() - start_tick;
 }
 
 
-/* ================================================================
- *                    区块 3：扩展功能
- * ================================================================ */
-/* 微秒级延时（轮询计数器实现，不依赖中断计数）
- *   目标 tick 数 = 1us 的 tick 数 × us；
- *   等待计数器递减穿过目标位置——约 ticks 个时钟 = us 微秒。
- * 限制与注意 : 
- *   ① 参数已限幅 ≤1000us，且含边界保护（1000us 不会瞬间返回）；
- *   ② 需先调用 SYS_TICK_Init()（计数器要处于运行状态）；
- *   ③ 依赖 SystemCoreClock 正确（切换时钟后需重新 Init）。 */
+/* ---------------------- 区块 3：扩展功能 ---------------------- */
+/* 微秒级延时（轮询计数器，不依赖中断）：ticks = us × (SystemCoreClock/1MHz)。
+ * 约束：us 限幅 1~1000；需先调用 SYS_TICK_Init() 使计数器运行；
+ * SystemCoreClock 须与实际主频一致（切换时钟后重新 Init）。
+ * RTOS 模式为空操作：SysTick->VAL 归内核维护，清零会打乱调度节拍。 */
 void SYS_TICK_Delay_us(uint32_t us)
 {
+#if !defined(SYS_TICK_USE_RTOS) || (SYS_TICK_USE_RTOS == 0)
     uint32_t ticks;
     uint32_t target;
 
@@ -93,20 +95,21 @@ void SYS_TICK_Delay_us(uint32_t us)
 
     ticks = us * (SystemCoreClock / 1000000U);
 
-    /* 边界保护：ticks 比 LOAD 大时直接做减法会下溢，
-     * 退化为"等待一个完整计数周期"（误差可忽略） */
+    /* 边界保护：ticks > LOAD 时减法会下溢，退化为等待一个完整计数周期 */
     target = (ticks > SysTick->LOAD) ? 0U : (SysTick->LOAD - ticks);
 
     SysTick->VAL = 0;
 
-    /* 先确认计数器已重装（避免第一拍读到 0 就提前退出），
-     * 再等它递减穿过目标位置 */
+    /* 先等计数器重装（避免第一拍读到 0 就退出），再等它递减穿过目标位置 */
     while (SysTick->VAL < (SysTick->LOAD / 2U));
     while (SysTick->VAL > target);
+#else
+    (void)us;
+#endif
 }
 
 
-/* 秒级延时：按 1 秒步进循环（避免 s×1000 直接相乘的溢出问题） */
+/* 秒级延时：按 1 秒步进循环，避免 s×1000 溢出 */
 void SYS_TICK_Delay_s(uint32_t s)
 {
     while (s--) {
@@ -114,12 +117,15 @@ void SYS_TICK_Delay_s(uint32_t s)
     }
 }
 
-/* 微秒时间戳 = 毫秒计数 × 1000 + 当前毫秒周期内已过的微秒数
- *   周期内已过 tick 数 = LOAD - VAL；
- *   换算微秒：ticks × 1000 / (LOAD + 1)
- *   do-while 重读：保证 ms 与 VAL 取自同一毫秒周期（防跨越中断点） */
+/* 微秒时间戳 = ms × 1000 + 当前毫秒周期内已过微秒数。
+ * 周期内已过 tick = LOAD - VAL；换算 ticks × 1000 / (LOAD + 1)；
+ * do-while 重读保证 ms 与 VAL 同属一个毫秒周期，防跨越中断点。
+ * RTOS 模式只返回 ms × 1000（SysTick->VAL 归内核维护，无亚毫秒偏移）。 */
 uint32_t SYS_TICK_GetUs(void)
 {
+#if defined(SYS_TICK_USE_RTOS) && (SYS_TICK_USE_RTOS != 0)
+    return SYS_TICK_GetTick() * 1000U;
+#else
     uint32_t ms;
     uint32_t val;
 
@@ -129,6 +135,7 @@ uint32_t SYS_TICK_GetUs(void)
     } while (ms != systick_ms);
 
     return (ms * 1000U) + ((SysTick->LOAD - val) * (SYS_TICK_PERIOD_MS * 1000U) / (SysTick->LOAD + 1U));
+#endif
 }
 
 /* 超时判断：复用 Elapsed 的差值逻辑，回绕安全 */

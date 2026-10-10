@@ -54,3 +54,23 @@ check_std_lib_data.py
 # ---- 个人参考代码（不入库）----
 # 放在项目根目录的孤立 .c 示例（如 RTC 引导参考），不属于任一 Keil 工程
 /main.c
+
+# ---- Qt 上位机：本次新建的构建/自检产物（2026-10-10）----
+S_N_sys/QT_project/SerialMonitor/build_verify/
+S_N_sys/QT_project/SerialMonitor/data/
+自检报告.txt
+S_N_sys/QT_project/SerialMonitor/build_*
+窗口尺寸诊断.txt
+
+# ---- Qt 上位机：运行期生成的配置与报告（2026-10-10 量程/阈值落盘 + 下行控制）----
+上位机配置.ini
+量程校验自检.txt
+下发控制自检.txt
+
+# ---- 上传面收口：仓库只保留 S_N_sys 目录的内容（2026-10-10）----
+# 根目录的脚本、编辑器配置（.vscode/）、虚拟环境（.venv/）与工具收纳区都不入库；
+# 设计文档、报告与板卡资料都已移进 S_N_sys/ 内。以后若确实要在根目录放东西上传，
+# 先在这里补一条放行规则。
+/*
+!/.gitignore
+!/S_N_sys/

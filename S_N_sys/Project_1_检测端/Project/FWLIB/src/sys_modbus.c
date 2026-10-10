@@ -1,29 +1,16 @@
 #include "sys_modbus.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
+/* 用法与配置见同名 .h */
 
-#include "delay.h"          /* delay_us:顺带确保 DWT 计时使能 */
+#include "delay.h"          /* delay_us:确保 DWT 计时已使能 */
 
-/* ================================================================
- *  sys_modbus.c —— 【系统】Modbus-RTU 从机协议模块  实现文件
- * ================================================================
- *  帧格式(RTU): [从机地址 1B][功能码 1B][数据 nB][CRC 低 1B][CRC 高 1B]
- *  通信流程 :
- *    ① Poll 把串口环形缓冲的字节搬进帧缓冲(边搬边记"最后字节时刻");
- *    ② 静默超过 3.5 字符时间 → 判定一帧结束(Modbus 判帧规则);
- *    ③ 地址过滤 → CRC 校验 → 功能码分发 → 组应答(CRC 由库补上);
- *    ④ 应答经"发送钩子"(RS485 场景)或直发串口。
- *
- *  实现要点 :
- *    ① 全程非阻塞:发帧、收帧、判帧间隔都不卡主循环;
- *    ② CRC 校验技巧:对"含 CRC 的完整帧"算一遍,结果为 0 即通过;
- *    ③ 异常应答:功能码 | 0x80 + 异常码(01 功能非法/02 地址非法/03 数据非法);
- *    ④ 统计计数(成功/出错)可用 SYS_MODBUS_Counters 随时查——联调神器
- * ================================================================ */
+/* sys_modbus.c Modbus-RTU 从机协议实现
+ * 帧格式(RTU): [从机地址 1B][功能码 1B][数据 nB][CRC 低 1B][CRC 高 1B]
+ * 判帧: 静默超过 3.5 字符时间即一帧结束(Modbus 判帧规则); 应答 CRC 由本模块补上
+ * 异常应答: 功能码 | 0x80 + 异常码(01 功能非法/02 地址非法/03 数据非法)
+ */
 
 
-/* ================================================================
- *                    内部状态
- * ================================================================ */
+/* 内部状态 */
 typedef struct {
     SysUsartId_t      uart;
     uint8_t           addr;         /* 本机从机地址 */
@@ -56,9 +43,7 @@ static uint8_t     mb_resp[SYS_MODBUS_BUF_SIZE];    /* 应答组帧缓冲 */
 #define MB_EX_ILLEGAL_VALUE 0x03U   /* 数据值/数量非法 */
 
 
-/* ================================================================
- *                    内部辅助
- * ================================================================ */
+/* 内部辅助 */
 /* 从帧缓冲取大端 16 位 */
 static uint16_t mb_rx_u16(uint16_t idx)
 {
@@ -169,7 +154,7 @@ static void mb_write_multi(uint16_t len)
     mb_send_with_crc(6U);
 }
 
-/* 处理"一帧收完"的数据 */
+/* 处理已收完整的一帧 */
 static void mb_process(uint16_t len)
 {
     uint8_t addr;
@@ -178,7 +163,7 @@ static void mb_process(uint16_t len)
     if (len < 4U) { mb.err_cnt++; return; }         /* 最短 = 地址+功能+CRC2 */
 
     addr = mb_rx[0];
-    if (addr != mb.addr) return;                    /* 不是问本机(含广播 0):不理 */
+    if (addr != mb.addr) return;                    /* 地址不匹配(含广播 0):丢弃 */
 
     if (SYS_MODBUS_Crc16(mb_rx, len) != 0U) {       /* 含 CRC 整帧结果为 0 即通过 */
         mb.err_cnt++;
@@ -200,7 +185,7 @@ static void mb_process(uint16_t len)
             break;
 
         case MB_FC_WRITE_MANY:
-            if (len < 11U) { mb.err_cnt++; return; }        /* 最少:写 1 个(9+2) */
+            if (len < 11U) { mb.err_cnt++; return; }        /* 最少 = 写 1 个:9+2 */
             mb_write_multi(len);
             break;
 
@@ -212,9 +197,7 @@ static void mb_process(uint16_t len)
 }
 
 
-/* ================================================================
- *                    基础功能
- * ================================================================ */
+/* 基础功能 */
 uint16_t SYS_MODBUS_Crc16(const uint8_t *buf, uint16_t len)
 {
     uint16_t crc = 0xFFFFU;
@@ -266,7 +249,7 @@ uint8_t SYS_MODBUS_Poll(void)
 
     if (mb_inited == 0U) return 0U;
 
-    /* ① 把串口环形缓冲里的字节搬进帧缓冲(一次搬空,边搬边记时刻) */
+    /* 环形缓冲字节搬入帧缓冲,并记录最后字节时刻 */
     while ((c = SYS_USART_RxRead(mb.uart)) >= 0) {
         if (mb_rx_len < SYS_MODBUS_BUF_SIZE) {
             mb_rx[mb_rx_len] = (uint8_t)c;
@@ -278,7 +261,7 @@ uint8_t SYS_MODBUS_Poll(void)
         mb_last_cycles = DWT->CYCCNT;
     }
 
-    /* ② 静默超过 3.5 字符 → 一帧结束,处理并应答 */
+    /* 静默超过 3.5 字符即一帧结束,处理并应答 */
     if ((mb_rx_len != 0U) &&
         ((uint32_t)(DWT->CYCCNT - mb_last_cycles) > mb.t35_cycles)) {
         uint16_t len = mb_rx_len;
@@ -290,9 +273,7 @@ uint8_t SYS_MODBUS_Poll(void)
 }
 
 
-/* ================================================================
- *                    扩展功能
- * ================================================================ */
+/* 扩展功能 */
 void SYS_MODBUS_SetTxHook(SYS_MODBUS_TxFn_t fn)
 {
     mb.tx = fn;

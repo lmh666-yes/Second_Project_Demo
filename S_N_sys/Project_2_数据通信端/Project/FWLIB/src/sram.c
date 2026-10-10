@@ -1,48 +1,25 @@
 #include "sram.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
 #include "delay.h"          /* DWT_GetUs / DWT_ElapsedUs（测速/超时） */
 
-/* ================================================================
- *  sram.c —— FSMC 外扩 SRAM（IS62WV51216）  实现文件
- * ================================================================
- *  FSMC 是怎么"把外部芯片变成内存"的（一句话版）：
- *
- *      MCU 执行 *p = x  →  地址落在 Bank1/NE3 子区（0x68000000 起）
- *          → FSMC 硬件自动把地址拆成 A0~A18、把数据放到 D0~D15
- *          → 拉低 NE3（片选）+ NWE（写使能）+ NBL0/NBL1（选字节）
- *          → 外部芯片收到就存下了        读的时候同理，只是拉 NOE
- *
- *  所以整个过程**不需要 CPU 参与搬运**，这就是它比"软件模拟总线"快几个
- *  数量级的原因 —— 也是为什么外部 SRAM 能配合 DMA 直接喂给 LCD。
- *
- *  ⚠ 两个必须记住的点：
- *    ① 引脚必须配成 **GPIO_Mode_AF + AF12(FSMC)**，配成普通输出是会
- *       完全不工作的（本文件 fsmc_gpio_init 里配的是数据/地址/控制三大组）；
- *    ② SRAM 区域的**地址线不止你写的那一根**：FSMC 会把整段地址都译码，
- *       所以哪怕你只写 1 个字节，硬件也会把 A0~A18 全给出去。
- * ================================================================ */
+/* sram.c: FSMC 外扩 SRAM，器件型号 IS62WV51216
+ * 地址落在 Bank1 的 NE3 子区（0x68000000 起），FSMC 硬件译码 A0~A18 与 D0~D15，
+ * 并自动产生 NE3(片选) / NWE / NOE / NBL0 / NBL1，CPU 不参与搬运
+ * 引脚必须配成 GPIO_Mode_AF + AF12(FSMC)，配成普通输出则总线不工作 */
 
 
-/* ================================================================
- *                      内部状态
- * ================================================================ */
+/* 0 = 未初始化或自检失败，1 = 可用 */
 static uint8_t sram_ready = 0U;
 
 
-/* ================================================================
- *                      内部小工具
- * ================================================================ */
-
-/* FSMC_D0~D15 + A0~A18 + 控制线 全部配成 AF12，高速推挽（GPIO_OType_PP）
- * 说明 : 本板的 FSMC 引脚与 LCD 完全共用（同一组总线），
- *        所以这里配重复了也没关系（寄存器写入是幂等的）。 */
+/* FSMC_D0~D15 + A0~A18 + 控制线配成 AF12，推挽输出，速度 100MHz
+ * 本板 FSMC 引脚与 LCD 共用同一组总线，重复配置无影响：寄存器写入幂等 */
 static void fsmc_gpio_init(void)
 {
     GPIO_InitTypeDef gi;
     uint16_t pins;
 
-    /* ---------- 数据线 D0~D15 ---------- */
+    /* 数据线 D0~D15 */
     /* D0~D1  = PD14/PD15   D2~D3  = PD0/PD1
      * D4~D12 = PE7~PE15    D13~D15 = PD8/PD9/PD10 */
     GPIO_ClockEnable(GPIOD);
@@ -74,7 +51,7 @@ static void fsmc_gpio_init(void)
     gi.GPIO_Pin = pins;
     GPIO_Init(GPIOE, &gi);
 
-    /* ---------- 地址线 A0~A18 ---------- */
+    /* 地址线 A0~A18 */
     /* A0 ~A5  = PF0~PF5     A6  = PF12
      * A7 ~A9  = PF13~PF15   A10~A15 = PG0~PG5
      * A16~A18 = PD11~PD13 */
@@ -102,7 +79,7 @@ static void fsmc_gpio_init(void)
     gi.GPIO_Pin = pins;
     GPIO_Init(GPIOD, &gi);
 
-    /* ---------- 控制线 ---------- */
+    /* 控制线 */
     /* NOE = PD4   NWE = PD5   NBL0 = PE0   NBL1 = PE1 */
     gi.GPIO_Pin = GPIO_Pin_4 | GPIO_Pin_5;
     GPIO_PinAFConfig(GPIOD, GPIO_PinSource4, GPIO_AF_FSMC);
@@ -121,8 +98,8 @@ static void fsmc_norsram_init(void)
     FSMC_NORSRAMInitTypeDef ni;
     FSMC_NORSRAMTimingInitTypeDef ti;
 
-    /* ⚠ 标准库**没有**时序结构体的 StructInit 函数，必须自己逐个赋值
-     *   （只调用 FSMC_NORSRAMStructInit 的话 ni 里的时序指针是空的） */
+    /* 标准库无时序结构体的 StructInit 函数，ti 各字段逐个赋值
+     * FSMC_NORSRAMStructInit 只复位 ni 自身字段，ni 的时序指针仍需指向 ti */
     ti.FSMC_AddressSetupTime      = SYS_SRAM_ADDR_SETUP;
     ti.FSMC_AddressHoldTime       = SYS_SRAM_ADDR_HOLD;
     ti.FSMC_DataSetupTime         = SYS_SRAM_DATA_SETUP;
@@ -154,25 +131,22 @@ static void fsmc_norsram_init(void)
 }
 
 
-/* ================================================================
- *                    区块 2：基础功能
- * ================================================================ */
 uint8_t SRAM_Init(void)
 {
 #if (SYS_SRAM_ENABLE == 0)
     return 1U;
 #else
-    /* ① 开 FSMC 时钟（F4 的 FSMC 挂在 AHB3 总线上，不是 AHB1！） */
+    /* 开 FSMC 时钟：F4 的 FSMC 挂在 AHB3 总线 */
     RCC_AHB3PeriphClockCmd(RCC_AHB3Periph_FSMC, ENABLE);
 
-    /* ② 引脚（AF12） + ③ 时序 */
+    /* 配引脚 AF12 与时序 */
     fsmc_gpio_init();
     fsmc_norsram_init();
 
     sram_ready = 1U;
 
-    /* ④ 自检：任意写几个地址再读回，确认"真的有一块芯片在那儿"
-     *    （没焊芯片时读回的是总线上的浮空值，图案对不上） */
+    /* 自检：写几个地址再读回，图案需一致
+     * 未焊芯片时读回总线浮空值，图案不匹配 */
     if (SRAM_Test(0UL, 0UL) != 0UL) {
         sram_ready = 0U;
         return 1U;
@@ -263,9 +237,6 @@ uint8_t SRAM_WriteWords(uint32_t offset, const uint16_t *buf, uint32_t count)
 }
 
 
-/* ================================================================
- *                    区块 3：扩展功能
- * ================================================================ */
 /* 半字图案自检的公共实现：start 为半字偏移，count 为半字数
  * 返回 : SRAM_TEST_OK = 全通过；否则 = 第一个出错的半字索引 */
 #define SRAM_TEST_OK   0xFFFFFFFFUL
@@ -307,14 +278,13 @@ static uint32_t sram_test_words(uint32_t start, uint32_t count)
     return SRAM_TEST_OK;
 }
 
-/* ⚠ 不能用 0 当"通过"的返回值 —— 因为 0 号半字本身也可能出错，
- *   那样"错误位置 = 0" 就会与"通过"撞车。所以内部统一用
- *   SRAM_TEST_OK 表示通过，对外才换算成"0 = 通过"。 */
+/* 内部用 SRAM_TEST_OK 表示通过：0 号半字本身也可能出错，若以 0 表示通过会与
+ *   错误位置 0 冲突；对外接口换算成 0 = 通过 */
 uint32_t SRAM_Test(uint32_t offset, uint32_t len)
 {
     uint32_t bad;
 
-    /* 不传范围 → 全片分 9 段抽检（每段 64 个半字），既能发现坏区又不慢 */
+    /* offset 与 len 都为 0 时全片分 9 段抽检，每段 64 个半字 */
     if (offset == 0UL && len == 0UL) {
         uint32_t seg;
 
@@ -352,7 +322,7 @@ uint32_t SRAM_SpeedTestUs(void)
 
     t0 = DWT_GetUs();
 
-    /* 写一遍、读一遍（读的时候做累加，防止编译器把循环优化掉） */
+    /* 先写后读回校验，读回值参与比较，避免循环被优化掉 */
     for (i = 0UL; i < SYS_SRAM_WORDS; i++) p[i] = (uint16_t)i;
     for (i = 0UL; i < SYS_SRAM_WORDS; i++) {
         if (p[i] != (uint16_t)i) bad++;
@@ -362,5 +332,3 @@ uint32_t SRAM_SpeedTestUs(void)
 
     return DWT_ElapsedUs(t0);
 }
-
-/* 文件结束 */

@@ -6,130 +6,243 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1117</width>
-    <height>600</height>
+    <width>1340</width>
+    <height>840</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>MainWindow</string>
+   <string>环境监护系统 · 上位机（板1 → LoRa → 板2 → 串口 → 本机）</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QVBoxLayout" name="verticalLayout_3">
+   <layout class="QHBoxLayout" name="horizontalLayoutMain">
     <item>
-     <widget class="QSplitter" name="splitter_2">
+     <widget class="QSplitter" name="splitter">
       <property name="orientation">
-       <enum>Qt::Orientation::Vertical</enum>
+       <enum>Qt::Horizontal</enum>
       </property>
-      <widget class="QWidget" name="layoutWidget">
-       <layout class="QHBoxLayout" name="horizontalLayout">
+      <widget class="QWidget" name="leftPanel">
+       <property name="minimumSize">
+        <size>
+         <width>300</width>
+         <height>0</height>
+        </size>
+       </property>
+       <layout class="QVBoxLayout" name="verticalLayoutLeft">
         <item>
-         <widget class="QLabel" name="labelPortTitle">
-          <property name="text">
-           <string>串口</string>
+         <widget class="QGroupBox" name="serialBox">
+          <property name="title">
+           <string>1 · 串口（板2 USART2 → CH340 → 本机）</string>
           </property>
+          <layout class="QGridLayout" name="gridSerial">
+           <item row="0" column="0">
+            <widget class="QLabel" name="lblPort">
+             <property name="text">
+              <string>端口</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QComboBox" name="comboPort"/>
+           </item>
+           <item row="0" column="2">
+            <widget class="QPushButton" name="btnRefreshPorts">
+             <property name="text">
+              <string>刷新</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0">
+            <widget class="QLabel" name="lblBaud">
+             <property name="text">
+              <string>波特率</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="1" colspan="2">
+            <widget class="QComboBox" name="comboBaud"/>
+           </item>
+           <item row="2" column="0">
+            <widget class="QLabel" name="lblDataBits">
+             <property name="text">
+              <string>数据位</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="1">
+            <widget class="QComboBox" name="comboDataBits"/>
+           </item>
+           <item row="2" column="2">
+            <widget class="QComboBox" name="comboParity"/>
+           </item>
+           <item row="3" column="0">
+            <widget class="QLabel" name="lblStopBits">
+             <property name="text">
+              <string>停止位</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="1" colspan="2">
+            <widget class="QComboBox" name="comboStopBits"/>
+           </item>
+           <item row="4" column="0" colspan="3">
+            <widget class="QPushButton" name="btnOpenPort">
+             <property name="text">
+              <string>打开串口</string>
+             </property>
+            </widget>
+           </item>
+           <item row="5" column="0" colspan="3">
+            <widget class="QLabel" name="lblSerialState">
+             <property name="text">
+              <string>状态：未连接</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
          </widget>
         </item>
         <item>
-         <widget class="QComboBox" name="comboPort"/>
-        </item>
-        <item>
-         <widget class="QLabel" name="labelBaudTitle">
-          <property name="text">
-           <string>波特率</string>
+         <widget class="QGroupBox" name="recordBox">
+          <property name="title">
+           <string>2 · 记录与自检</string>
           </property>
+          <layout class="QVBoxLayout" name="verticalLayoutRecord">
+           <item>
+            <widget class="QCheckBox" name="chkCsv">
+             <property name="text">
+              <string>记录到 CSV</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="lblCsvInfo">
+             <property name="text">
+              <string>未记录</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnSelfTest">
+             <property name="text">
+              <string>跑一致性自检（8 用例）</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="btnClearData">
+             <property name="text">
+              <string>清空数据与统计</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
          </widget>
         </item>
         <item>
-         <widget class="QComboBox" name="comboBaud"/>
-        </item>
-        <item>
-         <widget class="QPushButton" name="btnOpenSerial">
-          <property name="text">
-           <string>打开串口</string>
+         <widget class="QGroupBox" name="statsBox">
+          <property name="title">
+           <string>4 · 解析统计（验收表用）</string>
           </property>
+          <layout class="QVBoxLayout" name="verticalLayoutStats">
+           <item>
+            <widget class="QLabel" name="lblStats">
+             <property name="text">
+              <string>等待数据…</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+          </layout>
          </widget>
         </item>
         <item>
-         <widget class="QLabel" name="labelStatus">
-          <property name="text">
-           <string>状态: 未连接</string>
+         <widget class="QGroupBox" name="thresholdBox">
+          <property name="title">
+           <string>5 · 告警阈值（下限 / 上限 / 回差）</string>
+          </property>
+          <layout class="QVBoxLayout" name="verticalLayoutThreshold"/>
+         </widget>
+        </item>
+        <item>
+         <spacer name="verticalSpacerLeft">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>20</width>
+            <height>10</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="centerPanel">
+       <layout class="QVBoxLayout" name="verticalLayoutCenter">
+        <item>
+         <widget class="QWidget" name="cardsHolder" native="true">
+          <layout class="QGridLayout" name="cardsGrid"/>
+         </widget>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="curveCheckLayout"/>
+        </item>
+        <item>
+         <widget class="QCustomPlot" name="plotEnv" native="true">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>1</verstretch>
+           </sizepolicy>
           </property>
          </widget>
         </item>
        </layout>
       </widget>
-      <widget class="QSplitter" name="splitter">
-       <property name="orientation">
-        <enum>Qt::Orientation::Horizontal</enum>
+      <widget class="QWidget" name="rightPanel">
+       <property name="minimumSize">
+        <size>
+         <width>340</width>
+         <height>0</height>
+        </size>
        </property>
-       <widget class="QWidget" name="layoutWidget">
-        <layout class="QVBoxLayout" name="verticalLayout_2">
-         <item>
-          <widget class="QLabel" name="labelTemp">
-           <property name="text">
-            <string>温度：-- ℃</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="labelHumi">
-           <property name="text">
-            <string>湿度：-- %</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QCheckBox" name="checkShowTimestamp">
-           <property name="text">
-            <string>显示时间戳</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QCheckBox" name="checkHexSend">
-           <property name="text">
-            <string>十六进制发送</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QCheckBox" name="checkHexRecv">
-           <property name="text">
-            <string>十六进制显示</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="btnClearRecv">
-           <property name="text">
-            <string>清空接收</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-       <widget class="QWidget" name="layoutWidget">
-        <layout class="QVBoxLayout" name="verticalLayout" stretch="1,1">
-         <item>
-          <widget class="QPlainTextEdit" name="textRecv"/>
-         </item>
-         <item>
-          <widget class="QCustomPlot" name="widgetPlot" native="true"/>
-         </item>
-        </layout>
-       </widget>
-      </widget>
-      <widget class="QWidget" name="layoutWidget">
-       <layout class="QHBoxLayout" name="horizontalLayout_2">
+       <layout class="QVBoxLayout" name="verticalLayoutRight">
         <item>
-         <widget class="QPushButton" name="btnSend">
+         <widget class="QLabel" name="lblAlarmTitle">
           <property name="text">
-           <string>发送数据</string>
+           <string>6 · 告警记录（进阈值即报，回到 阈值±回差 才恢复）</string>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
           </property>
          </widget>
         </item>
         <item>
-         <widget class="QLineEdit" name="editSend"/>
+         <widget class="QTableWidget" name="tblAlarm"/>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="alarmButtonLayout">
+          <item>
+           <widget class="QPushButton" name="btnClearAlarm">
+            <property name="text">
+             <string>清空告警</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnExportCsv">
+            <property name="text">
+             <string>导出 CSV</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </item>
        </layout>
       </widget>
@@ -142,18 +255,85 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1117</width>
-     <height>21</height>
+     <width>1340</width>
+     <height>24</height>
     </rect>
    </property>
-   <widget class="QMenu" name="menu">
+   <widget class="QMenu" name="menuFile">
     <property name="title">
-     <string>串口助手 作者:小李</string>
+     <string>文件(&amp;F)</string>
     </property>
+    <addaction name="actStartCsv"/>
+    <addaction name="actStopCsv"/>
+    <addaction name="actExportCsv"/>
+    <addaction name="separator"/>
+    <addaction name="actQuit"/>
    </widget>
-   <addaction name="menu"/>
+   <widget class="QMenu" name="menuTool">
+    <property name="title">
+     <string>工具(&amp;T)</string>
+    </property>
+    <addaction name="actSelfTest"/>
+    <addaction name="actFeedDemo"/>
+    <addaction name="actClear"/>
+   </widget>
+   <widget class="QMenu" name="menuHelp">
+    <property name="title">
+     <string>帮助(&amp;H)</string>
+    </property>
+    <addaction name="actProtocol"/>
+    <addaction name="actAbout"/>
+   </widget>
+   <addaction name="menuFile"/>
+   <addaction name="menuTool"/>
+   <addaction name="menuHelp"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
+  <action name="actStartCsv">
+   <property name="text">
+    <string>开始记录 CSV…</string>
+   </property>
+  </action>
+  <action name="actStopCsv">
+   <property name="text">
+    <string>停止记录</string>
+   </property>
+  </action>
+  <action name="actExportCsv">
+   <property name="text">
+    <string>导出当前数据为 CSV…</string>
+   </property>
+  </action>
+  <action name="actQuit">
+   <property name="text">
+    <string>退出</string>
+   </property>
+  </action>
+  <action name="actSelfTest">
+   <property name="text">
+    <string>一致性自检（内置 8 用例）</string>
+   </property>
+  </action>
+  <action name="actFeedDemo">
+   <property name="text">
+    <string>灌入一帧演示数据</string>
+   </property>
+  </action>
+  <action name="actClear">
+   <property name="text">
+    <string>清空数据与统计</string>
+   </property>
+  </action>
+  <action name="actProtocol">
+   <property name="text">
+    <string>协议速查（20 字节帧）</string>
+   </property>
+  </action>
+  <action name="actAbout">
+   <property name="text">
+    <string>关于</string>
+   </property>
+  </action>
  </widget>
  <customwidgets>
   <customwidget>

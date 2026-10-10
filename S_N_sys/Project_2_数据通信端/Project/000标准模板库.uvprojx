@@ -334,7 +334,7 @@
             <v6Rtti>0</v6Rtti>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define>USE_STDPERIPH_DRIVER, STM32F40_41xxx, HSE_VALUE=8000000</Define>
+              <Define>USE_STDPERIPH_DRIVER, STM32F40_41xxx, HSE_VALUE=8000000, SYS_TEST_BOARD=2</Define>
               <Undefine></Undefine>
               <IncludePath>.\FWLIB\inc;.\FreeRTOS\inc;.\FreeRTOS\port;.\ETH\inc;.\ETH\port</IncludePath>
             </VariousControls>
@@ -434,6 +434,21 @@
               <FileName>mpu6050.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\FWLIB\src\\mpu6050.c</FilePath>
+            </File>
+            <File>
+              <FileName>sys_bh1750.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\FWLIB\src\\sys_bh1750.c</FilePath>
+            </File>
+            <File>
+              <FileName>sys_bmp280.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\FWLIB\src\\sys_bmp280.c</FilePath>
+            </File>
+            <File>
+              <FileName>sys_ccs811.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\FWLIB\src\\sys_ccs811.c</FilePath>
             </File>
             <File>
               <FileName>vl53l0x.c</FileName>
@@ -539,6 +554,11 @@
               <FileName>sys_usart.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\FWLIB\src\\sys_usart.c</FilePath>
+            </File>
+            <File>
+              <FileName>lora_e22.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\FWLIB\src\\lora_e22.c</FilePath>
             </File>
             <File>
               <FileName>sys_str.c</FileName>
@@ -706,6 +726,21 @@
               <FilePath>.\FWLIB\inc\\mpu6050.h</FilePath>
             </File>
             <File>
+              <FileName>sys_bh1750.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\FWLIB\inc\\sys_bh1750.h</FilePath>
+            </File>
+            <File>
+              <FileName>sys_bmp280.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\FWLIB\inc\\sys_bmp280.h</FilePath>
+            </File>
+            <File>
+              <FileName>sys_ccs811.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\FWLIB\inc\\sys_ccs811.h</FilePath>
+            </File>
+            <File>
               <FileName>vl53l0x.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\FWLIB\inc\\vl53l0x.h</FilePath>
@@ -809,6 +844,11 @@
               <FileName>sys_usart.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\FWLIB\inc\\sys_usart.h</FilePath>
+            </File>
+            <File>
+              <FileName>lora_e22.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\FWLIB\inc\\lora_e22.h</FilePath>
             </File>
             <File>
               <FileName>sys_str.h</FileName>

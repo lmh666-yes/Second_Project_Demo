@@ -1,28 +1,16 @@
 #include "sys_dac.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
 
-/* ================================================================
- *  sys_dac.c —— DAC 模拟输出  实现文件
- * ================================================================
- *  三种输出的数据通路（看清楚这张图，DAC 就不会用错）：
- *
- *   ① 直写 : CPU → DAC_DHR12R1 → DAC 转换 → PA4
- *   ② 内置波形 : TIM6 更新事件 → TRGO → DAC 触发 → 内部三角/噪声发生器
- *                自动改数据 → PA4      （CPU 完全不参与）
- *   ③ DMA 波形 : TIM6 更新事件 → TRGO → DAC 请求 → DMA 从内存搬一个数
- *                → PA4，循环模式（DMA_Mode_Circular）自动重播   （CPU 完全不参与）
- *
- *  ⚠ 三条通路都依赖"触发源 DSC 位"：直写时触发必须关掉（DAC_Trigger_None），
- *    否则写进去的数据会被下一个触发立刻覆盖。
- * ================================================================ */
+/* DAC 模拟输出实现。三条数据通路：
+ * 1) 直写：CPU 写 DAC_DHR12R1 → DAC 转换 → PA4
+ * 2) 内置波形：TIM6 更新事件 → TRGO → 触发内部三角/噪声发生器自动改数据 → PA4，CPU 不参与
+ * 3) DMA 波形：TIM6 更新事件 → TRGO → DAC 请求 → DMA 搬数 → PA4，循环模式自动重播，CPU 不参与
+ * 直写时须关闭触发（DAC_Trigger_None），否则写入的数据会被下一个触发覆盖 */
 
 
-/* ================================================================
- *                      内部状态
- * ================================================================ */
-/* 32 点正弦表：y = 2048 + 2047*sin(2*pi*i/32)，中点为 2048（约 1.65V）
- * 峰值 4095 / 谷值 1 —— 留 1 个码值是为了避免"贴顶削波"看起来发平 */
+/* 内部状态 */
+/* 32 点正弦表：y = 2048 + 2047*sin(2*pi*i/32)，中点 2048，约 1.65V（VREF 3300mV）
+ * 表中最大值 3950、最小值 146，未用满 12 位量程 */
 static const uint16_t sys_dac_sine[SYS_DAC_SINE_POINTS] = {
     2048U, 2447U, 2831U, 3178U, 3467U, 3697U, 3861U, 3950U,
     3950U, 3861U, 3697U, 3467U, 3178U, 2831U, 2447U, 2048U,
@@ -36,9 +24,7 @@ static uint8_t  sys_dac_wave  [SYS_DAC_COUNT];   /* 1 = 正在输出波形 */
 static uint16_t sys_dac_len   [SYS_DAC_COUNT];   /* DMA 波形点数 */
 
 
-/* ================================================================
- *                      内部小工具
- * ================================================================ */
+/* 内部小工具 */
 static uint8_t dac_valid(uint8_t ch)
 {
     if (ch < 1U || ch > SYS_DAC_COUNT) return 0U;
@@ -55,15 +41,14 @@ static uint32_t dac_channel(uint8_t ch)
     return (ch == SYS_DAC_1) ? DAC_Channel_1 : DAC_Channel_2;
 }
 
-/* ⚠ 标准库**没有**"按通道号写数据"的统一函数（只有 SetChannel1Data /
- *   SetChannel2Data 两个），这里包一层，上层就不用关心通道号了 */
+/* 标准库只有 SetChannel1Data / SetChannel2Data，这里按通道号包一层 */
 static void dac_write_data(uint8_t ch, uint16_t value)
 {
     if (ch == SYS_DAC_1) DAC_SetChannel1Data((uint32_t)DAC_Align_12b_R, value);
     else                 DAC_SetChannel2Data((uint32_t)DAC_Align_12b_R, value);
 }
 
-/* 引脚设为"模拟"模式 —— 漏了这步输出会一直是 0V（被数字推挽级拉死） */
+/* 引脚设为模拟模式：漏配该步时输出恒为 0V，被数字推挽级拉死 */
 static void dac_pin_init(uint8_t ch)
 {
     GPIO_InitTypeDef gi;
@@ -80,7 +65,7 @@ static void dac_pin_init(uint8_t ch)
     GPIO_Init((ch == SYS_DAC_1) ? SYS_DAC1_PORT : SYS_DAC2_PORT, &gi);
 }
 
-/* 把 TIM6 配成"每 1/freq_hz 秒产生一次更新事件并输出 TRGO" */
+/* TIM6 每 1/freq_hz 秒产生一次更新事件并输出 TRGO */
 static uint8_t dac_tim_init(uint32_t freq_hz)
 {
     TIM_TimeBaseInitTypeDef tb;
@@ -92,11 +77,11 @@ static uint8_t dac_tim_init(uint32_t freq_hz)
     if (freq_hz == 0U) return 1U;
 
     RCC_GetClocksFreq(&clk);
-    /* TIM6 挂 APB1：APB1 分频 != 1 时定时器时钟 = PCLK1 × 2 */
+    /* TIM6 挂 APB1：APB1 分频不为 1 时定时器时钟 = PCLK1 × 2 */
     timclk = ((RCC->CFGR & RCC_CFGR_PPRE1) != 0U) ? (clk.PCLK1_Frequency * 2U)
                                                   : clk.PCLK1_Frequency;
 
-    /* 先粗分频到 1MHz，再数 ARR 个数 —— 这样低频也能精确 */
+    /* 先分频到 1MHz 再设 ARR，低频时计数精度更高 */
     div = timclk / 1000000UL;
     if (div == 0U) div = 1U;
     if (div > 65536UL) div = 65536UL;
@@ -115,7 +100,7 @@ static uint8_t dac_tim_init(uint32_t freq_hz)
     tb.TIM_RepetitionCounter = 0;
     TIM_TimeBaseInit(SYS_DAC_TIM, &tb);
 
-    /* 关键：把更新事件引到 TRGO，DAC 才能"每周期转一次" */
+    /* 更新事件引到 TRGO，DAC 每个定时周期转换一次 */
     TIM_SelectOutputTrigger(SYS_DAC_TIM, SYS_DAC_TRGO_SOURCE);
     TIM_Cmd(SYS_DAC_TIM, ENABLE);
 
@@ -128,9 +113,7 @@ static void dac_tim_stop(void)
 }
 
 
-/* ================================================================
- *                    区块 2：基础功能
- * ================================================================ */
+/* 基础功能（直写电压） */
 uint8_t SYS_DAC_Init(uint8_t ch)
 {
     DAC_InitTypeDef di;
@@ -149,7 +132,7 @@ uint8_t SYS_DAC_Init(uint8_t ch)
     DAC_Init(dac_channel(ch), &di);
 
     DAC_Cmd(dac_channel(ch), ENABLE);
-    /* 从 0V 起步 */
+    /* 初始输出 0V */
     dac_write_data(ch, 0U);
 
     sys_dac_inited[ch - 1U] = 1U;
@@ -224,9 +207,7 @@ uint16_t SYS_DAC_MilliVoltToValue(uint32_t millivolt)
 }
 
 
-/* ================================================================
- *                    区块 3：扩展功能（波形）
- * ================================================================ */
+/* 扩展功能（波形） */
 uint8_t SYS_DAC_TriangleInit(uint8_t ch, uint32_t freq_hz, uint16_t amplitude)
 {
     DAC_InitTypeDef di;
@@ -234,7 +215,7 @@ uint8_t SYS_DAC_TriangleInit(uint8_t ch, uint32_t freq_hz, uint16_t amplitude)
     if (!dac_valid(ch)) return 1U;
     if (amplitude == 0U) amplitude = 4095U;
 
-    /* 三角波一周期要 2×amplitude 个台阶，所以触发频率 = 频率 × 2 × 台阶数 */
+    /* 三角波一周期 2×amplitude 个台阶，触发频率 = 频率 × 2 × 台阶数 */
     if (dac_tim_init(freq_hz * 2UL * (uint32_t)amplitude) != 0U) return 2U;
 
     DAC_StructInit(&di);
@@ -284,7 +265,7 @@ uint8_t SYS_DAC_DmaInit(uint8_t ch, const uint16_t *buf, uint16_t len, uint32_t 
     /* 触发频率 = 波形频率 × 点数（每个点占一次触发） */
     if (dac_tim_init(freq_hz * (uint32_t)len) != 0U) return 2U;
 
-    /* --- ① DMA 通道：DAC1 → DMA1_Stream5_CH7（F4 固定映射，改不了） --- */
+    /* DMA 通道：DAC1 固定映射 DMA1_Stream5_CH7（F4 硬件映射，不可改） */
     RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_DMA1, ENABLE);
     DMA_DeInit(SYS_DAC1_DMA_STREAM);
     while (DMA_GetCmdStatus(SYS_DAC1_DMA_STREAM) != DISABLE) { }
@@ -304,7 +285,7 @@ uint8_t SYS_DAC_DmaInit(uint8_t ch, const uint16_t *buf, uint16_t len, uint32_t 
     dst.DMA_FIFOMode           = DMA_FIFOMode_Disable;
     DMA_Init(SYS_DAC1_DMA_STREAM, &dst);
 
-    /* --- ② DAC：触发选 TIM6，关掉波形发生器（数据由 DMA 供） --- */
+    /* DAC：触发选 TIM6，关波形发生器，数据由 DMA 提供 */
     DAC_StructInit(&di);
     di.DAC_Trigger        = DAC_Trigger_T6_TRGO;
     di.DAC_WaveGeneration = DAC_WaveGeneration_None;
@@ -339,7 +320,7 @@ void SYS_DAC_DmaStop(uint8_t ch)
 
 uint8_t SYS_DAC_SineInit(uint8_t ch, uint32_t freq_hz)
 {
-    /* 频率 × 32 点不能超过 TIM6 能做到的上限（约 1MHz 触发）*/
+    /* 频率 × 32 点不能超过 TIM6 触发上限，约 1MHz */
     return SYS_DAC_DmaInit(ch, sys_dac_sine, SYS_DAC_SINE_POINTS, freq_hz);
 }
 
@@ -350,12 +331,12 @@ void SYS_DAC_WaveStop(uint8_t ch)
     if (!dac_valid(ch)) return;
     if (sys_dac_wave[ch - 1U] == 0U) return;     /* 本来就没在发波 */
 
-    /* ① 先关 DMA 与触发源，再关波形发生器 */
+    /* 先关 DMA 与触发源，再关波形发生器 */
     DAC_DMACmd(dac_channel(ch), DISABLE);
     DMA_Cmd(SYS_DAC1_DMA_STREAM, DISABLE);
     dac_tim_stop();
 
-    /* ② 回到"直写"配置：触发 None + 波形 None */
+    /* 回到直写配置：触发 None + 波形 None */
     DAC_StructInit(&di);
     di.DAC_Trigger        = DAC_Trigger_None;
     di.DAC_WaveGeneration = DAC_WaveGeneration_None;
@@ -371,5 +352,3 @@ const uint16_t *SYS_DAC_GetSineTable(void)
 {
     return sys_dac_sine;
 }
-
-/* 文件结束 */

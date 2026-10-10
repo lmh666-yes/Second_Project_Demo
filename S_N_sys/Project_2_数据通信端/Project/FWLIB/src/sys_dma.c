@@ -1,29 +1,24 @@
 #include "sys_dma.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 
-/* ================================================================
- *  sys_dma.c —— 【系统】DMA 通用搬运模块  实现文件
- * ================================================================
- *  内部结构 :
- *    dma_cb[16]  —— 回调表（下标 0~7 = DMA1_Stream0~7，
- *                   8~15 = DMA2_Stream0~7）
- *    X-Macro     —— 用一张"数据流清单"宏批量生成 16 个中断服务函数，
- *                   避免手写 16 段几乎一样的代码（改一处=全改）
- *
- *  中断服务函数 : DMA1_Stream0~7 / DMA2_Stream0~7 共 16 个
- *  在本文件定义，应用代码不要再重复定义。
- * ================================================================ */
+/* sys_dma.c：DMA 通用搬运模块实现文件
+ * dma_cb[16] 回调表：下标 0~7 = DMA1_Stream0~7，8~15 = DMA2_Stream0~7
+ * 16 个中断服务函数（DMA1_Stream0~7 / DMA2_Stream0~7）由 X-Macro 清单宏批量生成，
+ * 均在本文件定义，应用代码不要再重复定义 */
 
 
-/* ================================================================
- *                    内部辅助
- * ================================================================ */
 /* 回调表：16 个数据流通用一张表 */
 static SysDmaCallback_t dma_cb[16];
 
+/* 传输错误账本（TE / FE / DME）
+ * 错误标志与完成标志在同一个 6 位组内，清标志一次清 6 位，ISR 无法区分搬出错与搬完成，
+ * 上层会误认为数据已就绪；TE 常见于外设被复位、总线访问越界、数据流被抢占 */
+static volatile uint32_t s_dma_err_cnt     = 0U;   /* 累计出错次数 */
+static volatile uint8_t  s_dma_last_kind   = 0U;   /* 1=TE 2=FE 3=DME */
+static volatile uint8_t  s_dma_last_stream = 0U;   /* 最近出错的流号 0~15 */
+
 /* 数据流指针 → 全局编号（0~7 = DMA1_Stream0~7，8~15 = DMA2_Stream0~7）
- * 返回 -1 = 不是合法的数据流指针（防御性检查，避免误写寄存器）
- * 注：0x18 = 每个 Stream 寄存器块的字节间距（数据手册寄存器映射） */
+ * 返回 -1 = 指针不属于任何数据流
+ * 0x18 = 每个 Stream 寄存器块的字节间距（数据手册寄存器映射） */
 static int dma_index(DMA_Stream_TypeDef *stream)
 {
     uint32_t s = (uint32_t)stream;
@@ -45,7 +40,7 @@ static void dma_clock_enable(int gi)
 }
 
 /* 全局编号(0~15) → 对应 NVIC 中断号
- * 注意 : DMA1_Stream7 的中断号是 47（不与 11~17 连续），别找错 */
+ * DMA1_Stream7 的中断号是 47，与 11~17 不连续 */
 static IRQn_Type dma_irqn(int gi)
 {
     static const IRQn_Type tab[16] = {
@@ -58,9 +53,9 @@ static IRQn_Type dma_irqn(int gi)
 }
 
 /* 清掉某个数据流的全部中断标志（TC/HT/TE/FE/DME）
- * 原理 : 每个流占 LISR/HISR 里连续的 6 个位（0~3 号流在 LISR，
- *       4~7 号流在 HISR），对清除寄存器 LIFCR/HIFCR 对应位写 1
- *       即清除——一次性清 6 位，不用管具体是哪种事件 */
+ * 每个流占 LISR/HISR 连续 6 位：0~3 号流在 LISR，4~7 号流在 HISR，
+ * 对 LIFCR/HIFCR 对应位写 1 一次清 6 位，不区分事件类型
+ * 清之前必须先调 dma_read_flags()，否则 TE/FE/DME 与 TC 一起被清掉 */
 static void dma_clear_flags(int gi)
 {
     DMA_TypeDef        *D;
@@ -82,9 +77,35 @@ static void dma_clear_flags(int gi)
     else          D->HIFCR = mask;          /* 高 4 个流 → HIFCR */
 }
 
+/* 读某个数据流的 6 位标志组（不清除），位序与参考手册一致：
+ *   bit0 = FEIF   FIFO 错误（FIFO 模式下读写指针越界）
+ *   bit1 = DMEIF  直接模式错误（禁止 FIFO 时，外设/内存宽度不一致）
+ *   bit2 = TEIF   传输错误（总线读写失败）
+ *   bit3 = HTIF   半传输
+ *   bit4 = TCIF   传输完成
+ *   bit5 = 保留
+ * 返回低 6 位有效。 */
+static uint32_t dma_read_flags(int gi)
+{
+    DMA_TypeDef *D;
+    uint8_t      idx;
+    uint32_t     v;
+
+    if (gi < 8) {
+        idx = (uint8_t)gi;
+        D   = DMA1;
+    } else {
+        idx = (uint8_t)(gi - 8);
+        D   = DMA2;
+    }
+
+    v = (idx < 4U) ? D->LISR : D->HISR;
+    return (v >> ((idx & 3U) * 6U)) & 0x3FUL;
+}
+
 /* 两种方向共用的初始化主体
- * 说明 : 外设地址固定不递增、内存地址自动递增（搬运的典型模式），
- *        外设与内存的数据宽度一致（item_size：1=字节，2=半字） */
+ * 外设地址不递增、内存地址递增，外设与内存数据宽度一致
+ * item_size：1=字节，2=半字 */
 static void dma_start(DMA_Stream_TypeDef *stream, uint32_t channel,
                       uint32_t periph_addr, uint32_t mem_addr,
                       uint32_t direction, uint16_t len,
@@ -121,25 +142,23 @@ static void dma_start(DMA_Stream_TypeDef *stream, uint32_t channel,
     di.DMA_PeripheralBurst    = DMA_PeripheralBurst_Single;
     DMA_Init(stream, &di);
 
-    /* 开"传输完成"中断（回调在 DMAx_Streamy_IRQHandler 里转发）：
-     * ① DMA 内部 TC 中断源；② NVIC 对应中断——缺了 ②，
-     *    TC 只会把标志挂起，回调永远不会被执行 */
+    /* 开传输完成中断：DMA 内部 TC 中断源与 NVIC 对应中断都要开，
+     * 只开 TC 时标志会挂起，但回调不会执行
+     * 未注册回调的流（SYS_DMA_SetCallback 未调用）保持中断关闭：
+     * 循环模式下空回调每圈进一次中断，白白占用 CPU */
     dma_clear_flags(gi);
-    DMA_ITConfig(stream, DMA_IT_TC, ENABLE);
+    DMA_ITConfig(stream, DMA_IT_TC, (dma_cb[gi] == 0) ? DISABLE : ENABLE);
 
     ni.NVIC_IRQChannel                   = dma_irqn(gi);
     ni.NVIC_IRQChannelPreemptionPriority = SYS_DMA_IRQ_PRE_PRIO;
     ni.NVIC_IRQChannelSubPriority        = SYS_DMA_IRQ_SUB_PRIO;
-    ni.NVIC_IRQChannelCmd                = ENABLE;
+    ni.NVIC_IRQChannelCmd                = (dma_cb[gi] == 0) ? DISABLE : ENABLE;
     NVIC_Init(&ni);
 
     DMA_Cmd(stream, ENABLE);
 }
 
 
-/* ================================================================
- *                    区块 2：基础功能
- * ================================================================ */
 void SYS_DMA_SetCallback(DMA_Stream_TypeDef *stream, SysDmaCallback_t cb)
 {
     int gi = dma_index(stream);
@@ -179,9 +198,6 @@ uint8_t SYS_DMA_Busy(DMA_Stream_TypeDef *stream)
 }
 
 
-/* ================================================================
- *                    区块 3：扩展功能
- * ================================================================ */
 uint8_t SYS_DMA_WaitDone(DMA_Stream_TypeDef *stream, uint32_t loops)
 {
     volatile uint32_t wait = (loops == 0U) ? SYS_DMA_WAIT_LOOPS : loops;
@@ -193,20 +209,72 @@ uint8_t SYS_DMA_WaitDone(DMA_Stream_TypeDef *stream, uint32_t loops)
     return 0U;                                       /* 超时（仍在搬） */
 }
 
+/* 传输错误查询（TE / FE / DME）
+ * 返回 0 = 无错误，1 = TE 总线读写失败，2 = FE FIFO 错误，3 = DME 直接模式错误
+ * TE 多因外设时钟未开、地址错误或外设中途 DeInit；DME 表示外设与内存数据宽度不一致
+ * 本库用直通模式（FIFO 关闭），出现 FE 说明配置被手工改过 */
+uint8_t SYS_DMA_GetError(DMA_Stream_TypeDef *stream)
+{
+    int      gi = dma_index(stream);
+    uint32_t f;
 
-/* ================================================================
- *                中断服务函数：16 个数据流批量生成
- * ================================================================
- * 宏技巧说明（X-Macro）：
- *   清单宏 DMA_STREAM_LIST(X) 把 16 个数据流"喂"给 X；
- *   DMA_DEFINE_ISR 展开时，stream##_IRQHandler 把数据流名
- *   和 _IRQHandler 拼成函数名——一行代码生成一个 ISR。
- *   以后要加/减流，只动清单宏一行即可。 */
+    if (gi < 0) return 0U;
+
+    f = dma_read_flags(gi);
+    if ((f & 0x07UL) == 0U) return 0U;
+
+    if ((f & 0x04UL) != 0U)      return 1U;   /* TE  */
+    else if ((f & 0x01UL) != 0U) return 2U;   /* FE  */
+    else                         return 3U;   /* DME */
+}
+
+uint32_t SYS_DMA_ErrCount(void)
+{
+    return s_dma_err_cnt;
+}
+
+uint8_t SYS_DMA_LastErrKind(void)
+{
+    return s_dma_last_kind;
+}
+
+uint8_t SYS_DMA_LastErrStream(void)
+{
+    return s_dma_last_stream;
+}
+
+void SYS_DMA_ErrClear(void)
+{
+    s_dma_err_cnt     = 0U;
+    s_dma_last_kind   = 0U;
+    s_dma_last_stream = 0U;
+}
+
+
+/* 中断服务函数：16 个数据流批量生成
+ * DMA_STREAM_LIST(X) 依次把 16 个数据流传给 X
+ * DMA_DEFINE_ISR 用 stream##_IRQHandler 拼出函数名，一个数据流一个 ISR
+ * 增删数据流只改 DMA_STREAM_LIST 清单宏 */
 static void dma_irq(DMA_Stream_TypeDef *stream)
 {
-    int gi = dma_index(stream);
+    int      gi = dma_index(stream);
+    uint32_t f;
 
     if (gi < 0) return;
+
+    f = dma_read_flags(gi);                    /* 先读，再清 */
+
+    /* 低 3 位 = FE / DME / TE，任一置位表示本次传输出错：
+     * 不调用上层完成回调，避免上层误认为数据已就绪，只记账并清标志 */
+    if ((f & 0x07UL) != 0U) {
+        s_dma_err_cnt++;
+        s_dma_last_stream = (uint8_t)gi;
+        if ((f & 0x04UL) != 0U)      s_dma_last_kind = 1U;   /* TE  */
+        else if ((f & 0x01UL) != 0U) s_dma_last_kind = 2U;   /* FE  */
+        else                         s_dma_last_kind = 3U;   /* DME */
+        dma_clear_flags(gi);
+        return;
+    }
 
     dma_clear_flags(gi);                       /* 清标志（含 TC） */
     if (dma_cb[gi] != 0) dma_cb[gi]();         /* 通知上层 */
@@ -218,8 +286,8 @@ static void dma_irq(DMA_Stream_TypeDef *stream)
     X(DMA2_Stream0) X(DMA2_Stream1) X(DMA2_Stream2) X(DMA2_Stream3) \
     X(DMA2_Stream4) X(DMA2_Stream5) X(DMA2_Stream6) X(DMA2_Stream7)
 
-/* 每个 ISR 都是弱定义（__weak）:你手写同名 DMAx_Streamy_IRQHandler 时
- * 会自动顶替库版（顶替后该流的库回调随之停用;机制说明见 sys_tim.c 同段注释） */
+/* 每个 ISR 都是弱定义（__weak）：应用层定义同名 DMAx_Streamy_IRQHandler 会顶替库版，
+ * 顶替后该流的库回调随之停用（机制说明见 sys_tim.c 同段注释） */
 #define DMA_DEFINE_ISR(stream) \
     __weak void stream##_IRQHandler(void) { dma_irq(stream); }
 

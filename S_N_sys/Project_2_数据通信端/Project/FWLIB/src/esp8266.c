@@ -1,38 +1,50 @@
 #include "esp8266.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
 #include "delay.h"      /* 延时（delay_ms 等）独立文件 */
 #include <string.h>
 
-/* ================================================================
- *  esp8266.c —— ESP8266 AT 指令驱动  实现文件
- * ================================================================
- *  核心只有两个动作，其余全是组合：
- *    ① 收：把串口环形缓冲里的字节搬进本地回复缓冲（带超时）
- *    ② 找：在回复缓冲里用 strstr 找"期望字符串"
- *  所以 SendCmd 就是"发出去 → 反复做①②直到找到或超时"。
- *
- *  ⚠ 为什么不用 DMA/IDLE 收？AT 指令的回显长度不定、还可能夹杂
- *    异步提示（WIFI CONNECTED 之类），"环形缓冲 + 字符串查找"最皮实。
- *  ⚠ 两个注意点：
- *     · 回复缓冲满了就停止接收（防溢出），需要时可 ESP8266_Flush() 重来；
- *     · SendCmd 会先清空缓冲，所以"上一次的回显"要先取走再发新命令。
- * ================================================================ */
+/* ESP8266 AT 指令驱动实现
+ * 收：把串口环形缓冲里的字节搬进本地回复缓冲；找：esp_find 匹配期望字符串
+ * SendCmd 即发送后反复执行收与找，直到命中或超时
+ * 采用环形缓冲加字符串查找，不用 DMA/IDLE：AT 回显长度不定，且可能夹杂异步提示
+ * 缓冲满后停止接收，需要时先 ESP8266_Flush()；SendCmd 会先清空缓冲 */
 
 
-/* 回复缓冲（ASCII，末尾强制补 '\0'） */
-static char     esp_rx[ESP8266_RX_BUF_SIZE];
-static uint16_t esp_rx_len = 0;
-static uint8_t  esp_async = 0;      /* 1 = 缓冲里有"主动上报"的数据 */
+/* 回复缓冲（ASCII，末尾强制补 '\0'）
+ * volatile：Flush / GetRawRx / GetLastReply 与轮询状态机可能在不同任务中调用，
+ * 不加限定符时编译器会缓存本函数内未改动的读，读到旧内容 */
+static volatile char     esp_rx[ESP8266_RX_BUF_SIZE];
+static volatile uint16_t esp_rx_len = 0;
+static volatile uint8_t  esp_async = 0;      /* 1 = 缓冲里有"主动上报"的数据 */
 
 /* TCP 服务器状态（区块 4 用） */
-static uint8_t  s_cli_online = 0;   /* 1 = 有上位机连进来 */
-static uint8_t  s_cli_link   = 0;   /* 该上位机的连接号（0~4） */
+static volatile uint8_t  s_cli_online = 0;   /* 1 = 有上位机连进来 */
+static volatile uint8_t  s_cli_link   = 0;   /* 该上位机的连接号（0~4） */
 
 
-/* ================================================================
- *                      内部小工具
- * ================================================================ */
+/* 内部小工具 */
+
+/* 在缓冲里找关键词，返回其首次出现的下标，找不到返回 -1
+ * 返回下标而非存在性：期望词与 ERROR 同时出现时，先出现的才是本命令的结果 */
+static int esp_find(const char *token)
+{
+    uint16_t i, n;
+    char     c;
+
+    if (token == 0 || token[0] == '\0') return 0;
+
+    n = (uint16_t)strlen(token);
+
+    for (i = 0; (uint16_t)(i + n) <= esp_rx_len; i++) {
+        uint16_t k;
+        for (k = 0; k < n; k++) {
+            c = esp_rx[i + k];
+            if (c != token[k]) break;
+        }
+        if (k == n) return (int)i;      /* 整段匹配上 */
+    }
+    return -1;
+}
 
 /* 把串口缓冲里的字节搬进本地回复缓冲；返回新搬进来的字节数 */
 static uint16_t esp_pump(void)
@@ -49,29 +61,29 @@ static uint16_t esp_pump(void)
         }
         got++;
 
-        /* 已经收了 512 字节还没匹配，说明脏数据/异步信息刷屏，
-         * 丢掉最前面一半腾地方（保证还能继续等本次命令的回复） */
+        /* 缓冲将满时丢掉前一半旧数据，保留最新收到的尾部
+         * 要等的 "OK" / "SEND OK" 只会出现在最新的数据里 */
         if (esp_rx_len >= (uint16_t)(ESP8266_RX_BUF_SIZE - 1U)) {
-            uint16_t half = (uint16_t)(ESP8266_RX_BUF_SIZE / 2U);
-            memmove(esp_rx, &esp_rx[half], (size_t)(esp_rx_len - half));
-            esp_rx_len = (uint16_t)(esp_rx_len - half);
+            uint16_t half   = (uint16_t)(ESP8266_RX_BUF_SIZE / 2U);
+            uint16_t tail_n = (uint16_t)(esp_rx_len - half);   /* 保留尾部字节数 */
+            uint16_t i;
+
+            for (i = 0; i < tail_n; i++) esp_rx[i] = esp_rx[half + i];
+            esp_rx_len         = tail_n;
             esp_rx[esp_rx_len] = '\0';
         }
     }
     return got;
 }
 
-/* 在缓冲里找子串 */
+/* 在缓冲里找子串（存在性判断，给调用方用） */
 static uint8_t esp_has(const char *token)
 {
-    if (token == 0 || token[0] == '\0') return 1U;
-    return (strstr(esp_rx, token) != 0) ? 1U : 0U;
+    return (esp_find(token) >= 0) ? 1U : 0U;
 }
 
 
-/* ================================================================
- *                    区块 2：基础功能
- * ================================================================ */
+/* 区块 2：基础功能 */
 uint8_t ESP8266_SendCmd(const char *cmd, const char *expect, uint32_t timeout_ms)
 {
     uint32_t t0;
@@ -79,34 +91,50 @@ uint8_t ESP8266_SendCmd(const char *cmd, const char *expect, uint32_t timeout_ms
     if (cmd == 0) return 2U;
     if (timeout_ms == 0U) timeout_ms = ESP8266_CMD_TIMEOUT_MS;
 
-    /* ① 清空旧内容（否则会匹配到上一次的 "OK"，导致"永远成功"） */
+    /* 清空旧内容，否则会匹配到上一次的 "OK" */
     ESP8266_Flush();
 
-    /* ② 发命令 + 回车换行（AT 指令必须以 \r\n 结尾） */
+    /* 发命令加回车换行（AT 指令必须以 \r\n 结尾） */
     SYS_USART_SendString(ESP8266_USART, cmd);
     SYS_USART_SendString(ESP8266_USART, "\r\n");
 
     if (expect == 0 || expect[0] == '\0') return 0U;    /* 只发不等 */
 
-    /* ③ 反复"搬 + 找"，直到命中或超时
-     *    用 DWT 毫秒计时（不占 SysTick，RTOS 下也能用） */
+    /* 反复搬入并查找，直到命中或超时；用 DWT 毫秒计时，不占 SysTick
+     * 同时检查 "ERROR"/"FAIL"：模块拒绝命令时立即返回，不与超时混为一种结果 */
     t0 = DWT_GetUs();
     while (DWT_ElapsedUs(t0) < (timeout_ms * 1000UL)) {
+        int hit, bad;
+
         (void)esp_pump();
-        if (esp_has(expect)) return 0U;
+
+        hit = esp_find(expect);
+        bad = esp_find("ERROR");
+        if (bad < 0) bad = esp_find("FAIL");
+        /* 出现 ERROR 即判失败，即使回显里也含期望词 */
+        if (bad >= 0) return 2U;
+        if (hit >= 0) return 0U;
     }
 
-    (void)esp_pump();                  /* 超时前再捞一次，尽量把回复留全给调试 */
-    return esp_has(expect) ? 0U : 1U;
+    (void)esp_pump();                  /* 超时前再收一次，保留完整回复供调试 */
+    if (esp_find(expect) >= 0) return 0U;
+    if (esp_find("ERROR") >= 0 || esp_find("FAIL") >= 0) return 2U;
+    return 1U;
 }
+
+/* 返回码含义（本文件 SendCmd 一致）：
+ *   0 = 命中期望词（成功）
+ *   1 = 超时，模块无回复（未接好 / 波特率不对 / 未上电）
+ *   2 = 模块回 ERROR 或 FAIL（命令不合法 / 模块拒绝） */
 
 const char *ESP8266_GetLastReply(void)
 {
-    return esp_rx;
+    /* esp_rx 带 volatile，这里显式转换后按 C 字符串返回；只读，语义不变 */
+    return (const char *)esp_rx;
 }
 
-/* 取原始接收缓冲（二进制安全）——给 MQTT 这类二进制协议用
- * 与 GetLastReply 是同一块缓冲，只是不当 C 字符串看待 */
+/* 取原始接收缓冲（二进制安全），供 MQTT 等二进制协议使用
+ * 与 GetLastReply 是同一块缓冲，仅不当 C 字符串看待 */
 uint16_t ESP8266_GetRawRx(const uint8_t **buf)
 {
     (void)esp_pump();
@@ -152,7 +180,7 @@ uint8_t ESP8266_SetMode(uint8_t mode)
 
     if (mode < 1U || mode > 3U) mode = ESP8266_MODE_STA;
 
-    /* 手工拼 "AT+CWMODE=<n>"（不用 sprintf，省 Flash 且无 % 兼容问题） */
+    /* 手工拼 "AT+CWMODE=<n>"，不用 sprintf 以省 Flash */
     cmd[0] = 'A'; cmd[1] = 'T'; cmd[2] = '+'; cmd[3] = 'C';
     cmd[4] = 'W'; cmd[5] = 'M'; cmd[6] = 'O'; cmd[7] = 'D';
     cmd[8] = 'E'; cmd[9] = '=';
@@ -166,13 +194,15 @@ uint8_t ESP8266_SetMode(uint8_t mode)
 static void esp_append(char *dst, uint16_t dst_size, const char *src)
 {
     uint16_t n = 0;
+    uint16_t cap;
 
     if (dst == 0 || src == 0 || dst_size == 0U) return;
 
-    while (dst[n] != '\0' && n < dst_size) n++;
-    while (*src != '\0' && n < (uint16_t)(dst_size - 1U)) {
-        dst[n++] = *src++;
-    }
+    cap = (uint16_t)(dst_size - 1U);        /* 最多能放到这个下标 */
+
+    /* 边界判断必须在解引用之前，否则 dst 已满时会越界读 dst[dst_size] */
+    while (n < cap && dst[n] != '\0') n++;
+    while (n < cap && *src != '\0') dst[n++] = *src++;
     dst[n] = '\0';
 }
 
@@ -199,36 +229,35 @@ uint8_t ESP8266_QuitAP(void)
 
 uint8_t ESP8266_GetIP(char *ip, uint16_t len)
 {
-    const char *p;
+    int      at;
     uint16_t i = 0;
 
     if (ip == 0 || len == 0U) return 1U;
     ip[0] = '\0';
 
-    /* 注意：CIFSR 的回复里既有 STAIP 也有 APIP，先找 STAIP */
+    /* CIFSR 的回复里既有 STAIP 也有 APIP，先找 STAIP */
     if (ESP8266_SendCmd("AT+CIFSR", "STAIP", 2000U) != 0U) {
         if (ESP8266_SendCmd("AT+CIFSR", "OK", 2000U) != 0U) return 1U;
     }
 
-    p = strstr(esp_rx, "STAIP");
-    if (p == 0) return 1U;
+    /* 用 esp_find 取下标后自行扫分隔符：esp_rx 是 volatile，标准库字符串函数不能直接接
+     * 两种固件格式：新固件 STAIP,"192.168.x.x"，老固件 STAIP:192.168.x.x */
+    at = esp_find("STAIP");
+    if (at < 0) return 1U;
 
-    p = strchr(p, '"');                 /* 地址在引号里："192.168.x.x" */
-    if (p == 0) {
-        p = strchr(strstr(esp_rx, "STAIP"), ':');   /* 老固件格式：STAIP:192.168.x.x */
-        if (p == 0) return 1U;
-        p++;
-    } else {
-        p++;
+    i = (uint16_t)at + 5U;                       /* 跳过 "STAIP" 本身 */
+    while (i < esp_rx_len && esp_rx[i] != '"' && esp_rx[i] != ':') i++;
+    if (i < esp_rx_len) i++;                     /* 跳过那个分隔符 */
+
+    {
+        uint16_t w = 0U;
+        while (i < esp_rx_len && esp_rx[i] != '"' && esp_rx[i] != '\r' &&
+               esp_rx[i] != '\n' && w < (uint16_t)(len - 1U)) {
+            ip[w++] = esp_rx[i++];
+        }
+        ip[w] = '\0';
+        return (w == 0U) ? 1U : 0U;
     }
-
-    while (*p != '\0' && *p != '"' && *p != '\r' && *p != '\n' &&
-           i < (uint16_t)(len - 1U)) {
-        ip[i++] = *p++;
-    }
-    ip[i] = '\0';
-
-    return (i == 0U) ? 1U : 0U;
 }
 
 uint8_t ESP8266_ConnectTCP(const char *host, uint16_t port)
@@ -282,13 +311,26 @@ uint8_t ESP8266_SendData(const uint8_t *data, uint16_t len)
         while (v > 0U && n < 5U) { tmp[n++] = (char)('0' + (v % 10U)); v /= 10U; }
         cmd[0] = '\0';
         esp_append(cmd, sizeof(cmd), "AT+CIPSEND=");
-        while (n > 0U) { cmd[10 + k] = tmp[--n]; k++; }
-        cmd[10 + k] = '\0';
+        /* 长度从 "AT+CIPSEND=" 末尾（下标 11）开始追加，用 strlen 起算，
+         * 防止长度位数变化时覆盖 '=' 拼出非法命令 */
+        k = (uint8_t)strlen(cmd);
+        while (n > 0U) { cmd[k] = tmp[--n]; k++; }
+        cmd[k] = '\0';
     }
 
-    if (ESP8266_SendCmd(cmd, ">", 3000U) != 0U) return 1U;
+    if (ESP8266_SendCmd(cmd, ">", 3000U) != 0U) {
+        /* 等 '>' 超时后必须重同步再返回
+         * 若模块已回 '>' 而等待窗口错过，模块处于数据接收模式，
+         * 之后的 AT 命令都会被当作载荷吃掉，直到复位
+         * 依据 ESP8266 AT 手册：发 "+++"（不加 CRLF）退出数据模式，
+         * 再发 "AT" 确认回到命令模式；已在命令模式下时 "+++" 只会回 ERROR */
+        SYS_USART_SendString(ESP8266_USART, "+++");
+        delay_ms(50);                            /* 手册要求 >20ms 静默 */
+        (void)ESP8266_SendCmd("AT", "OK", 500U);
+        return 1U;
+    }
 
-    /* 这里必须**直接**往串口写原始字节（不能再加 \r\n） */
+    /* 此处直接往串口写原始字节，不能再加 \r\n */
     SYS_USART_SendBuf(ESP8266_USART, data, len);
 
     /* 等模块回 "SEND OK" */
@@ -308,7 +350,7 @@ uint8_t ESP8266_HasAsyncData(void)
 {
     (void)esp_pump();
 
-    /* 出现这些关键词就是"模块主动说话"，而不是对本条命令的回显 */
+    /* 出现这些关键词说明模块主动上报，而不是对本条命令的回显 */
     if (esp_has("+IPD") ||
         esp_has("WIFI DISCONNECT") ||
         esp_has("WIFI CONNECTED") ||
@@ -319,22 +361,14 @@ uint8_t ESP8266_HasAsyncData(void)
 }
 
 
-/* ================================================================
- *                区块 4：TCP 服务器（让上位机主动连过来）
- * ================================================================
- *  【为什么遥控小车要用服务器模式】
- *      Qt 上位机跑在电脑/手机上，IP 每次开机都在变，板子找不到它；
- *      反过来板子连上路由器后 IP 是固定的，而且能主动打印出来。
- *      所以让**上位机去连板子** —— 板子当服务器。
- *
- *  【AT 指令流程】
- *      AT+CIPMUX=1            ← 服务器必须多连接模式（单人模式不支持监听）
- *      AT+CIPSERVER=1,8080    ← 开始监听 8080
- *      ...上位机连进来 → 模块主动上报 "0,CONNECT"
- *      AT+CIPSEND=0,33        ← 往连接号 0 发 33 字节（等下 '>' 再灌数据）
- *      ...上位机断开 → 模块主动上报 "0,CLOSED"
- *      AT+CIPSERVER=0         ← 关监听
- * ================================================================ */
+/* 区块 4：TCP 服务器（由上位机主动连接）
+ * 上位机 IP 每次开机变化，板子连上路由器后 IP 固定，故由上位机连板子
+ * 流程：AT+CIPMUX=1 开多连接（服务器必需，单连接下 CIPSERVER 报错）
+ *       AT+CIPSERVER=1,8080 监听 8080
+ *       上位机连入，模块上报 "0,CONNECT"
+ *       AT+CIPSEND=0,33 向连接号 0 发 33 字节，等 '>' 后灌数据
+ *       上位机断开，模块上报 "0,CLOSED"
+ *       AT+CIPSERVER=0 关监听 */
 
 uint8_t ESP8266_StartServer(uint16_t port)
 {
@@ -383,8 +417,7 @@ uint8_t ESP8266_ServerHasClient(uint8_t *link_id)
     uint16_t n;
     uint16_t i;
 
-    /* 这里必须用**二进制安全**的取缓冲接口：
-     * 上位机发来的可能是任意字节，当 C 字符串看会被 0x00 截断 */
+    /* 用二进制安全的取缓冲接口：上位机可能发任意字节，按 C 字符串读会被 0x00 截断 */
     n = ESP8266_GetRawRx(&rx);
 
     for (i = 0U; i < n; i++) {
@@ -394,14 +427,14 @@ uint8_t ESP8266_ServerHasClient(uint8_t *link_id)
 
         id = (uint8_t)(rx[i] - (uint8_t)'0');
 
-        /* "<连接号>,CONNECT" —— 后跟 8 个字符 */
+        /* "<连接号>,CONNECT" 后跟 8 个字符 */
         if (((uint16_t)(i + 9U) <= n) &&
             (memcmp(&rx[i + 1U], ",CONNECT", 8U) == 0)) {
             s_cli_online = 1U;
             s_cli_link   = id;
             i = (uint16_t)(i + 8U);
         }
-        /* "<连接号>,CLOSED" —— 后跟 7 个字符 */
+        /* "<连接号>,CLOSED" 后跟 7 个字符 */
         else if (((uint16_t)(i + 8U) <= n) &&
                  (memcmp(&rx[i + 1U], ",CLOSED", 7U) == 0)) {
             if (s_cli_link == id) s_cli_online = 0U;
@@ -441,7 +474,7 @@ uint8_t ESP8266_SendDataTo(uint8_t link_id, const uint8_t *data, uint16_t len)
 
     if (ESP8266_SendCmd(cmd, ">", 3000U) != 0U) return 1U;
 
-    /* 这里必须**直接**往串口写原始字节（不能再加 \r\n） */
+    /* 此处直接往串口写原始字节，不能再加 \r\n */
     SYS_USART_SendBuf(ESP8266_USART, data, len);
 
     return ESP8266_SendCmd("", "SEND OK", 5000U);

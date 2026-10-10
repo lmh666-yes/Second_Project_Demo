@@ -1,23 +1,13 @@
 #include "pid.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
-
-/* ================================================================
- *  pid.c —— PID 控制器  实现文件
- * ================================================================
- *  本文件实现的是"带工程防护"的 PID，核心只有三行，其余都是坑位的补丁：
- *      P = kp * e
- *      I = ki * ∫e dt      ← 要防积分饱和 / 起步猛冲
- *      D = kd * de/dt      ← 要防设定值突变尖峰 / 噪声放大
+/* pid.c : PID 控制器实现
  *
- *  两条关键公式（位置式 / 增量式）:
- *      位置式: out = Kp·e + Ki·Σ(e·dt) + Kd·(e - e_prev)/dt
- *      增量式: Δout = Kp·(e-e_prev) + Ki·e·dt + Kd·(e-2e_prev+e_prev2)/dt
- *              其中增量式的"历史"由 prev_error 与 integral 两个变量承担
- *              （增量式本身不需要积分项，但为了限幅与显示，这里仍跟踪 integral）
- * ================================================================ */
+ * 位置式: out = Kp·e + Ki·Σ(e·dt) + Kd·(e - e_prev)/dt
+ * 增量式: Δout = Δout_prev + (p - p_prev) + i + (d - d_prev)
+ * 增量式的历史量由 prev_error 与 integral 承担；仍跟踪 integral 供限幅与显示
+ * 使用。三项附带死区、抗积分饱和、微分先行 */
 
 
-/* 内部辅助：把值限制到 [lo, hi] */
+/* 把值限制到 [lo, hi] */
 static float pid_clamp(float v, float lo, float hi)
 {
     if (lo > hi) { float t = lo; lo = hi; hi = t; }
@@ -27,9 +17,7 @@ static float pid_clamp(float v, float lo, float hi)
 }
 
 
-/* ================================================================
- *                    区块 2：初始化与配置
- * ================================================================ */
+/* 区块 2：初始化与配置 */
 void PID_Init(Pid_t *pid, float kp, float ki, float kd)
 {
     if (pid == 0) return;
@@ -38,7 +26,7 @@ void PID_Init(Pid_t *pid, float kp, float ki, float kd)
     pid->ki = ki;
     pid->kd = kd;
 
-    /* 限幅给保守默认值：宁可输出小一点，也不要上电满输出 */
+    /* 默认限幅取保守值：上电不会满输出 */
     pid->out_min        = PID_DEFAULT_OUT_MIN;
     pid->out_max        = PID_DEFAULT_OUT_MAX;
     pid->integral_min   = PID_DEFAULT_OUT_MIN;
@@ -46,7 +34,7 @@ void PID_Init(Pid_t *pid, float kp, float ki, float kd)
 
     pid->dead_zone          = 0.0f;
     pid->separate_threshold = 0.0f;      /* 0 = 不做积分分离 */
-    pid->deriv_on_meas      = 1U;         /* 默认微分先行（更稳） */
+    pid->deriv_on_meas      = 1U;         /* 默认微分先行 */
     pid->mode               = PID_MODE_POSITION;
 
     PID_Reset(pid);
@@ -80,7 +68,7 @@ void PID_SetOutputLimit(Pid_t *pid, float min, float max)
     pid->out_min = min;
     pid->out_max = max;
 
-    /* 输出限幅变小了，积分限幅跟着收缩，避免"积分还能涨、输出出不来" */
+    /* 输出限幅变小时积分限幅跟着收缩：避免积分继续增长但输出被限住 */
     if (pid->integral_min < min) pid->integral_min = min;
     if (pid->integral_max > max) pid->integral_max = max;
 }
@@ -96,7 +84,7 @@ void PID_SetMode(Pid_t *pid, uint8_t mode)
 {
     if (pid == 0) return;
     if (pid->mode != mode) {
-        /* 换模式时清状态：否则增量式的累加基准会对不上 */
+        /* 换模式时清状态：增量式的累加基准依赖上一拍结果 */
         pid->mode = mode;
         PID_Reset(pid);
     }
@@ -121,9 +109,7 @@ void PID_SetDerivOnMeasurement(Pid_t *pid, uint8_t enable)
 }
 
 
-/* ================================================================
- *                    区块 3：核心计算
- * ================================================================ */
+/* 区块 3：核心计算 */
 float PID_Update(Pid_t *pid, float setpoint, float measure, float dt)
 {
     float error;
@@ -135,26 +121,26 @@ float PID_Update(Pid_t *pid, float setpoint, float measure, float dt)
 
     if (pid == 0) return 0.0f;
 
-    /* dt 容错：传 0（忘了传）时按 10ms 处理，避免除 0 与积分暴走 */
+    /* dt 传 0 或小于 PID_EPSILON 时按 10ms 处理：避免除零与积分异常累计 */
     if (dt < PID_EPSILON) dt = 0.01f;
 
     error = setpoint - measure;
 
-    /* ① 死区：小误差直接当 0，防止执行器在目标点附近抖 */
+    /* 1) 死区：误差绝对值小于死区时按 0 处理，抑制执行器在目标点附近抖动 */
     error_used = error;
     if (pid->dead_zone > 0.0f) {
         float ae = (error < 0.0f) ? -error : error;
         if (ae < pid->dead_zone) error_used = 0.0f;
     }
 
-    /* ② 比例项 */
+    /* 2) 比例项 */
     p = pid->kp * error_used;
 
-    /* ③ 积分项：先累加再限幅（连累加值一起夹住 = 抗积分饱和） */
+    /* 3) 积分项：先累加再限幅，累加值本身也受限 */
     {
         float ae = (error < 0.0f) ? -error : error;
 
-        /* 积分分离：误差太大时"暂停积分"，改善起步超调 */
+    /* 积分分离：误差大于阈值时暂停积分，减小起步超调 */
         if (pid->separate_threshold <= 0.0f || ae <= pid->separate_threshold) {
             pid->integral += error_used * dt;
             pid->integral = pid_clamp(pid->integral, pid->integral_min, pid->integral_max);
@@ -162,27 +148,23 @@ float PID_Update(Pid_t *pid, float setpoint, float measure, float dt)
     }
     i = pid->ki * pid->integral;
 
-    /* ④ 微分项 */
+    /* 4) 微分项 */
     if (pid->first_run) {
-        /* 第一拍没有历史数据：微分给 0，否则会产生一个巨大的尖峰 */
+        /* 第一拍没有历史数据，微分给 0，避免产生尖峰 */
         d = 0.0f;
         pid->first_run = 0U;
     } else if (pid->deriv_on_meas) {
-        /* 微分先行：对"测量值"求导（设定值跳变时不产生冲击）
-         *   等价于 d(误差)/dt = -d(测量值)/dt */
+        /* 微分先行：对测量值求导，设定值跳变时无冲击，等价于 d(误差)/dt = -d(测量值)/dt */
         d = -pid->kd * (measure - pid->prev_meas) / dt;
     } else {
         d = pid->kd * (error_used - pid->prev_error) / dt;
     }
 
-    /* ⑤ 合成输出 */
+    /* 5) 合成输出 */
     if (pid->mode == PID_MODE_INCREMENT) {
         /* 增量式：本次增量累加到上次输出上
-         *   Δout = Kp·Δe + Ki·e·dt + Kd·Δ²e/dt
-         * 这里用"分项做差"的等价写法，省掉再维护 e_prev2：
-         *   Δout = (p - p_prev) + i + (d - d_prev)
-         * 注意：结构体每个实例各存各的 p_term/d_term，
-         *       所以多个 PID 并行时不会互相串味。 */
+         * Δout = (p - p_prev) + i + (d - d_prev)，与 Kp·Δe + Ki·e·dt + Kd·Δ²e/dt 等价
+         * p_term/d_term 存在各实例内，多个 PID 并行互不影响 */
         out = pid->output
             + (p - pid->p_term)
             +  i
@@ -192,10 +174,10 @@ float PID_Update(Pid_t *pid, float setpoint, float measure, float dt)
         out = p + i + d;
     }
 
-    /* ⑥ 输出限幅 */
+    /* 6) 输出限幅 */
     out = pid_clamp(out, pid->out_min, pid->out_max);
 
-    /* ⑦ 保存历史（顺序很重要：必须用"本拍结果"更新，供下一拍做差） */
+    /* 7) 保存历史：用本拍结果更新 p_term/d_term，供下一拍做差 */
     pid->p_term     = p;
     pid->i_term     = i;
     pid->d_term     = d;
@@ -207,9 +189,7 @@ float PID_Update(Pid_t *pid, float setpoint, float measure, float dt)
 }
 
 
-/* ================================================================
- *                    区块 3：辅助接口
- * ================================================================ */
+/* 区块 3：辅助接口 */
 void PID_GetTerms(const Pid_t *pid, float *p_term, float *i_term, float *d_term)
 {
     if (pid == 0) return;
@@ -227,7 +207,7 @@ void PID_PresetOutput(Pid_t *pid, float value)
 {
     if (pid == 0) return;
 
-    /* 把积分调整到"能撑起这个输出"的水平，实现无扰动切换 */
+    /* 按 value / ki 反算积分值并限幅，实现输出预置的无扰动切换 */
     if (pid->ki > PID_EPSILON || pid->ki < -PID_EPSILON) {
         pid->integral = pid_clamp(value / pid->ki, pid->integral_min, pid->integral_max);
     } else {
@@ -239,5 +219,5 @@ void PID_PresetOutput(Pid_t *pid, float value)
     pid->p_term     = 0.0f;
     pid->i_term     = pid->ki * pid->integral;
     pid->d_term     = 0.0f;
-    pid->first_run  = 1U;         /* 让下一拍微分重新起步 */
+    pid->first_run  = 1U;         /* 下一拍微分重新起算 */
 }

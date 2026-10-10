@@ -1,53 +1,38 @@
 #include "tb6612.h"
 #include "gpio_core.h"
 
-/* ================================================================
- *  tb6612.c —— TB6612FNG 双路直流电机驱动实现
- * ================================================================
- *  硬件映射表
- *  ---------------------------------------------------------------
+/* TB6612FNG 双路直流电机驱动实现
+ * 硬件映射表
+ * ---------------------------------------------------------------
  *   功能        资源              板上位置          改这里
- *  ---------------------------------------------------------------
+ * ---------------------------------------------------------------
  *   PWMA 左轮   TIM4_CH1 / PB6    P2-3              区块1 TB6612_PWMA_*
  *   PWMB 右轮   TIM4_CH2 / PB7    P2-2              区块1 TB6612_PWMB_*
  *   AIN1/AIN2   PG2 / PG3         P2-41 / 40        区块1 TB6612_AIN*
  *   BIN1/BIN2   PG4 / PG5         P2-39 / 38        区块1 TB6612_BIN*
  *   STBY        PG13              P2-9              区块1 TB6612_STBY_*
- *  ---------------------------------------------------------------
- *  ⚠ 引脚选择理由：PB6/PB7 是 TIM4 的 CH1/CH2，且**没被板载外设占用**
- *    （I2C1 占 PB8/PB9、SPI1 占 PB3/PB4/PB5、USART1 占 PA9/PA10）
- *  ⚠ 别用 PA0：那是板载 KEY_UP 按键
- *  ⚠ 别用 PG6/7/8：那是板载 NRF24L01 座
- *
- *  【电源三件事（照做，不然会出现"跑着跑着单片机复位"）】
- *    ① VM 接 7.4V 电池正极；VCC 接开发板 3.3V；GND **三者共地**
- *    ② 电池 → LM2596 → 5V → 开发板 DC_IN；LM2596 输出端并一个 470µF+
- *       电解电容，吸收电机启动的电流冲击
- *    ③ 电机线（VM/OUT1/OUT2）尽量粗、尽量短，别和 I2C 排线捆一起
- *
- *  【一句大实话】
- *    调试时"接线全对、程序也没报错，但电机纹丝不动"—— 十次有九次是
- *    STBY 忘了拉高。本模块的 Init 会自动拉高，但如果你把 STBY 接到了
- *    别的脚或悬空，就得自己管。
- * ================================================================ */
+ * ---------------------------------------------------------------
+ * PB6/PB7 为 TIM4 的 CH1/CH2 且未被板载外设占用（I2C1 占 PB8/PB9、
+ * SPI1 占 PB3/PB4/PB5、USART1 占 PA9/PA10）；PA0 为板载 KEY_UP 按键，
+ * PG6/7/8 为板载 NRF24L01 座，均不可用。
+ * 电源接线：VM 接 7.4V 电池正极，VCC 接开发板 3.3V，GND 三者共地；
+ * 电池经 LM2596 转 5V 后接开发板 DC_IN，LM2596 输出端并 470µF 电解电容
+ * 吸收电机启动电流冲击；电机线 VM/OUT1/OUT2 尽量粗短，不与 I2C 排线捆扎。
+ * 上电后 STBY 必须为高电机才动作，本模块 Init 会自动拉高。 */
 
-/* ================================================================
- *                      编译期护栏（配错立刻报错）
- * ================================================================ */
+/* 编译期检查：配置越界或两路 PWM 共用同一通道时编译报错 */
 typedef char tb6612_chA_check[(TB6612_PWMA_CH >= 1 && TB6612_PWMA_CH <= 4) ? 1 : -1];
 typedef char tb6612_chB_check[(TB6612_PWMB_CH >= 1 && TB6612_PWMB_CH <= 4) ? 1 : -1];
 typedef char tb6612_freq_check[(TB6612_PWM_FREQ_HZ >= 100UL) ? 1 : -1];
 typedef char tb6612_freq2_check[(TB6612_PWM_FREQ_HZ <= 100000UL) ? 1 : -1];
 typedef char tb6612_speed_check[(TB6612_SPEED_MAX <= 1000U) ? 1 : -1];
 typedef char tb6612_turn_check[(TB6612_TURN_INNER <= 1000U) ? 1 : -1];
-/* 两路 PWM 若在同一路定时器上，通道号必须不同（否则第二个会覆盖第一个） */
+/* 两路 PWM 若在同一路定时器上，通道号必须不同，否则第二个会覆盖第一个 */
 typedef char tb6612_dup_check[((TB6612_PWMA_TIM != TB6612_PWMB_TIM) || \
                                (TB6612_PWMA_CH  != TB6612_PWMB_CH)) ? 1 : -1];
 
 
-/* ================================================================
- *                          模块内部状态
- * ================================================================ */
+/* 模块内部状态 */
 typedef struct {
     GPIO_TypeDef *in1_port;
     uint16_t      in1_pin;
@@ -65,13 +50,11 @@ static const TbMotor_t tb_motor[2] = {
       TB6612_PWMB_TIM,  TB6612_PWMB_CH },
 };
 
-static int16_t s_speed[2] = { 0, 0 };   /* 当前带符号速度（调试/斜坡用） */
+static int16_t s_speed[2] = { 0, 0 };   /* 当前带符号速度，斜坡用 */
 static uint8_t s_ready = 0U;
 
 
-/* ================================================================
- *                        内部小工具
- * ================================================================ */
+/* 内部小工具 */
 
 static void tb_write_dir(uint8_t ch, uint8_t in1, uint8_t in2)
 {
@@ -88,7 +71,7 @@ static void tb_write_pwm(uint8_t ch, uint16_t permille)
     }
 }
 
-/* 带符号速度 → 真值表。正=正转、负=反转、0=滑行 */
+/* 带符号速度：正=正转、负=反转、0=滑行 */
 static void tb_set_signed(uint8_t ch, int16_t v)
 {
     if (v > 0) {
@@ -112,15 +95,13 @@ static int16_t tb_clamp(int16_t v)
 }
 
 
-/* ================================================================
- *                        区块 2：基础功能
- * ================================================================ */
+/* 基础功能 */
 
 uint8_t TB6612_Init(void)
 {
     s_ready = 0U;
 
-    /* ① 5 个方向/待机脚：推挽输出（GPIO_OType_PP），先全部拉低（两路滑行 + 芯片待机） */
+    /* 5 个方向/待机脚：推挽输出 GPIO_OType_PP，先全部拉低（两路滑行、芯片待机） */
     GPIO_OutInit(TB6612_AIN1_PORT, TB6612_AIN1_PIN);
     GPIO_OutInit(TB6612_AIN2_PORT, TB6612_AIN2_PIN);
     GPIO_OutInit(TB6612_BIN1_PORT, TB6612_BIN1_PIN);
@@ -133,9 +114,9 @@ uint8_t TB6612_Init(void)
     GPIO_OutReset(TB6612_BIN2_PORT, TB6612_BIN2_PIN);
     GPIO_OutReset(TB6612_STBY_PORT, TB6612_STBY_PIN);
 
-    /* ② 两路 PWM：同一路定时器的两个通道，频率天然一致
-     *    （SYS_TIM_PwmInit 里的 TIM_TimeBaseInit 不碰 CCR，
-     *      所以第二次调用不会破坏第一个通道已设的占空比） */
+    /* 两路 PWM：同一路定时器的两个通道，频率天然一致。
+     * SYS_TIM_PwmInit 里的 TIM_TimeBaseInit 不碰 CCR，
+     * 第二次调用不会破坏第一个通道已设的占空比 */
     SYS_TIM_PwmInit(TB6612_PWMA_TIM, TB6612_PWMA_CH,
                     TB6612_PWMA_PORT, TB6612_PWMA_PIN, TB6612_PWMA_AF,
                     TB6612_PWM_FREQ_HZ);
@@ -147,7 +128,7 @@ uint8_t TB6612_Init(void)
     s_speed[1] = 0;
     s_ready = 1U;
 
-    /* ③ 解除待机 —— 忘这步就是"接线全对但电机不动" */
+    /* 解除待机：STBY 置高 */
     TB6612_Standby(1U);
 
     return TB6612_OK;
@@ -175,7 +156,7 @@ uint8_t TB6612_SetMotor(uint8_t ch, uint8_t dir, uint16_t speed)
         break;
 
     case TB6612_DIR_BRAKE:
-        /* 两个输入同时为高 = 短路制动（电机绕组被短接，立刻停） */
+        /* 两个输入同时为高 = 短路制动，电机绕组被短接 */
         tb_write_dir(ch, 1U, 1U);
         tb_write_pwm(ch, 1000U);
         s_speed[ch] = 0;
@@ -183,7 +164,7 @@ uint8_t TB6612_SetMotor(uint8_t ch, uint8_t dir, uint16_t speed)
 
     case TB6612_DIR_STOP:
     default:
-        /* 两个输入同时为低 = 滑行（输出悬空，车还能溜一段） */
+        /* 两个输入同时为低 = 滑行，输出悬空 */
         tb_write_dir(ch, 0U, 0U);
         tb_write_pwm(ch, 0U);
         s_speed[ch] = 0;
@@ -211,9 +192,7 @@ void TB6612_Standby(uint8_t on)
 }
 
 
-/* ================================================================
- *                        区块 3：扩展功能
- * ================================================================ */
+/* 扩展功能 */
 
 void TB6612_CarTank(int16_t left, int16_t right)
 {
@@ -261,7 +240,7 @@ uint8_t TB6612_Car(uint8_t action, uint16_t speed)
     return TB6612_OK;
 }
 
-/* 单路斜坡：朝 target 走一步 step，返回 1 = 已到位 */
+/* 单路斜坡：朝 target 走一步 step，返回 1 = 已到位，0 = 未到位 */
 static uint8_t tb_ramp_one(uint8_t ch, int16_t target, uint16_t step)
 {
     int16_t cur = s_speed[ch];
@@ -308,4 +287,4 @@ const char *TB6612_ErrStr(uint8_t err)
     }
 }
 
-/* ==================== tb6612.c end ==================== */
+/* tb6612.c end */

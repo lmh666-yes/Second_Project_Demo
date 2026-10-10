@@ -26,9 +26,9 @@ ETH/
 
 | 文件 | 说明 | 是否可改 |
 |---|---|---|
-| `src/stm32f4x7_eth.c` | 驱动实现（MAC 配置、描述符初始化、收发查询、SMI 读写） | ❌ 保持官方原样 |
-| `inc/stm32f4x7_eth.h` | 驱动接口与类型定义 | ❌ 保持官方原样 |
-| `port/stm32f4x7_eth_conf.h` | **工程级配置**：PHY 地址延时、LAN8720 链路判定宏（`PHY_SR` 三件套）、时钟范围 | ✅ 换 PHY / 换板时改这里 |
+| `src/stm32f4x7_eth.c` | 驱动实现（MAC 配置、描述符初始化、收发查询、SMI 读写） | 保持官方原样 |
+| `inc/stm32f4x7_eth.h` | 驱动接口与类型定义 | 保持官方原样 |
+| `port/stm32f4x7_eth_conf.h` | **工程级配置**：PHY 地址延时、LAN8720 链路判定宏（`PHY_SR` 三件套）、时钟范围 | 换 PHY / 换板时改这里 |
 | `port/stm32f4x7_eth_conf_template.h` | ST 原版配置模板（参考对照用，不参与编译） | —— |
 
 ## 使用方式

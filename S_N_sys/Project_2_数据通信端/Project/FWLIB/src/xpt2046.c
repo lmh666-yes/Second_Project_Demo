@@ -1,33 +1,16 @@
 #include "xpt2046.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"      /* 引脚 / 电平 */
 #include "delay.h"          /* delay_ns / DWT 计时（延时与测时） */
 #include "sys_exti.h"       /* T_PEN 中断（可关，见 XPT2046_USE_EXTI） */
 #include "at24c02.h"        /* 校准参数掉电存储（可关，见 XPT2046_USE_EEPROM） */
 
-/* ================================================================
- *  xpt2046.c —— XPT2046 电阻触摸屏驱动  实现文件
- * ================================================================
- *  XPT2046 的时序（和普通 SPI 从机**不一样**，别按 SPI 想）：
- *
- *      一次完整转换 = 24 个 DCLK：
- *        ┌ 8 个时钟：主机发 1 字节"控制字"（S / A2A1A0 / MODE / SER-DFR / PD）
- *        ├ 1 个时钟 ：ADC 正在转换，DOUT 输出的是**占位位**（必须丢掉）
- *        └ 12 个时钟：真正的 12 位结果，MSB 先出
- *
- *      ⚠ 少丢那个"占位位"是新手最常见的错 —— 现象是"读数整体偏大 1 倍左右"。
- *      ⚠ 数据在 DCLK **上升沿**有效（MODE=0 时），所以读的时候要
- *        "拉低 → 等 → 拉高 → 等 → 采样"。
- *
- *  另一个反直觉的点：**X/Y 的原始值和屏幕像素完全不是线性映射到同一区间**，
- *  而且每块屏的电阻膜工艺有差异（同一型号两块屏的 x_min 都能差 200），
- *  所以校准不是"可选项"，是必须做的。
- * ================================================================ */
+/* XPT2046 时序（非标准 SPI）：一次转换 24 个 DCLK，8 位控制字（S/A2A1A0/MODE/SER-DFR/PD）
+ * + 1 个占位位 + 12 位结果，MSB 先出；占位位对应 ADC 转换期间，须丢弃，漏丢时读数约偏大 1 倍
+ * MODE=0 时数据在 DCLK 上升沿有效，读取顺序：拉低、等待、拉高、等待、采样
+ * 各屏电阻膜工艺有差异（同型号 x_min 可差 200），校准参数必须实测 */
 
 
-/* ================================================================
- *                     引脚操作宏（只在本文件用）
- * ================================================================ */
+/* 引脚操作宏：只在本文件使用 */
 #define XPT_CS_LOW()     GPIO_OutReset(XPT2046_CS_PORT,   XPT2046_CS_PIN)
 #define XPT_CS_HIGH()    GPIO_OutSet  (XPT2046_CS_PORT,   XPT2046_CS_PIN)
 #define XPT_CLK_LOW()    GPIO_OutReset(XPT2046_CLK_PORT,  XPT2046_CLK_PIN)
@@ -42,7 +25,7 @@
 #define XPT_PEN_DOWN()   (GPIO_InRead(XPT2046_PEN_PORT, XPT2046_PEN_PIN) != 0U)
 #endif
 
-/* 滤波缓冲上限（比宏大一点，允许运行时传更大的 n） */
+/* 滤波缓冲上限：运行时 n 大于本值时按本值截断 */
 #define XPT_MAX_SAMPLE      16U
 
 /* XPT2046 控制字表：索引就是 XPT2046_CH_xxx
@@ -63,9 +46,7 @@ static XptCalib_t xpt_cal;
 static uint8_t    xpt_cal_valid = 0U;
 
 
-/* ================================================================
- *                     内部：位敲时序
- * ================================================================ */
+/* 内部：位敲时序 */
 
 /* 产生 1 个时钟并返回该时钟后 DOUT 的电平 */
 static uint8_t xpt_clk_one_bit(void)
@@ -81,7 +62,7 @@ static uint8_t xpt_clk_one_bit(void)
     return b;
 }
 
-/* 一次完整转换：发命令 → 丢占位位 → 收 12 位 */
+/* 一次完整转换：发命令，丢占位位，收 12 位 */
 static uint16_t xpt_transfer(uint8_t cmd)
 {
     uint8_t  i;
@@ -89,7 +70,7 @@ static uint16_t xpt_transfer(uint8_t cmd)
 
     XPT_CS_LOW();
 
-    /* ① 8 个时钟发控制字（MSB 先出） */
+    /* 1) 8 个时钟发控制字（MSB 先出） */
     for (i = 0; i < 8U; i++) {
         XPT_CLK_LOW();
         if ((cmd & 0x80U) != 0U) {
@@ -103,10 +84,10 @@ static uint16_t xpt_transfer(uint8_t cmd)
         delay_ns(XPT2046_CLK_DELAY_NS);
     }
 
-    /* ② 占位位：此刻 ADC 还在转换，这一位没有意义 —— 必须丢掉 */
+    /* 2) 占位位：ADC 转换期间输出，无意义，丢弃 */
     (void)xpt_clk_one_bit();
 
-    /* ③ 12 位结果 */
+    /* 3) 12 位结果 */
     for (i = 0; i < 12U; i++) {
         val = (uint16_t)((val << 1) | (uint16_t)xpt_clk_one_bit());
     }
@@ -117,7 +98,7 @@ static uint16_t xpt_transfer(uint8_t cmd)
     return (uint16_t)(val & 0x0FFFU);
 }
 
-/* 简单升序排序（采样数只有几个，选择排序最快） */
+/* 升序排序：采样数少，用选择排序 */
 static void xpt_sort(uint16_t *a, uint8_t n)
 {
     uint8_t i;
@@ -152,7 +133,7 @@ static int32_t xpt_map(int32_t raw, int32_t rmin, int32_t rmax, int32_t px_max)
     return v;
 }
 
-/* 原始值 → 屏幕坐标（含 swap / invert） */
+/* 原始值转屏幕坐标：含 swap / invert */
 static void xpt_apply(uint16_t raw_x, uint16_t raw_y, uint16_t *x, uint16_t *y)
 {
     int32_t rx = (int32_t)raw_x;
@@ -178,9 +159,7 @@ static void xpt_apply(uint16_t raw_x, uint16_t raw_y, uint16_t *x, uint16_t *y)
 }
 
 
-/* ================================================================
- *                    区块 2：基础功能
- * ================================================================ */
+/* 基础功能 */
 uint8_t XPT2046_Init(void)
 {
     /* CS：空闲必须是高（否则总线一直被选中） */
@@ -201,11 +180,11 @@ uint8_t XPT2046_Init(void)
     GPIO_ClockEnable(XPT2046_DOUT_PORT);
     GPIO_InInit(XPT2046_DOUT_PORT, XPT2046_DOUT_PIN, GPIO_PuPd_NOPULL);
 
-    /* PEN(/PENIRQ)：芯片开漏输出 → **必须上拉（GPIO_PuPd_UP）**，否则脚悬空乱跳 */
+    /* PEN(/PENIRQ)：芯片开漏输出，须上拉 GPIO_PuPd_UP，否则引脚悬空 */
     GPIO_ClockEnable(XPT2046_PEN_PORT);
     GPIO_InInit(XPT2046_PEN_PORT, XPT2046_PEN_PIN, GPIO_PuPd_UP);
 
-    /* 没校准过就先给一组典型值顶着（否则读出来的坐标全是 0） */
+    /* 未校准时载入默认典型值，否则映射结果全为 0 */
     if (xpt_cal_valid == 0U) XPT2046_CalibDefault();
 
     delay_us(10);       /* 等 XPT2046 上电稳定 */
@@ -228,7 +207,7 @@ uint16_t XPT2046_ReadChannel(uint8_t ch)
 uint8_t XPT2046_ReadRaw(uint16_t *raw_x, uint16_t *raw_y)
 {
     if (raw_x == 0 || raw_y == 0) return 1U;
-    if (!XPT_PEN_DOWN()) return 1U;         /* 没按下时读到的都是垃圾 */
+    if (!XPT_PEN_DOWN()) return 1U;         /* 未按下时读数无效 */
 
     *raw_x = xpt_transfer(xpt_cmd[XPT2046_CH_X]);
     *raw_y = xpt_transfer(xpt_cmd[XPT2046_CH_Y]);
@@ -285,7 +264,7 @@ uint8_t XPT2046_Read(uint16_t *x, uint16_t *y)
 
     if (XPT2046_ReadRawFiltered(&rx, &ry, 0U, 0U) != 0U) return 0U;
 
-    /* 采完再确认一次：采样期间松手 → 本帧丢弃（否则会画出一个"飞点"） */
+    /* 采样后再次确认按下：采样期间松手则丢弃本帧 */
     if (!XPT_PEN_DOWN()) return 0U;
 
     xpt_apply(rx, ry, x, y);
@@ -358,9 +337,7 @@ uint8_t XPT2046_PenWaitUp(uint32_t timeout_ms)
 }
 
 
-/* ================================================================
- *                    区块 3：校准与扩展
- * ================================================================ */
+/* 校准与扩展 */
 void XPT2046_Calibrate(uint16_t x_min, uint16_t x_max,
                        uint16_t y_min, uint16_t y_max,
                        uint8_t swap_xy, uint8_t invert_x, uint8_t invert_y)
@@ -394,8 +371,7 @@ void XPT2046_GetCalib(XptCalib_t *c)
 
 void XPT2046_CalibDefault(void)
 {
-    /* 本板 3.2 寸 ILI9341 + XPT2046 的**典型**范围。
-     * ⚠ 只是"能看出方向对不对"的兜底值，正式用请按头文件里的步骤实测。 */
+    /* 本板 3.2 寸 ILI9341 + XPT2046 的典型范围；仅作兜底值，正式使用按头文件步骤实测校准 */
     XPT2046_Calibrate(300U, 3800U, 300U, 3800U, 0U, 0U, 0U);
 }
 
@@ -453,7 +429,7 @@ uint8_t XPT2046_CalibLoad(void)
     xpt_cal.invert_x = ((flags & 0x02U) != 0U) ? 1U : 0U;
     xpt_cal.invert_y = ((flags & 0x04U) != 0U) ? 1U : 0U;
 
-    /* 范围明显不合理（比如全 0 / 全 0xFFFF）也算没存过 */
+    /* 范围为全 0 / 全 0xFFFF 等不合理值时按未存储处理 */
     if (xpt_cal.x_max <= xpt_cal.x_min) return 1U;
     if (xpt_cal.y_max <= xpt_cal.y_min) return 1U;
 
@@ -468,7 +444,7 @@ uint8_t XPT2046_CalibLoad(void)
 uint8_t XPT2046_ExtiInit(void (*callback)(void))
 {
 #if (XPT2046_USE_EXTI)
-    /* T_PEN = PB1 → EXTI 线 1（按键占了线 0/2/3/4，本线空闲） */
+    /* T_PEN = PB1 对应 EXTI 线 1；按键占用线 0/2/3/4，本线空闲 */
     return (SYS_EXTI_InitLine(1U, XPT2046_PEN_PORT, XPT2046_PEN_PIN,
                               SYS_EXTI_FALLING, callback) != 0U) ? 0U : 1U;
 #else

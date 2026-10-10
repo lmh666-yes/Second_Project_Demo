@@ -367,6 +367,17 @@ void SystemInit(void)
      AHB/APBx prescalers and Flash settings ----------------------------------*/
   SetSysClock();
 
+  /* [本库补丁] 用真实寄存器值刷新 SystemCoreClock 全局变量 ----------------
+   * 原始 ST 模板在这里**没有**这一步（SystemCoreClock 只靠文件顶部
+   * `uint32_t SystemCoreClock = 168000000;` 的静态初值）。
+   * 而 SetSysClock() 在 HSE 起振失败时会自动退回 HSI 16MHz——
+   * 那种情况下静态初值 168000000 就是**错的**，于是所有基于它的
+   * 延时/超时全部失真（delay_us、DHT11 的 200us 超时与 50us 判位阈值、
+   * 软件定时器时基都会偏 10 倍以上），而且现象是"时序偶发不对"、
+   * 极难定位。板2 的同名文件本来就有这一句，此处对齐。
+   * 正常走 HSE+PLL 时，本调用算出的仍是 168000000，无副作用。 */
+  SystemCoreClockUpdate();
+
   /* Configure the Vector Table location add offset address ------------------*/
 #ifdef VECT_TAB_SRAM
   SCB->VTOR = SRAM_BASE | VECT_TAB_OFFSET; /* Vector Table Relocation in Internal SRAM */

@@ -1,48 +1,30 @@
 #include "hcsr04.h"
 #include "delay.h"      /* 延时（delay_us 等）独立文件 */
 
-/* ================================================================
- *  hcsr04.c —— HC-SR04 超声波测距实现
- * ================================================================
- *  硬件映射表
- *  ---------------------------------------------------------------
+/* hcsr04.c : HC-SR04 超声波测距实现
+ * ---------------------------------------------------------------
  *   功能        资源                  板上位置          改这里
- *  ---------------------------------------------------------------
+ * ---------------------------------------------------------------
  *   TRIG 脚     GPIO（运行时指定）    自己接排针        HCSR04_Init 参数
  *   ECHO 脚     GPIO（运行时指定）    自己接排针        HCSR04_Init 参数
  *   计时机        DWT CYCCNT           内核自带          gpio_core.h
- *   微秒延时     delay_us()            ——                delay.h
- *  ---------------------------------------------------------------
- *  ⚠ ECHO 是 5V 电平，STM32F407 的 FT 脚可直接接；要保险就分压
+ *   微秒延时     delay_us()                              delay.h
+ * ---------------------------------------------------------------
+ * ECHO 是 5V 电平，STM32F407 的 FT 脚可直接接，要保险就分压
  *
- *  【时序图（手册里的那张）】
- *                    ┌──────┐
- *      TRIG   ───────┘      └────────────────────────────
- *                      >=10us
- *                          ┌───────────────────┐
- *      ECHO   ─────────────┘                   └─────────
- *                          └──── 回波宽度 t ────┘
- *      距离 = 声速 × t ÷ 2      （除以 2 是因为声音去了再回来）
- *      20℃ 时 : 距离(cm) ≈ t(us) ÷ 58
+ * TRIG 高电平 >= 10us 触发测距；ECHO 高电平宽度 t 为回波往返时间；
+ * 距离 = 声速 × t ÷ 2；20℃ 时距离(cm) ≈ t(us) ÷ 58
  *
- *  【为什么用忙等而不是输入捕获】
- *  一次测量最长 25ms（4m），最常用场景是"隔 60ms 测一次"，
- *  忙等 25ms 完全能接受，而代码从 200 行降到 20 行、还不占定时器。
- *  真要非阻塞，请自己改成 TIM 输入捕获（参考 sys_tim.h）。
- * ================================================================ */
+ * 一次测量最长阻塞 HCSR04_TIMEOUT_US(32ms)，常用调用周期 60ms，本模块用忙等实现，不占定时器 */
 
-/* ================================================================
- *                      编译期护栏（配错立刻报错）
- * ================================================================ */
+/* 编译期检查：配置越界时编译报错 */
 typedef char hcsr04_timeout_check[(HCSR04_TIMEOUT_US >= 6000U) ? 1 : -1];   /* 至少要够 1m */
 typedef char hcsr04_range_check[((HCSR04_MAX_CM) > (HCSR04_MIN_CM)) ? 1 : -1];
 typedef char hcsr04_pulse_check[((HCSR04_TRIG_PULSE_US) >= 10U) ? 1 : -1];
 typedef char hcsr04_median_check[(HCSR04_MEDIAN_MAX >= 3U) ? 1 : -1];
 
 
-/* ================================================================
- *                          模块内部状态
- * ================================================================ */
+/* 模块内部状态 */
 static GPIO_TypeDef *s_trig_port = 0;
 static uint16_t      s_trig_pin  = 0U;
 static GPIO_TypeDef *s_echo_port = 0;
@@ -51,9 +33,7 @@ static uint8_t       s_ready     = 0U;
 static uint32_t      s_speed     = HCSR04_DEFAULT_SPEED;
 
 
-/* ================================================================
- *                        区块 2：基础功能
- * ================================================================ */
+/* 基础功能 */
 
 uint8_t HCSR04_Init(GPIO_TypeDef *trig_port, uint16_t trig_pin,
                     GPIO_TypeDef *echo_port, uint16_t echo_pin)
@@ -63,11 +43,11 @@ uint8_t HCSR04_Init(GPIO_TypeDef *trig_port, uint16_t trig_pin,
 
     s_ready = 0U;
 
-    /* TRIG：推挽输出（GPIO_OType_PP），先拉低让它老实待着 */
+    /* TRIG 推挽输出，初始化后拉低 */
     GPIO_OutInit(trig_port, trig_pin);
     GPIO_OutReset(trig_port, trig_pin);
 
-    /* ECHO：上拉输入（没插传感器时会恒为高，于是稳定报 NO_ECHO 而不是乱跳） */
+    /* ECHO 上拉输入，未接传感器时恒为高，返回 HCSR04_ERR_NO_ECHO 而不是随机值 */
     GPIO_InInit(echo_port, echo_pin, GPIO_PuPd_UP);
 
     s_trig_port = trig_port;
@@ -89,25 +69,25 @@ uint8_t HCSR04_ReadUs(uint32_t *us)
     if (us == 0) return HCSR04_ERR_PARAM;
     if (s_ready == 0U) return HCSR04_ERR_NOT_INIT;
 
-    /* ① 触发：给一个 >=10us 的高脉冲，模块收到就发 8 个 40kHz 脉冲出去 */
+    /* 1) 触发：TRIG 输出 >=10us 高脉冲，模块随即发出 8 个 40kHz 脉冲 */
     GPIO_OutSet(s_trig_port, s_trig_pin);
     delay_us(HCSR04_TRIG_PULSE_US);
     GPIO_OutReset(s_trig_port, s_trig_pin);
 
-    /* ② 等 ECHO 变高 —— 说明超声已发出 */
+    /* 2) 等 ECHO 变高，说明超声已发出 */
     t0 = DWT_GetUs();
     while (GPIO_InRead(s_echo_port, s_echo_pin) == 0U) {
         if (DWT_ElapsedUs(t0) > HCSR04_TIMEOUT_US) return HCSR04_ERR_NO_ECHO;
     }
     t_rise = DWT_GetUs();
 
-    /* ③ 等 ECHO 变低 —— 说明回波到了，宽度就是往返时间 */
+    /* 3) 等 ECHO 变低，说明回波已到，高电平宽度即往返时间 */
     while (GPIO_InRead(s_echo_port, s_echo_pin) != 0U) {
         if (DWT_ElapsedUs(t_rise) > HCSR04_TIMEOUT_US) return HCSR04_ERR_NO_ECHO;
     }
     t_fall = DWT_GetUs();
 
-    /* 两个时间戳都是单调递增的微秒数，直接相减即可（回绕也正确） */
+    /* 两个时间戳都单调递增，直接相减，回绕时结果仍正确 */
     *us = (uint32_t)(t_fall - t_rise);
     return HCSR04_OK;
 }
@@ -124,9 +104,8 @@ uint8_t HCSR04_ReadMm(uint32_t *mm)
     if (r != HCSR04_OK) return r;
 
     /* 距离(mm) = 声速(mm/s) × 时间(us) ÷ 1000000 ÷ 2
-     *         = 声速(mm/s) ÷ 1000 × 时间(us) ÷ 2000
-     * 不能直接"时间×声速"——32000 × 346400 = 1.1e10，32 位装不下。
-     * 把声速先除 100 降一个量级：最高 3600，32000 × 3600 = 1.15e8，安全。 */
+     * 直接把时间和声速相乘会溢出：32000 × 346400 = 1.1e10，32 位装不下；
+     * 声速先除以 100 降一个量级，最高 3600，32000 × 3600 = 1.15e8，不溢出 */
     d = (uint32_t)((us * (s_speed / 100UL)) / 20000UL);
 
     *mm = d;
@@ -154,20 +133,18 @@ uint8_t HCSR04_ReadCm(uint16_t *cm)
 }
 
 
-/* ================================================================
- *                        区块 3：扩展功能
- * ================================================================ */
+/* 扩展功能 */
 
 void HCSR04_SetSpeed(uint32_t mm_per_s)
 {
-    /* 太离谱的值直接忽略：声速不可能低于 250m/s 或高于 400m/s */
+    /* 范围外的值直接忽略：声速不小于 250m/s，不大于 400m/s */
     if (mm_per_s < 250000UL || mm_per_s > 400000UL) return;
     s_speed = mm_per_s;
 }
 
 void HCSR04_SetTempC10(int16_t t_c10)
 {
-    /* v(mm/s) = 331400 + 60 × t(℃)   —— t 用摄氏度×10 表示 */
+    /* v(mm/s) = 331400 + 60 × t(℃)，t 为摄氏度 × 10 */
     int32_t v = 331400 + (60L * (int32_t)t_c10);
 
     if (v < 250000L) v = 250000L;
@@ -187,14 +164,14 @@ uint8_t HCSR04_ReadCmMedian(uint16_t *cm, uint8_t times)
     if (times == 0U) return HCSR04_ERR_PARAM;
     if (times > (uint8_t)HCSR04_MEDIAN_MAX) times = (uint8_t)HCSR04_MEDIAN_MAX;
 
-    /* ① 连测 times 次，失败的丢掉（超距那次本来就没数） */
+    /* 1) 连续测 times 次，失败的结果丢弃 */
     for (i = 0U; i < times; i++) {
         uint16_t v = 0U;
         if (HCSR04_ReadCm(&v) == HCSR04_OK) buf[n++] = v;
     }
     if (n == 0U) return HCSR04_ERR_NO_ECHO;
 
-    /* ② 冒泡排序（n 最多 9，不值得上快排） */
+    /* 2) 冒泡排序，n 最大为 HCSR04_MEDIAN_MAX */
     for (i = 0U; i + 1U < n; i++) {
         for (j = 0U; j + 1U < (uint8_t)(n - i); j++) {
             if (buf[j] > buf[j + 1U]) {
@@ -205,7 +182,7 @@ uint8_t HCSR04_ReadCmMedian(uint16_t *cm, uint8_t times)
         }
     }
 
-    /* ③ 取中值 */
+    /* 3) 取中值 */
     *cm = buf[n / 2U];
     return HCSR04_OK;
 }
@@ -221,5 +198,3 @@ const char *HCSR04_ErrStr(uint8_t err)
     default:                  return "ERR: unknown";
     }
 }
-
-/* ==================== hcsr04.c end ==================== */

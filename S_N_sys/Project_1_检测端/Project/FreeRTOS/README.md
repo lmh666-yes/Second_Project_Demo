@@ -36,15 +36,15 @@ FreeRTOS/
 
 | 头文件 | 对应实现 | 说明 |
 |---|---|---|
-| `task.h` | `src/tasks.c` ✅ | 任务管理（创建 / 调度 / 延时） |
-| `queue.h` | `src/queue.c` ✅ | 队列 |
-| `list.h` | `src/list.c` ✅ | 链表（调度器内部数据结构） |
-| `timers.h` | `src/timers.c` ✅ | 软件定时器 |
-| `event_groups.h` | `src/event_groups.c` ✅ | 事件组 |
+| `task.h` | `src/tasks.c` | 任务管理（创建 / 调度 / 延时） |
+| `queue.h` | `src/queue.c` | 队列 |
+| `list.h` | `src/list.c` | 链表（调度器内部数据结构） |
+| `timers.h` | `src/timers.c` | 软件定时器 |
+| `event_groups.h` | `src/event_groups.c` | 事件组 |
 | `semphr.h` | **无独立 .c** | 信号量 / 互斥量全是对 `queue.c` 的宏与内联包装——"头文件本身就是接口实现" |
-| `stream_buffer.h` | `stream_buffer.c` ❌ 未加入编译 | 流缓冲功能未启用；要用就把 .c 加入编译组并打开对应配置宏 |
-| `message_buffer.h` | 同上 ❌ | 消息缓冲（基于流缓冲封装） |
-| `croutine.h` | `croutine.c` ❌ 未加入编译 | 协程（老功能，很少使用） |
+| `stream_buffer.h` | `stream_buffer.c` 未加入编译 | 流缓冲功能未启用；要用就把 .c 加入编译组并打开对应配置宏 |
+| `message_buffer.h` | 同上 | 消息缓冲（基于流缓冲封装） |
+| `croutine.h` | `croutine.c` 未加入编译 | 协程（老功能，很少使用） |
 | `FreeRTOS.h` / `portable.h` / `projdefs.h` / `atomic.h` / `mpu_wrappers.h` / `mpu_prototypes.h` / `stack_macros.h` / `StackMacros.h` / `deprecated_definitions.h` | **无 .c（纯声明 / 纯宏）** | 被上面 5 个 .c 共用的基础定义、端口接口与内部宏 |
 
 一句话三个原因：

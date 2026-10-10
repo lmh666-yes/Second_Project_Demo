@@ -1,44 +1,31 @@
 #include "sys_rs485.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include "gpio_core.h"
 
-/* ================================================================
- *  sys_rs485.c —— RS485 半双工方向控制  实现文件
- * ================================================================
- *  为什么要"等 TC 再切方向"（本模块最核心的一行）:
- *      USART 有 TXE 与 TC 两个标志——
- *        TXE（发送数据寄存器空）：数据刚被搬进移位寄存器，**总线还在发**；
- *        TC （发送完成）        ：移位寄存器也发完了，**总线真的空闲了**。
- *      如果只等 TXE 就切回接收，最后 1~2 个字节还在线上，
- *      复用同一对差分线的接收器一开就会把自己的尾巴吃掉/发不全。
- *      所以：SYS_USART_SendBuf() 发完 → SYS_USART_FlushTx() 等 TC → 才能切回。
+/* sys_rs485.c: RS485 半双工方向控制实现文件
+ * 切方向必须等 TC，不能只等 TXE：
+ *     TXE（发送数据寄存器空）：数据刚被搬进移位寄存器，总线还在发
+ *     TC （发送完成）        ：移位寄存器也发完，总线真正空闲
+ *     只等 TXE 就切回接收，最后 1~2 个字节还在线上，接收器会把自己的尾巴吃掉或发不全
+ *     流程：SYS_USART_SendBuf() 发完 → SYS_USART_FlushTx() 等 TC → 才能切回接收
  *
- *  实现要点 :
- *    ① 方向脚只在"发送窗口"内改变（发前切发送态 → 发完等 TC → 切回接收态）;
- *    ② 按串口编号存一套方向配置（3 路各自独立，SYS_RS485_InitEx 配置）;
- *    ③ 未配置方向脚的路：SendTo 只发数据不切向，手动切向调用静默忽略——
- *       防止"裸切方向"占住总线
- * ================================================================ */
+ * 方向脚只在发送窗口内改变；按串口编号各存一套方向配置（SYS_RS485_InitEx 配置）
+ * 未配置方向脚的路：SendTo 只发数据不切向，手动切向调用静默忽略，避免裸切方向占住总线 */
 
 
-/* ================================================================
- *                    内部状态
- * ================================================================ */
+/* 内部状态 */
 /* 每路一套方向配置（下标 = SYS_USART_x；全 0 = 该路未配置） */
 static GPIO_TypeDef *rs485_de_port[SYS_USART_COUNT];
 static uint16_t      rs485_de_pin[SYS_USART_COUNT];
 static uint8_t       rs485_tx_level[SYS_USART_COUNT];
 
 /* 发送进行中标志（给上层判断回帧时机，例如 Modbus 要等 TC 后才能收）
- * 说明 : 发送是阻塞函数，同一时刻只会有一路在发——单标志够用 */
+ * 发送函数阻塞，同一时刻只有一路在发，单标志够用 */
 static volatile uint8_t rs485_txing = 0;
 
 
-/* ================================================================
- *                    内部辅助
- * ================================================================ */
-/* 切方向 : tx = 1 → 发送态;tx = 0 → 接收态
- * 未配置方向脚的路直接忽略（防"裸切方向"占住总线） */
+/* 内部辅助 */
+/* 切方向：tx = 1 → 发送态，tx = 0 → 接收态
+ * 未配置方向脚的路直接忽略 */
 static void rs485_dir(SysUsartId_t uart, uint8_t tx)
 {
     uint8_t lv;
@@ -52,9 +39,7 @@ static void rs485_dir(SysUsartId_t uart, uint8_t tx)
 }
 
 
-/* ================================================================
- *                    区块 2：基础功能
- * ================================================================ */
+/* 基础功能 */
 void SYS_RS485_InitEx(SysUsartId_t uart, GPIO_TypeDef *de_port, uint16_t de_pin, uint8_t tx_level)
 {
     if (uart >= SYS_USART_COUNT || de_port == 0) return;
@@ -63,7 +48,7 @@ void SYS_RS485_InitEx(SysUsartId_t uart, GPIO_TypeDef *de_port, uint16_t de_pin,
     rs485_de_pin[uart]   = de_pin;
     rs485_tx_level[uart] = (tx_level != 0U) ? 1U : 0U;
 
-    /* 方向脚 = 普通推挽输出（GPIO_OType_PP，内部自动开时钟）；先置"接收态"（空闲不能占总线） */
+    /* 方向脚 = 普通推挽输出（GPIO_OType_PP，内部自动开时钟）；先置接收态，空闲不占总线 */
     GPIO_OutInit(de_port, de_pin);
     rs485_dir(uart, 0U);
 }
@@ -72,13 +57,13 @@ void SYS_RS485_Init(uint32_t baudrate)
 {
     if (baudrate == 0U) baudrate = SYS_RS485_DEFAULT_BAUD;
 
-    /* ① 方向脚：板载宏配置，默认接收 */
+    /* 1) 方向脚：板载宏配置，默认接收 */
     SYS_RS485_InitEx(SYS_RS485_USART, SYS_RS485_DE_PORT, SYS_RS485_DE_PIN, SYS_RS485_TX_LEVEL);
 
-    /* ② 串口：中断接收版（数据进 64 字节环形缓冲，不会丢帧） */
+    /* 2) 串口：中断接收版（数据进 64 字节环形缓冲） */
     SYS_USART_InitRxIT(SYS_RS485_USART, baudrate);
 
-    /* ③ 清一下开机噪声 */
+    /* 3) 清开机噪声 */
     SYS_USART_RxFlush(SYS_RS485_USART);
 
     rs485_txing = 0;
@@ -90,10 +75,10 @@ void SYS_RS485_SendTo(SysUsartId_t uart, const uint8_t *buf, uint16_t len)
 
     rs485_txing = 1U;
 
-    rs485_dir(uart, 1U);                     /* ① 切发送态占住总线 */
-    SYS_USART_SendBuf(uart, buf, len);       /* ② 逐字节发出（阻塞，等最后一个字节进移位寄存器） */
-    SYS_USART_FlushTx(uart);                 /* ③ 等 TC：整帧真正发完（关键！） */
-    rs485_dir(uart, 0U);                     /* ④ 切回接收态 */
+    rs485_dir(uart, 1U);                     /* 1) 切发送态占住总线 */
+    SYS_USART_SendBuf(uart, buf, len);       /* 2) 逐字节发出（阻塞，等最后一个字节进移位寄存器） */
+    SYS_USART_FlushTx(uart);                 /* 3) 等 TC：整帧真正发完 */
+    rs485_dir(uart, 0U);                     /* 4) 切回接收态 */
 
     rs485_txing = 0;
 }
@@ -115,7 +100,7 @@ void SYS_RS485_SetTxTo(SysUsartId_t uart, uint8_t on)
     rs485_dir(uart, (on != 0U) ? 1U : 0U);
 }
 
-/* ---- 板载那一路的快捷接口（内部全部转调通用版） ---- */
+/* 板载那一路的快捷接口（内部全部转调通用版） */
 void SYS_RS485_SetTx(void)
 {
     rs485_dir(SYS_RS485_USART, 1U);
@@ -142,9 +127,7 @@ void SYS_RS485_SendString(const char *str)
 }
 
 
-/* ================================================================
- *                    区块 3：扩展功能（接收，板载那一路）
- * ================================================================ */
+/* 扩展功能（接收，板载那一路） */
 uint16_t SYS_RS485_Available(void)
 {
     return SYS_USART_Available(SYS_RS485_USART);

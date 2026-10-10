@@ -8,7 +8,7 @@
  *    · PHY 寄存器  : ETH_ReadPHYRegister / ETH_WritePHYRegister
  *    · MAC 初始化  : ETH_Init(含自协商等待) / ETH_SoftwareReset
  *    · 描述符初始化: ETH_InitCallbacksToDefault / ETH_DMARxDescInit 等
- *  是否可改 : ❌ 保持官方原样(升级直接替换);工程定制只在
+ *  是否可改 : 保持官方原样(升级直接替换);工程定制只在
  *              stm32f4x7_eth_conf.h(见其文件头)。
  * ================================================================ */
 

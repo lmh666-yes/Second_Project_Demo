@@ -1,19 +1,13 @@
 #include "sys_pwr.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
+/* 标准库对照与示例注记见同名 .h;本文件为实现层 */
 
-/* ================================================================
- *  sys_pwr.c —— 【系统】电源管理 / 低功耗(PWR)模块  实现文件
- * ================================================================
- *  进入低功耗的原理 :
- *    通过 SCB->SCR 的 SLEEPDEEP 位选择睡眠深度，执行 __WFI() 等待中断；
- *    Stop 模式需额外打开 PWR 时钟并选择稳压器与进入方式；
- *    Standby 模式需清唤醒标志后执行 PWR_EnterSTANDBYMode()。
- * ================================================================ */
+/* sys_pwr.c — 电源管理 / 低功耗(PWR) 实现
+ * 睡眠深度由 SCB->SCR 的 SLEEPDEEP 位选择，__WFI() 等待中断；
+ * Stop 模式需先使能 PWR 时钟，选择稳压器与进入方式；
+ * Standby 模式先清唤醒标志，再执行 PWR_EnterSTANDBYMode()。
+ */
 
 
-/* ================================================================
- *                    内部辅助
- * ================================================================ */
 /* 使能 PWR 时钟（幂等，可重复调用） */
 static void pwr_clock_enable(void)
 {
@@ -24,10 +18,7 @@ static void pwr_clock_enable(void)
 static void (*pwr_wake_callback)(void);
 
 
-/* ================================================================
- *                    基础功能
- * ================================================================ */
-/* 睡眠：清除 SLEEPDEEP → __WFI() 等中断 */
+/* 睡眠：清除 SLEEPDEEP 位后 __WFI() 等待中断 */
 void SYS_PWR_Sleep(void)
 {
     SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;     /* 普通睡眠（只停 CPU） */
@@ -39,29 +30,27 @@ void SYS_PWR_Stop(void)
 {
     pwr_clock_enable();
 
-    /* 说明 : 唤醒中断（EXTI 等）必须在进入前配置好，
-     *       否则芯片会一直保持停机状态 */
+    /* 唤醒中断（EXTI 等）必须在进入前配置好，否则芯片会一直保持停机状态 */
     PWR_EnterSTOPMode(PWR_Regulator_LowPower, PWR_STOPEntry_WFI);
 
 #if SYS_PWR_STOP_RESTORE_CLK
-    /* 唤醒后系统时钟为 HSI —— 恢复默认 168MHz 配置
-     * 注意 : 外设（串口 / 定时器 / SysTick）需应用层重新初始化 */
+    /* 唤醒后系统时钟为 HSI，恢复默认 168MHz 配置
+     * 外设（串口 / 定时器 / SysTick）需应用层重新初始化 */
     SystemInit();
 #endif
 
-    /* 唤醒回调（可选）：时钟已恢复，适合在这里重装 SysTick / 重配外设
-     * （没有注册回调时什么都不做，与旧行为完全一致） */
+    /* 唤醒回调（可选）：时钟已恢复，适合在此重装 SysTick / 重配外设；未注册时为空操作 */
     if (pwr_wake_callback != 0) {
         pwr_wake_callback();
     }
 }
 
-/* 待机：不会返回——唤醒即复位重新运行 */
+/* 待机：不返回，唤醒即复位重启 */
 void SYS_PWR_Standby(void)
 {
     pwr_clock_enable();
 
-    /* 清一次唤醒标志（便于唤醒复位后判断唤醒来源） */
+    /* 清一次唤醒标志 PWR_FLAG_WU（便于唤醒复位后判断唤醒来源） */
     PWR_ClearFlag(PWR_FLAG_WU);
 
     PWR_EnterSTANDBYMode();
@@ -76,10 +65,7 @@ void SYS_PWR_SetWakeupPin(uint8_t enable)
 }
 
 
-/* ================================================================
- *                    扩展功能
- * ================================================================ */
-/* 查询并清除唤醒事件标志 */
+/* 查询并清除唤醒事件标志 PWR_FLAG_WU；有唤醒事件返回 1，否则返回 0 */
 uint8_t SYS_PWR_GetWakeupFlag(void)
 {
     pwr_clock_enable();

@@ -19,7 +19,7 @@
 | 库 | ST 标准外设库（SPL）+ FreeRTOS（已挂入工程） |
 | 编译状态 | **0 Error / 3 Warning**（3 条为 main.c 未使用变量，无害） |
 
-> ⚠ 512KB Flash 意味着只能擦写 `FLASH_Sector_0 ~ 7`；参数保存不要用 Sector_8 以上（ZE 芯片上不存在）。
+> 512KB Flash 意味着只能擦写 `FLASH_Sector_0 ~ 7`；参数保存不要用 Sector_8 以上（ZE 芯片上不存在）。
 
 ---
 
@@ -84,19 +84,19 @@
 
 | 项目需要 | 板1 是否具备 | 结论 |
 |---|---|---|
-| SHT30 温湿度（I2C） | I2C 总线可用（板载 MPU6050、EEPROM 都在 I2C 上，说明已引出） | ✅ 可接 |
-| BH1750 光照（I2C） | 同上，可挂同一条 I2C 总线 | ✅ 可接 |
-| CCS811 空气质量（I2C） | 同上 | ✅ 可接 |
-| BMP280 气压（I2C） | 同上 | ✅ 可接 |
-| OLED SSD1306（I2C） | I2C 可用；工程已有 `sys_oled.c/.h` | ✅ 可接 |
-| MQ-135（ADC） | **有专门 ADC 输入接口**，工程已有 `sys_adc`（含 `SYS_ADC_DmaScanInit`） | ✅ 可接 |
-| LoRa E22（UART） | **有「无线收发模块接口」+ UART1/2/3 引出**，工程已有 `sys_usart`（DMA+空闲中断） | ✅ 可接 |
-| 本地告警 | **板载有源蜂鸣器**（`BEEP` 网表） | ✅ 已有 |
-| 调试串口 | **板载 CH340G**，USB 一线连电脑 | ✅ 已有 |
+| SHT30 温湿度（I2C） | I2C 总线可用（板载 MPU6050、EEPROM 都在 I2C 上，说明已引出） | 可接 |
+| BH1750 光照（I2C） | 同上，可挂同一条 I2C 总线 | 可接 |
+| CCS811 空气质量（I2C） | 同上 | 可接 |
+| BMP280 气压（I2C） | 同上 | 可接 |
+| OLED SSD1306（I2C） | I2C 可用；工程已有 `sys_oled.c/.h` | 可接 |
+| MQ-135（ADC） | **有专门 ADC 输入接口**，工程已有 `sys_adc`（含 `SYS_ADC_DmaScanInit`） | 可接 |
+| LoRa E22（UART） | **有「无线收发模块接口」+ UART1/2/3 引出**，工程已有 `sys_usart`（DMA+空闲中断） | 可接 |
+| 本地告警 | **板载有源蜂鸣器**（`BEEP` 网表） | 已有 |
+| 调试串口 | **板载 CH340G**，USB 一线连电脑 | 已有 |
 
 > **结论：板1 硬件资源充足，目标项目所需模块全部能接，无需额外扩展板。**
 
-> 💡 特别提示：板1 **已板载 DHT11 温湿度传感器**。虽然精度不如 SHT30，
+> 特别提示：板1 **已板载 DHT11 温湿度传感器**。虽然精度不如 SHT30，
 > 但可以先用它把「采集任务 → 队列 → 处理任务」这条 FreeRTOS 链路跑通，
 > 等 SHT30 到货只需替换传感器读取函数，主框架不用动。
 
@@ -104,7 +104,7 @@
 
 ## 4. 引脚接线表（待核对后定稿）
 
-> ⚠ **本节需你核对实物后填写。**
+> **本节需你核对实物后填写。**
 > 原理图中连接器的引脚名是以矢量图形绘制的（非文本），
 > 无法自动读出"哪个排针的第几脚 = 哪个 GPIO"，只能人工对照原理图/实物确认。
 
@@ -119,11 +119,11 @@
 | 功能 | 外设 | 引脚 | 备注 |
 |---|---|---|---|
 | 调试串口 | USART1 | 待定 | 115200；板载 CH340G，通常 USART1 已固定接到 CH340 |
-| LoRa E22 收发 | USART? | 待定 | ★ 与 E22 的 TXD/RXD **交叉**相接；建议用「无线收发模块接口」 |
+| LoRa E22 收发 | USART? | 待定 | 与 E22 的 TXD/RXD **交叉**相接；建议用「无线收发模块接口」 |
 | SHT30 温湿度 | I2C1 | 待定 | 地址 0x44（宏 `SYS_I2C_ADDR_SHT30` 已存在） |
-| BH1750 光照 | I2C1 | 同总线 | 地址 0x23（★ 需新增地址宏） |
-| CCS811 空气质量 | I2C1 | 同总线 | 地址约 0x5A（★ 需按模块核对后新增宏） |
-| BMP280 气压 | I2C1 | 同总线 | 地址 0x76/0x77（按 SDO 接法；★ 需新增宏） |
+| BH1750 光照 | I2C1 | 同总线 | 地址 0x23（需新增地址宏） |
+| CCS811 空气质量 | I2C1 | 同总线 | 地址约 0x5A（需按模块核对后新增宏） |
+| BMP280 气压 | I2C1 | 同总线 | 地址 0x76/0x77（按 SDO 接法；需新增宏） |
 | OLED SSD1306 | I2C1 | 同总线 | 地址 0x3C（宏 `SYS_I2C_ADDR_SSD1306` 已存在） |
 | MQ-135 空气 | ADC | 待定 | 走 ADC 输入接口；用 `SYS_ADC_DmaScanInit` 循环采集 |
 | 告警蜂鸣器 | GPIO | 板载 | 网表 `BEEP`，查原理图确认具体 GPIO |
@@ -149,18 +149,18 @@
 
 | 驱动 | 用途 | 与本项目关系 |
 |---|---|---|
-| `sys_i2c.c/.h` | 通用 I2C HAL（`ReadReg16`/`WriteReg16`/`Scan`/`IsDeviceReady`/`BusReset`） | ★ 4 个 I2C 传感器的通信层 |
+| `sys_i2c.c/.h` | 通用 I2C HAL（`ReadReg16`/`WriteReg16`/`Scan`/`IsDeviceReady`/`BusReset`） | 4 个 I2C 传感器的通信层 |
 | `sys_spi.c/.h` | SPI 主机 | BMP280 备用（SPI 模式） |
-| `sys_adc.c/.h` | ADC（含 DMA 扫描、连续、外部触发） | ★ MQ-135 采集 |
+| `sys_adc.c/.h` | ADC（含 DMA 扫描、连续、外部触发） | MQ-135 采集 |
 | `sys_dma.c/.h` | DMA 搬运 | 串口/ADC 的 DMA 支撑 |
-| `sys_usart.c/.h` | 串口（DMA + 空闲中断） | ★ LoRa 收发 |
-| `sys_oled.c/.h` | OLED SSD1306 | ★ 本地显示 |
+| `sys_usart.c/.h` | 串口（DMA + 空闲中断） | LoRa 收发 |
+| `sys_oled.c/.h` | OLED SSD1306 | 本地显示 |
 | `sys_tim.c/.h` | 定时器（含 PWM、输入捕获） | PWM / 蜂鸣器 / 测频 |
 | `sys_rtc.c/.h` | RTC | 时间戳 |
-| `sys_wdg.c/.h` | 看门狗（含心跳版） | ★ MonitorTask 喂狗 |
+| `sys_wdg.c/.h` | 看门狗（含心跳版） | MonitorTask 喂狗 |
 | `sys_flash.c/.h` | 片内 Flash 读写 | 参数保存 |
-| `sys_frame.c/.h` | 串口帧协议 | ★ 与已定案 20 字节帧配合 |
-| `sys_modbus.c/.h` | 含 CRC16-MODBUS 实现 | ★ 协议校验（直接复用，保证三端一致） |
+| `sys_frame.c/.h` | 串口帧协议 | 与已定案 20 字节帧配合 |
+| `sys_modbus.c/.h` | 含 CRC16-MODBUS 实现 | 协议校验（直接复用，保证三端一致） |
 | `sys_softimer.c/.h` | 软件定时器 | 周期任务辅助 |
 | `sys_fault.c/.h` | 硬件异常捕获 | 可靠性 |
 | `sys_mpu6050.c/.h` | 六轴 | 板载，本项目暂不用 |

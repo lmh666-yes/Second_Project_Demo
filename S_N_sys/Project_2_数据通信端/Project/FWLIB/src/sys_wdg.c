@@ -1,23 +1,13 @@
 #include "sys_wdg.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
 #include <stddef.h>     /* NULL（复位原因解码的指针判断） */
 
-/* ================================================================
- *  sys_wdg.c —— 【系统】看门狗模块  实现文件
- * ================================================================
- *  换算公式 :
- *   IWDG：超时 = 4 × 2^PR × (RLR+1) / f_LSI
- *         （PR 0~6 → 分频 4~256；RLR 12 位 0~4095）
- *   WWDG：递减步长 = 4096 × 2^WDGTB / PCLK1
- *         超时 = (T − 63) × 步长（T 为 6 位计数器初值）
- *  两个模块的寄存器操作都走标准外设库，超时值按"当前真实时钟"
- *  自动换算（WWDG 用 PCLK1，切换主频后重新 Init 即可）。
- * ================================================================ */
+/* 看门狗模块实现：IWDG 与 WWDG 的超时值均按当前真实时钟换算
+ * IWDG：超时 = 4 × 2^PR × (RLR+1) / f_LSI；PR 0~6 即分频 4~256，RLR 12 位 0~4095
+ * WWDG：步长 = 4096 × 2^WDGTB / PCLK1，超时 = (T − 63) × 步长，T 为 6 位计数器初值
+ * WWDG 用 PCLK1，切换主频后需重新 Init */
 
 
-/* ================================================================
- *                    配置数据
- * ================================================================ */
+/* 配置数据 */
 /* IWDG 分频表：索引 = PR 值 0~6 → 分频 4/8/16/32/64/128/256 */
 static const uint8_t iwdg_presc_tbl[7] = {
     IWDG_Prescaler_4,   IWDG_Prescaler_8,   IWDG_Prescaler_16,
@@ -39,9 +29,7 @@ typedef char wdg_wwdg_tbl_check[(sizeof(wwdg_presc_tbl) / sizeof(wwdg_presc_tbl[
 static uint8_t wdg_wwdg_t = 0U;
 
 
-/* ================================================================
- *                    区块 2：基础功能
- * ================================================================ */
+/* 基础功能 */
 /* 启动独立看门狗 IWDG（超时 ms 自动换算分频与重载值） */
 void SYS_WDG_Init(uint32_t timeout_ms)
 {
@@ -50,12 +38,12 @@ void SYS_WDG_Init(uint32_t timeout_ms)
     uint32_t div;
     uint32_t cnt;
 
-    /* ① 范围截断（1ms ~ 32768ms） */
+    /* 范围截断：1ms ~ 32768ms */
     if (timeout_ms < SYS_WDG_MIN_TIMEOUT_MS) timeout_ms = SYS_WDG_MIN_TIMEOUT_MS;
     if (timeout_ms > SYS_WDG_MAX_TIMEOUT_MS) timeout_ms = SYS_WDG_MAX_TIMEOUT_MS;
 
-    /* ② 优先选最小分频（换算精度最高），装不下再升一档：
-     *    需要计数值 = 超时(s) × f_LSI / 分频 = ms×LSI / (1000×div) */
+    /* 从最小分频开始试，换算精度最高，装不下再升一档
+     * 需要计数值 = timeout_ms × f_LSI / (1000 × div) */
     for (pr = 0U; pr < 7U; pr++) {
         div = 4UL << pr;                                    /* 4 × 2^PR */
         cnt = (timeout_ms * SYS_WDG_LSI_HZ + (div * 1000UL) - 1UL) / (div * 1000UL);
@@ -64,18 +52,18 @@ void SYS_WDG_Init(uint32_t timeout_ms)
             break;
         }
     }
-    if (pr == 7U) {         /* 全部分频都装不下（理论到不了，保险处理） */
+    if (pr == 7U) {         /* 全部分频都装不下时的兜底 */
         pr  = 6U;
         rlr = 4095U;
     }
 
-    /* ③ 调试冻结：调试器暂停 CPU 时冻结看门狗计数（断点不会被复位） */
+    /* 调试冻结：调试器暂停 CPU 时冻结看门狗计数，断点处不复位 */
 #if SYS_WDG_DEBUG_FREEZE
     DBGMCU->APB1FZ |= (1UL << 12);      /* DBG_IWDG_STOP */
     DBGMCU->APB1FZ |= (1UL << 11);      /* DBG_WWDG_STOP */
 #endif
 
-    /* ④ 配置并启动（启动后无法停止——官方特性） */
+    /* 配置并启动：IWDG 启动后无法停止 */
     IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
     IWDG_SetPrescaler(iwdg_presc_tbl[pr]);
     IWDG_SetReload((uint16_t)rlr);
@@ -90,9 +78,7 @@ void SYS_WDG_Feed(void)
 }
 
 
-/* ================================================================
- *                    区块 3：扩展功能
- * ================================================================ */
+/* 扩展功能 */
 /* 读取上次复位原因（RCC_CSR 里的复位标志位） */
 uint32_t SYS_WDG_ResetCause(void)
 {
@@ -162,9 +148,7 @@ uint32_t SYS_WDG_ResetCauseDecode(uint32_t cause, char *buf, uint32_t size)
     return pos;
 }
 
-/* ================================================================
- *   区块 3 扩展：多任务心跳汇总喂狗（短临界区置位,无位带依赖）
- * ================================================================ */
+/* 扩展功能：多任务心跳汇总喂狗 */
 /* 编译期护栏：心跳任务数 0 ~ 32（0 = 不使用该功能） */
 typedef char wdg_hb_cnt_check[(SYS_WDG_HEARTBEAT_COUNT <= 32U) ? 1 : -1];
 
@@ -194,7 +178,7 @@ void SYS_WDG_Heartbeat(uint8_t id)
 #endif
 }
 
-/* 是否全员报到（不清掩码、不喂狗——WWDG 等自定义策略用） */
+/* 是否全员报到：不清掩码、不喂狗，供自定义策略使用 */
 uint8_t SYS_WDG_HeartbeatAll(void)
 {
 #if (SYS_WDG_HEARTBEAT_COUNT > 0U)
@@ -214,7 +198,10 @@ uint32_t SYS_WDG_HeartbeatPending(void)
 #endif
 }
 
-/* 心跳汇总喂狗:全员到 → 喂狗 + 清零（新一轮）返回 1;否则不喂返回 0 */
+/* 心跳汇总喂狗：全员报到则喂狗、清零掩码并返回 1，否则不喂狗返回 0
+ * SYS_WDG_HEARTBEAT_COUNT == 0 时退化为直接喂狗并返回 1，
+ * 该配置下主循环只留本函数是安全的，等价于调用 SYS_WDG_Feed()
+ * 返回：1 = 已喂狗，0 = 有任务漏报，等看门狗复位 */
 uint8_t SYS_WDG_HeartbeatPoll(void)
 {
 #if (SYS_WDG_HEARTBEAT_COUNT > 0U)
@@ -223,7 +210,8 @@ uint8_t SYS_WDG_HeartbeatPoll(void)
     wdg_hb_mask = 0U;
     return 1U;
 #else
-    return 0U;
+    SYS_WDG_Feed();         /* 未启用心跳汇总：退化为普通喂狗 */
+    return 1U;
 #endif
 }
 
@@ -243,19 +231,19 @@ void SYS_WDG_WwdgInit(uint32_t timeout_ms)
     uint32_t t  = 127U;         /* 缺省最大计数值 */
     uint32_t i;
 
-    /* ① 使能 WWDG 时钟（挂 APB1）并读当前总线频率 */
+    /* 使能 WWDG 时钟（挂 APB1），读当前总线频率 */
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_WWDG, ENABLE);
     RCC_GetClocksFreq(&clocks);
     pclk1 = (clocks.PCLK1_Frequency != 0U) ? clocks.PCLK1_Frequency : 42000000UL;
 
-    /* ② 范围截断：最大 = 64 × 4096 × 8 / PCLK1（毫秒） */
+    /* 范围截断：最大 = 64 × 4096 × 8 / PCLK1 毫秒 */
     limit_ms = 2097152000UL / pclk1;                /* 64×4096×8×1000 / PCLK1 */
     if (limit_ms < 1UL) limit_ms = 1UL;
     if (timeout_ms < 1UL)        timeout_ms = 1UL;
     if (timeout_ms > limit_ms)   timeout_ms = limit_ms;
 
-    /* ③ 从最小分频开始试（精度最高），直到计数值装得下：
-     *    超时 = (T − 63) × 步长，步长 = 4096 × 2^WDGTB / PCLK1 */
+    /* 从最小分频开始试，精度最高，直到计数值装得下
+     * 超时 = (T − 63) × 步长，步长 = 4096 × 2^WDGTB / PCLK1 */
     for (i = 0U; i < 4U; i++) {
         uint64_t step = ((uint64_t)4096U << i) * 1000ULL;        /* 步长×1000 */
         uint64_t num  = (uint64_t)timeout_ms * (uint64_t)pclk1;  /* 分子     */
@@ -268,13 +256,13 @@ void SYS_WDG_WwdgInit(uint32_t timeout_ms)
         }
     }
 
-    /* ④ 调试冻结（与 IWDG 相同） */
+    /* 调试冻结：与 IWDG 相同 */
 #if SYS_WDG_DEBUG_FREEZE
     DBGMCU->APB1FZ |= (1UL << 12);
     DBGMCU->APB1FZ |= (1UL << 11);
 #endif
 
-    /* ⑤ 配置并启动：窗口全开（任何时刻都能喂），T6 恒为 1 */
+    /* 配置并启动：窗口值 0x7F，任何时刻都能喂；T6 恒为 1 */
     WWDG_SetPrescaler(wwdg_presc_tbl[tb]);
     WWDG_SetWindowValue(0x7FU);
     WWDG_Enable((uint8_t)(t & 0x7FU));

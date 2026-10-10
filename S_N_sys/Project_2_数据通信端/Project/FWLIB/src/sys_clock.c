@@ -1,29 +1,18 @@
 #include "sys_clock.h"
-/* 配套指引 : "标准库对照 / 示例 / 扩展提示"注记见同名 .h;本文件为实现层 */
+#include "sys_rtos.h"   /* SYS_RTOS_PRESENT / SYS_RTOS_SYSTICK_RELOAD() */
+#include "sys_tick.h"   /* 裸机时 SYS_RTOS_SYSTICK_RELOAD() 会用到 SYS_TICK_Init */
 
-/* ================================================================
- *  sys_clock.c —— 【系统】时钟源切换模块  实现文件
- * ================================================================
- *  核心目标：在"任何时刻"安全地改变芯片主频——
- *  原则是"先降速、再改配置、后升速"，全程不产生取指/总线异常。
- * ================================================================ */
+/* 系统时钟源切换：改变主频时先降速、再改配置、后升速，避免取指与总线异常 */
 
-/* ================================================================
- *                    配置数据
- * ================================================================ */
-/* PLL 频率"惰性记录"：
- *   上电时 SystemCoreClock = 168MHz（PLL 档）——本模块在首次切换前
- *   把它捕获保存。因为一旦切到低速源，SystemCoreClock 就变了，
- *   之后再想查询"PLL 档频率是多少"就无从得知，故提前留一份。 */
+/* PLL 档频率记录：首次切换前捕获 SystemCoreClock。
+ * 切到低速源后 SystemCoreClock 随之改变，无法再查回 PLL 档频率。 */
 static uint32_t sys_clk_pll_freq = 0;
 
-/* 时钟源配置表：每行描述某档时钟源的"完整参数包"
- *   freq          —— 该档频率（PLL 档动态记录，填 0 占位）
- *   flash_latency —— Flash 等待周期：主频越高需要越多等待周期，
- *                    168MHz 需 5 个（否则高速取指可能出错）
- *   hclk_div / pclk1_div / pclk2_div —— 总线分频
- *                    （APB1 上限 42MHz → ÷4；APB2 上限 84MHz → ÷2）
- *   sws_code      —— SWS 状态位中代表该时钟源的编码（切换完成判据）
+/* 时钟源配置表：每行一档时钟源的参数
+ *   freq: 该档频率，PLL 档动态记录，填 0 占位
+ *   flash_latency: Flash 等待周期，主频越高需要越多，168MHz 需 5 个，否则高速取指可能出错
+ *   hclk_div / pclk1_div / pclk2_div: 总线分频，APB1 上限 42MHz 取 ÷4，APB2 上限 84MHz 取 ÷2
+ *   sws_code: SWS 状态位中该时钟源的编码，切换完成判据
  * 数值来源：STM32F407 数据手册"最大时钟频率"章节 */
 typedef struct {
     SysClkSrc_t src;
@@ -50,9 +39,6 @@ static const SysClkProfile_t clock_profiles[] = {
 typedef char sys_clk_profile_count_check[(SYS_CLK_PROFILE_COUNT == 3U) ? 1 : -1];
 
 
-/* ================================================================
- *                    内部辅助
- * ================================================================ */
 /* 按枚举值查配置表；找不到返回 NULL（调用方需要判空） */
 static const SysClkProfile_t *sys_clk_lookup(SysClkSrc_t src)
 {
@@ -62,63 +48,61 @@ static const SysClkProfile_t *sys_clk_lookup(SysClkSrc_t src)
     return NULL;
 }
 
-/* 启动 HSI 并等待其稳定（HSIRDY 置位）
- * HSI 是芯片内部 RC，永远可用——因此作为"安全过渡源"和"保底时钟" */
+/* 启动 HSI 并等待 HSIRDY 置位；HSI 为芯片内部 RC，切换时作安全过渡源 */
 static void sys_clk_start_hsi(void)
 {
+    uint32_t to = SYS_CLK_READY_TIMEOUT;
+
     RCC_HSICmd(ENABLE);
-    while (RCC_GetFlagStatus(RCC_FLAG_HSIRDY) == RESET);
+    /* 带超时：RCC 时钟未使能或时钟树配置错误时 HSIRDY 不置位，无超时循环会停在此处 */
+    while (RCC_GetFlagStatus(RCC_FLAG_HSIRDY) == RESET) {
+        if (--to == 0U) return;
+    }
 }
 
 
-/* ================================================================
- *                    区块 2：基础功能
- * ================================================================ */
-/* ================================================================
- * 切换时钟源（模块核心函数）
- * ================================================================
- * 安全切换思路（为什么需要"三步走"）:
- *   高速运行中直接改 Flash 等待周期/总线分频，可能取指失败甚至死机，
- *   因此采用"先降速、再改配置、后升速"的流程：
- *     ① 先切到 HSI（16MHz 安全源）——此时改动任何配置都安全；
- *     ② 在低速状态下改 latency、分频，并启动目标时钟源；
- *     ③ 最后写 SW 位切到目标源，等 SWS 确认后更新 SystemCoreClock。
- *
- * 返回值：SYS_CLK_OK 或错误码（见 sys_clock.h）
- * ================================================================ */
+/* 切换系统时钟源。
+ * 高速运行中直接改 Flash 等待周期与总线分频可能取指失败，
+ * 因此先切到 HSI 降速，再改配置并启动目标源，最后写 SW 位切换。
+ * 返回值：SYS_CLK_OK 或错误码，见 sys_clock.h */
 uint8_t SYS_CLK_Switch(SysClkSrc_t target)
 {
-    /* ① 惰性记录 PLL 频率（只在首次调用时真正执行一次）
-     *    注意：抓之前必须先 SystemCoreClockUpdate() 按真实寄存器刷新 ——
-     *    CMSIS 的 SystemCoreClock 初值只是个占位常量(16000000)，
-     *    不刷新就直接抓，会把 16MHz 当成"PLL 档频率"记下来。 */
+    /* 1) 记录 PLL 档频率，只在首次调用执行。
+     *    抓取前必须先 SystemCoreClockUpdate()：CMSIS 初值 16000000 是占位常量，
+     *    不刷新会把 16MHz 记成 PLL 档频率。 */
     if (sys_clk_pll_freq == 0) {
         SystemCoreClockUpdate();
         sys_clk_pll_freq = SystemCoreClock;
     }
 
-    /* ② 查配置表：非法目标直接报错 */
+    /* 2) 查配置表，非法目标直接报错 */
     const SysClkProfile_t *p = sys_clk_lookup(target);
     if (p == NULL) return SYS_CLK_ERR_UNKNOWN;
 
 #if SYS_CLK_SAFE_TRANSITION
-    /* ③ 安全过渡：若目标不是 HSI 且当前不在 HSI，先切到 HSI */
+    /* 3) 目标非 HSI 且当前非 HSI 时，先切到 HSI 过渡 */
     if (target != SYS_CLK_HSI && RCC_GetSYSCLKSource() != RCC_SYSCLKSource_HSI) {
         sys_clk_start_hsi();
         RCC_SYSCLKConfig(RCC_SYSCLKSource_HSI);
-        while (RCC_GetSYSCLKSource() != RCC_SYSCLKSource_HSI);
+        /* 带超时：退回安全源失败说明 SWS 状态位读不回来，死等会停在初始化中 */
+        {
+            uint32_t to = SYS_CLK_READY_TIMEOUT;
+            while (RCC_GetSYSCLKSource() != RCC_SYSCLKSource_HSI) {
+                if (--to == 0U) return SYS_CLK_ERR_SW;
+            }
+        }
     }
 #endif
 
-    /* ④ 低速区安全改 latency：先降到最低档（此刻降速是安全的） */
+    /* 4) 先降到最低等待周期，低速下改 latency 安全 */
     FLASH_SetLatency(FLASH_Latency_0);
 
-    /* ⑤ 分频器也先复位到 ÷1（低速下同样安全） */
+    /* 5) 分频器先复位到 ÷1，低速下修改安全 */
     RCC_HCLKConfig (RCC_SYSCLK_Div1);
     RCC_PCLK1Config(RCC_HCLK_Div1);
     RCC_PCLK2Config(RCC_HCLK_Div1);
 
-    /* ⑥ 按目标开启对应时钟源，并等待其就绪 */
+    /* 6) 开启目标时钟源并等待就绪 */
     switch (target) {
         case SYS_CLK_HSI:
             sys_clk_start_hsi();                    /* 等 HSIRDY */
@@ -129,19 +113,25 @@ uint8_t SYS_CLK_Switch(SysClkSrc_t target)
             break;                                  /* HSE 起振失败报错返回 */
         case SYS_CLK_PLL:
             RCC_PLLCmd(ENABLE);
-            while (RCC_GetFlagStatus(RCC_FLAG_PLLRDY) == RESET);  /* 等锁定 */
+            /* 等锁定带超时：HSE 掉振或 PLL 配置值非法时 PLLRDY 不置位，无超时循环会停在此处 */
+            {
+                uint32_t to = SYS_CLK_READY_TIMEOUT;
+                while (RCC_GetFlagStatus(RCC_FLAG_PLLRDY) == RESET) {
+                    if (--to == 0U) return SYS_CLK_ERR_HSE;
+                }
+            }
             break;
         default:
             return SYS_CLK_ERR_UNKNOWN;
     }
 
-    /* ⑦ 按目标频率重设 latency 与分频（升速前的必要准备） */
+    /* 7) 按目标频率重设 latency 与分频，升速前必须先完成 */
     FLASH_SetLatency(p->flash_latency);
     RCC_HCLKConfig (p->hclk_div);
     RCC_PCLK1Config(p->pclk1_div);
     RCC_PCLK2Config(p->pclk2_div);
 
-    /* ⑧ 写 SW 位：把系统时钟切换到目标源 */
+    /* 8) 写 SW 位切换系统时钟源 */
     switch (target) {
         case SYS_CLK_HSI: RCC_SYSCLKConfig(RCC_SYSCLKSource_HSI);    break;
         case SYS_CLK_HSE: RCC_SYSCLKConfig(RCC_SYSCLKSource_HSE);    break;
@@ -149,24 +139,30 @@ uint8_t SYS_CLK_Switch(SysClkSrc_t target)
         default: return SYS_CLK_ERR_UNKNOWN;
     }
 
-    /* ⑨ 等待 SWS 硬件确认（带超时，防止异常时死等） */
+    /* 9) 等 SWS 确认，带超时 */
     uint32_t timeout = SYS_CLK_SWITCH_TIMEOUT;
     while (RCC_GetSYSCLKSource() != p->sws_code) {
         if (--timeout == 0) return SYS_CLK_ERR_SW;
     }
 
-    /* ⑩ 更新 CMSIS 全局频率变量（依赖它的延时/计时会同步修正） */
+    /* 10) 更新 CMSIS 全局频率变量，依赖它的延时与计时同步修正 */
     SystemCoreClockUpdate();
+
+    /* 11) 按新频率重装 SysTick。重装值 = configSYSTICK_CLOCK_HZ / configTICK_RATE_HZ - 1，
+     *     由编译期常量算出；SystemCoreClockUpdate() 只改内存变量，不改 SysTick->LOAD 的值。
+     *     不重装则 tick 周期随主频变化，vTaskDelay、超时判断与软件定时器失准。
+     *     见 sys_rtos.h：FreeRTOS 走 vPortSetupTimerInterrupt()，裸机走 SYS_TICK_Init()。 */
+    SYS_RTOS_SYSTICK_RELOAD();
+
     return SYS_CLK_OK;
 }
 
 /* 读 SWS 状态位 → 时钟源枚举；未知编码按 HSI 兜底 */
 SysClkSrc_t SYS_CLK_GetSource(void)
 {
-    /* 直接读 CFGR 的 SWS[1:0]（bit3:2）：0=HSI  1=HSE  2=PLL
-     * ⚠ 不走 StdPeriph 的 RCC_GetSYSCLKSource()——
-     *    实测在本工程（RTE 包里的 rcc.c）上它会把 PLL 误报成 HSI，
-     *    导致 SYS_CLK_GetFreq() 把 168MHz 报成 16MHz。直接读寄存器最可靠。 */
+    /* 直接读 CFGR 的 SWS[1:0]（bit3:2）：0=HSI，1=HSE，2=PLL
+     * 不用 StdPeriph 的 RCC_GetSYSCLKSource()：本工程 RTE 包内 rcc.c 会把 PLL 误报成 HSI，
+     * 使 SYS_CLK_GetFreq() 把 168MHz 报成 16MHz。 */
     uint32_t sws = (RCC->CFGR & 0x0CUL) >> 2U;
 
     if (sws == 2UL) return SYS_CLK_PLL;
@@ -191,27 +187,20 @@ uint32_t SYS_CLK_GetPllFreq(void)
 }
 
 
-/* ================================================================
- *                    区块 3：扩展功能
- * ================================================================ */
-/* 便捷封装：切到高性能档（PLL 168MHz） */
+/* 切到高性能档 PLL 168MHz */
 uint8_t SYS_CLK_ToHighSpeed(void)
 {
     return SYS_CLK_Switch(SYS_CLK_PLL);
 }
 
-/* 便捷封装：切到低功耗档（HSI 16MHz）
- * 注意 : 按约定切换后需重新 SYS_TICK_Init() 校准时基（见模块头说明） */
+/* 切到低功耗档 HSI 16MHz；时基重装由 SYS_CLK_Switch 内部的 SYS_RTOS_SYSTICK_RELOAD() 完成 */
 uint8_t SYS_CLK_ToLowPower(void)
 {
     return SYS_CLK_Switch(SYS_CLK_HSI);
 }
 
 
-/* ================================================================
- *           区块 3：总线分频自定义与查询（扩展功能）
- * ================================================================ */
-/* 分频常量 → 实际分频数 的对照表（查不到 = 传入非法常量） */
+/* 分频常量与实际分频数对照表，查不到即传入非法常量 */
 typedef struct {
     uint32_t code;      /* SPL 分频常量 */
     uint32_t div;       /* 实际分频数   */
@@ -279,13 +268,13 @@ uint8_t SYS_CLK_SetBusDiv(uint32_t hclk_div, uint32_t pclk1_div, uint32_t pclk2_
     uint32_t    fp2;
     SysClkSrc_t cur;
 
-    /* ① 分频常量查表（非法值直接拒绝） */
+    /* 1) 分频常量查表，非法值直接拒绝 */
     hdiv  = sys_clk_div_lookup(sys_clk_ahb_div_tbl, (uint32_t)SYS_CLK_AHB_DIV_COUNT, hclk_div);
     p1div = sys_clk_div_lookup(sys_clk_apb_div_tbl, (uint32_t)SYS_CLK_APB_DIV_COUNT, pclk1_div);
     p2div = sys_clk_div_lookup(sys_clk_apb_div_tbl, (uint32_t)SYS_CLK_APB_DIV_COUNT, pclk2_div);
     if ((hdiv == 0U) || (p1div == 0U) || (p2div == 0U)) return SYS_CLK_ERR_DIV;
 
-    /* ② 按当前主频预演结果，超上限直接拒绝（不动硬件） */
+    /* 2) 按当前主频预演，超上限直接拒绝，不动硬件 */
     fsrc  = SYS_CLK_GetFreq();
     fhclk = fsrc / hdiv;
     fp1   = fhclk / p1div;
@@ -294,20 +283,24 @@ uint8_t SYS_CLK_SetBusDiv(uint32_t hclk_div, uint32_t pclk1_div, uint32_t pclk2_
     if (fp1   > SYS_CLK_MAX_PCLK1) return SYS_CLK_ERR_RANGE;
     if (fp2   > SYS_CLK_MAX_PCLK2) return SYS_CLK_ERR_RANGE;
 
-    /* ③ 安全过渡：先降到 HSI（16MHz 下改分频绝对安全） */
+    /* 3) 先降到 HSI，16MHz 下改分频安全 */
     cur = SYS_CLK_GetSource();
     if (cur != SYS_CLK_HSI) {
+        uint32_t to = SYS_CLK_READY_TIMEOUT;
+
         sys_clk_start_hsi();
         RCC_SYSCLKConfig(RCC_SYSCLKSource_HSI);
-        while (RCC_GetSYSCLKSource() != RCC_SYSCLKSource_HSI);
+        while (RCC_GetSYSCLKSource() != RCC_SYSCLKSource_HSI) {
+            if (--to == 0U) return SYS_CLK_ERR_SW;      /* 退回安全源都失败 → 报错 */
+        }
     }
 
-    /* ④ 写三个分频寄存器 */
+    /* 4) 写三个分频寄存器 */
     RCC_HCLKConfig(hclk_div);
     RCC_PCLK1Config(pclk1_div);
     RCC_PCLK2Config(pclk2_div);
 
-    /* ⑤ 切回原来的时钟源（带超时确认） */
+    /* 5) 切回原时钟源，带超时确认 */
     if (cur != SYS_CLK_HSI) {
         uint32_t timeout = SYS_CLK_SWITCH_TIMEOUT;
         uint32_t sws;
@@ -328,10 +321,7 @@ uint8_t SYS_CLK_SetBusDiv(uint32_t hclk_div, uint32_t pclk1_div, uint32_t pclk2_
     return SYS_CLK_OK;
 }
 
-/* ================================================================
- *        扩展功能：LSE / LSI / RTC 时钟源（sys_rtc 的底座）
- * ================================================================ */
-/* 启动 LSE 并等起振（超时上限同 SYS_CLK_SWITCH_TIMEOUT） */
+/* 启动 LSE 并等起振，超时上限同 SYS_CLK_SWITCH_TIMEOUT */
 uint8_t SYS_CLK_LseOn(void)
 {
     uint32_t timeout = SYS_CLK_SWITCH_TIMEOUT;

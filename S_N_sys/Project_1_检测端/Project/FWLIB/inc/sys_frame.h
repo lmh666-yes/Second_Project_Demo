@@ -5,146 +5,180 @@
 #include "sys_usart.h"
 
 /* ================================================================
- *  sys_frame.h —— 【系统】串口自定义帧协议模块（组帧 / 校验 / 收帧）  头文件
+ *  sys_frame.h — 【系统】串口自定义帧协议模块（组帧 / 校验 / 收帧）  头文件
+ *  实现见 sys_frame.c
  * ================================================================
- *  设计定位 : "帧头 + 数据 + 校验 + 帧尾"串口协议的"薄封装"——
- *             组帧、逐字节收帧、帧同步、校验全部在库内,
- *             应用只管"发什么"和"收到后做什么"
- *  标准库关键词 : 无——字节收发走 sys_usart;校验为纯字节异或运算
- *
- *  帧格式（两种,由区块 1 宏 SYS_FRAME_WITH_LEN 选择;收发两端必须一致）:
- *    通用帧（默认）: [0xAA][CMD][长度 n][数据 n 字节][校验][0x55]
- *    简化帧       : [0xAA][数据][校验][0x55]   —— 教材式四字节帧
- *    校验 = 帧内除"校验位与帧尾"外所有字节的逐字节异或（含帧头）
- *    例: 简化帧发数据 0x0F → 0xAA ^ 0x0F = 0xA5 → 线上 AA 0F A5 55
- *        通用帧发 cmd=0x01、数据 {0x0F} → 0xAA^0x01^0x01^0x0F = 0xA4
- *        → 线上 AA 01 01 0F A4 55
- *
- *  使用方式 :
- *    发 : SYS_FRAME_Send(SYS_USART_1, 0x01, &mask, 1);   // 通用帧
- *         SYS_FRAME_SendShort(SYS_USART_1, 0x0F);        // 单字节数据帧
- *    收 : 先 SYS_USART_InitRxIT(uart, baud) 开中断收字节,然后主循环——
- *         if (SYS_FRAME_Poll(SYS_USART_1) > 0) {
- *             uint8_t cmd, data; uint16_t n;
- *             if (SYS_FRAME_Get(&cmd, &data, &n) == 0) { 处理这一帧 }
- *         }
- *  重要说明 :
- *    ① 接收不要自己再写 USARTx_IRQHandler（库方式 = InitRxIT + Poll 喂状态机）;
- *       非要用自己的 ISR,则把每个收到的字节喂 SYS_FRAME_Feed()——
- *       两种喂法二选一,别同时用（会互相抢字节）;
- *    ② 帧同步内建：帧头不对自动丢到下一个 0xAA;帧尾错/校验错也自动
- *       重新找头——教材里"收到异常数据后还能恢复正常收包"的思路,
- *       在 .c 状态机里实现;
- *    ③ 只保留"最新一帧"：新帧会覆盖没取走的旧帧——处理要跟得上;
- *    ④ 出错累计在 SYS_FRAME_ErrCount（联调时看一眼就知道链路质量）;
- *    ⑤ 数据里别使用 0xAA / 0x55（简化帧无转义字节;通用帧虽带长度,
- *       也建议避开——换头尾宏即可绕开）
- *
- *  防"粘包 / 半包"机制（为什么用它就不用操心分包）:
- *    ① 多帧粘连（一次收到 AA..55 AA..55）——状态机收完一帧回到找头,
- *       Poll 会把缓冲里字节全部喂完,逐帧拆开;
- *    ② 半包（一帧分几次到达）——状态机跨调用/跨中断累积,凑齐才就绪;
- *    ③ 丢字节/误码——长度与异或校验拦下,自动重找帧头恢复;
- *    ④ 双保险——整段收到后先 SYS_FRAME_Verify() 再解析;发端用
- *       SYS_FRAME_Build() 先组帧、统一节奏发送,避免半帧交叉;
- *    ⑤ 粘接检测——Verify 对"两帧粘成一帧"会报 SYS_FRAME_ERR_LEN。
+ *  线上帧格式（两板必须一致;改区块 1 宏即改协议）:
+ *    [0..1] 0xAA 0x55 | [2] CMD | [3] LEN | [4..3+LEN] DATA |
+ *    [4+LEN..5+LEN] CRC16-MODBUS 低字节在前 | [6+LEN..7+LEN] 0x55 0xAA |
+ *    整帧长度 = OVERHEAD + LEN = 8 + LEN 字节。
+ *  CRC 范围 = 帧内 [2] 起 (2+LEN) 字节（CMD + LEN + DATA）,不含帧头、CRC 与
+ *  帧尾;算法 CRC16-MODBUS,初值 0xFFFF,多项式 0x8005,反射 0xA001,结果不异或。
+ *  帧合法判据:(1) 帧头连续两字节 0xAA 0x55;(2) LEN + 8 == 实际字节数;
+ *  (3) 从 CMD 起重算 CRC16 == 帧内 CRC。Poll/Feed 收帧时 (1)(3) 由状态机
+ *  保证,Verify 校验整帧时三项全查。帧尾与下一帧帧头相接或数据段本身含
+ *  AA 55 时都会出现裸 0xAA55,不可据此开帧。
+ *  用法:发用 SYS_FRAME_Send / SendShort;收先 SYS_USART_InitRxIT(uart, baud)
+ *  再轮询 Poll(uart) 后 Get。
+ *  约束:InitRxIT + Poll 与自写 USARTx_IRQHandler 中逐字节调用
+ *  SYS_FRAME_Feed 二选一,不可同时用;帧头不齐、长度超限、CRC 错、帧尾错
+ *  自动丢弃重同步;每路只留最新一帧;出错计数见 SYS_FRAME_ErrCount;
+ *  数据段允许 0xAA / 0x55,定界靠 LEN + CRC。
  * ================================================================ */
 
 
 /* ================================================================
  *                    区块 1：定义与宏定义区（换协议只改这里）
  * ================================================================ */
-/* 帧头 / 帧尾（改这里即改协议;收发两端必须一致） */
-#define SYS_FRAME_HEAD          0xAAU
-#define SYS_FRAME_TAIL          0x55U
+/* 帧头 / 帧尾（各两字节;改这里即改协议,收发两端必须一致）
+ * 帧尾为帧头反序:帧头 0xAA55,帧尾 0x55AA;两帧相接时线上为 55 AA AA 55。 */
+#define SYS_FRAME_HEAD_HI       0xAAU   /* 帧头第 1 字节（线上先发） */
+#define SYS_FRAME_HEAD_LO       0x55U   /* 帧头第 2 字节 */
+#define SYS_FRAME_TAIL_HI       0x55U   /* 帧尾第 1 字节（线上先发） */
+#define SYS_FRAME_TAIL_LO       0xAAU   /* 帧尾第 2 字节 */
 
-/* 帧长模式: 1 = 通用帧（带长度字段,数据 0 ~ MAX 字节）
- *           0 = 简化帧（教材式:固定 1 字节数据,共 4 字节） */
-#define SYS_FRAME_WITH_LEN      1
+/* 帧固定开销 = 2 字节帧头 + CMD + LEN + 2 字节 CRC + 2 字节帧尾 = 8 字节
+ * 整帧长度 = SYS_FRAME_OVERHEAD + 数据字节数 */
+#define SYS_FRAME_OVERHEAD      8U
 
-/* 通用帧的数据区最大字节数（= 内部收帧缓冲大小;按协议最长数据改） */
+/* 数据段最大字节数（= 内部收帧缓冲大小;受 1 字节 LEN 限制,上限 255）
+ * 环境数据帧 LEN = 12,取 64;调大只增加 RAM 占用（每路串口两份缓冲） */
 #define SYS_FRAME_MAX_PAYLOAD   64U
 
-/* 整帧校验（SYS_FRAME_Verify）返回码 */
+/* ---- 整帧校验（SYS_FRAME_Verify）返回码 ----
+ * SYS_FRAME_ERR_CHECK 为旧名别名,值同 SYS_FRAME_ERR_CRC（4）。 */
 #define SYS_FRAME_OK         0U   /* 校验通过 */
-#define SYS_FRAME_ERR_HEAD   1U   /* 帧头不对 */
-#define SYS_FRAME_ERR_TAIL   2U   /* 帧尾不对 */
+#define SYS_FRAME_ERR_HEAD   1U   /* 帧头不对（不是 0xAA 0x55） */
+#define SYS_FRAME_ERR_TAIL   2U   /* 帧尾不对（不是 0x55 0xAA） */
 #define SYS_FRAME_ERR_LEN    3U   /* 长度字段与实际帧长不符（典型:两帧粘接） */
-#define SYS_FRAME_ERR_CHECK  4U   /* 异或校验错 */
+#define SYS_FRAME_ERR_CRC    4U   /* CRC16 校验错（旧名 SYS_FRAME_ERR_CHECK） */
 #define SYS_FRAME_ERR_PARAM  5U   /* 参数非法（指针空/长度不够） */
+#define SYS_FRAME_ERR_CHECK  SYS_FRAME_ERR_CRC   /* 旧名别名:异或校验时代的名字 */
+
+/* ---- 环境数据帧（CMD = 0x01,LEN = 0x0C）字段表 ----
+ * 板1 周期上报,板2 解析后转发/上传。多字节字段大端（高字节在前）,与 CRC 相反。
+ *   帧内[4] TEMP int16 ℃×100,负数补码（-5.00℃ = 0xFE0C）
+ *   帧内[6] HUMI int16 %RH×100
+ *   帧内[8] PRESS int16 hPa×10
+ *   帧内[10] LIGHT uint16 lx 原始值
+ *   帧内[12] TVOC uint16 ppb
+ *   帧内[14] MQ135 uint16 原始 ADC
+ *   帧内[16..17] CRC16 uint16 低字节在前,范围 = 帧内 [2..15]
+ *  帧内偏移 = 4 + 数据段偏移;PRESS ×10 来源:uint16 上限 65535,
+ *   1013.25 hPa × 100 = 101325 溢出,×10 = 10132。HUMI 读失败时送负值作无效标记。 */
+#define SYS_FRAME_CMD_ENV       0x01U   /* 命令字:环境数据上报（板1 → 板2） */
+#define SYS_FRAME_ENV_LEN       0x0CU   /* 环境帧数据段长度 12 字节 */
+
+/* 环境帧字段在“数据段”内的偏移（不含帧头/CMD/LEN,从 0 数起） */
+#define SYS_FRAME_ENV_TEMP_OFF   0U
+#define SYS_FRAME_ENV_HUMI_OFF   2U
+#define SYS_FRAME_ENV_PRESS_OFF  4U
+#define SYS_FRAME_ENV_LIGHT_OFF  6U
+#define SYS_FRAME_ENV_TVOC_OFF   8U
+#define SYS_FRAME_ENV_MQ135_OFF 10U
 
 
 /* ================================================================
  *                    区块 2：基础功能
  * ================================================================ */
-/* 组帧并发送（阻塞,逐字节发完返回;帧格式按区块 1 宏）
- * 参数 : uart —— 串口编号;cmd —— 命令字;
- *        payload/len —— 数据与字节数（可为 0/0 表示无数据）
- * 简化模式说明 : cmd 当作数据字节,payload/len 被忽略——
- *       线上就是 [AA][cmd][XOR][55]（与教材四字节帧一致）
- * 返回 : 无（len 超上限 / 指针非法时直接不发）
- * 标准库 : 经 sys_usart → USART_GetFlagStatus(TXE) + USART_SendData
- * 示例 : uint8_t mask = 0x0F;
- *        SYS_FRAME_Send(SYS_USART_1, 0x01, &mask, 1);   // 通用帧
- * 扩展提示 : 想换更强校验（求和/CRC16）——把本函数与 Feed 里的
- *            异或行换成 SYS_MODBUS_Crc16(帧内字节),帧尾格式同步改 */
+/* 组帧并发送（阻塞,逐字节发完才返回）
+ * 参数 : uart — 串口编号;cmd — 命令字;payload/len — 数据与字节数（0/0 为空）
+ * 返回 : 无;len 超上限或指针非法时不发送
+ * 标准库 : 经 sys_usart → USART_GetFlagStatus(TXE) + USART_SendData;
+ * 非阻塞发送改用 SYS_FRAME_Build */
 void SYS_FRAME_Send(SysUsartId_t uart, uint8_t cmd, const uint8_t *payload, uint16_t len);
 
-/* 发"单字节数据"帧（等价 SYS_FRAME_Send(uart, data, 0, 0)）
- * 说明 : 简化模式下线上 = AA data XOR 55（教材 LED 控制帧就是这个）;
- *        通用模式下 = 长度 0 的通用帧（5 字节）
- * 示例 : SYS_FRAME_SendShort(SYS_USART_1, 0x0F);   // 教材对照:AA0FA555 */
+/* 发数据段为空的短帧:只有命令字,整帧 8 字节,等价 LEN = 0 的 SYS_FRAME_Send
+ * 示例 : SYS_FRAME_SendShort(SYS_USART_1, 0x0F);   // 心跳/点名单命令 */
 void SYS_FRAME_SendShort(SysUsartId_t uart, uint8_t data);
 
 /* 协议轮询：把串口收到的字节喂进收帧状态机（非阻塞）
- * 返回 : 本次新收完的帧数（0 = 没变化;1 = 收到一帧,可以 Get 了）
+ * 返回 : 本次新收完的帧数（0 = 无变化;1 = 收到一帧,可以 Get）
  * 前提 : 该串口已 SYS_USART_InitRxIT（字节靠中断进环形缓冲）
  * 示例 : if (SYS_FRAME_Poll(SYS_USART_1) > 0) { ... } */
 uint8_t SYS_FRAME_Poll(SysUsartId_t uart);
 
-/* 有没有"已收到但还没取走"的帧：1 = 有 */
-uint8_t SYS_FRAME_Available(void);
+/* 以下收帧 API 均带 uart 形参:每路串口一套独立状态机,互不干扰。
+ * 按 uart 各存一份收帧状态;板1 = 调试口 + LoRa,板2 = 四路。 */
 
-/* 取走一帧（拷贝到你的缓冲;任一输出指针可为 0 跳过）
- * 返回 : 0 = 成功;1 = 当前没有帧可取
- * 说明 : 取走即清标志;库内只保留最新一帧（处理要跟上）;
- *        简化模式:数据字节从 cmd 取,长度恒为 0
- * 示例 : uint8_t cmd, data[16]; uint16_t n;
- *        if (SYS_FRAME_Get(&cmd, data, &n) == 0) { ... } */
-uint8_t SYS_FRAME_Get(uint8_t *cmd, uint8_t *payload, uint16_t *len);
+/* 某路串口有没有"已收到但还没取走"的帧：1 = 有 */
+uint8_t SYS_FRAME_Available(SysUsartId_t uart);
+
+/* 取走某路串口的一帧（拷贝到调用方缓冲;任一输出指针可为 0 跳过）
+ * 参数 : cap — payload 缓冲容量（字节数）,必填;cap < 帧长时不拷贝
+ * 返回 : 0 = 成功;1 = 当前无帧可取;2 = 缓冲不够（帧保留不取走）
+ * 说明 : 取走即清标志;每路只保留最新一帧;payload 为数据段（不含
+ *        CMD/LEN/CRC）,长度为帧内 LEN
+ * 示例 : if (SYS_FRAME_Get(SYS_USART_3, &cmd, data, sizeof(data), &n) == 0) { ... } */
+uint8_t SYS_FRAME_Get(SysUsartId_t uart, uint8_t *cmd, uint8_t *payload,
+                      uint16_t cap, uint16_t *len);
 
 
 /* ================================================================
  *                    区块 3：扩展功能
  * ================================================================ */
-/* 单字节喂状态机（给"你自己的 ISR / 其它数据来源"用）
- * 返回 : 1 = 这一字节刚好凑成一帧（帧已存入就绪槽）;0 = 还在收
- * 说明 : 与 Poll 属两条喂字节的路径——同一路数据只喂一边
- * 示例 : void USART1_IRQHandler(void) { ... SYS_FRAME_Feed(ch); ... } */
-uint8_t SYS_FRAME_Feed(uint8_t byte);
+/* 单字节喂某路串口的状态机（自写 ISR / 其它数据来源使用）
+ * 返回 : 1 = 该字节凑成一帧（帧存入该串口就绪槽）;0 = 仍在收
+ * 说明 : 与 Poll 属两条喂字节路径,同一路只喂一边
+ * 示例 : void USART1_IRQHandler(void) { ... SYS_FRAME_Feed(SYS_USART_1, ch); ... } */
+uint8_t SYS_FRAME_Feed(SysUsartId_t uart, uint8_t byte);
 
-/* 复位收帧状态机（丢弃半帧,重新找帧头;上线/复位链路时用） */
-void SYS_FRAME_Reset(void);
+/* 复位某路串口的收帧状态机（丢弃半帧,重新找帧头;上线/复位链路时用） */
+void SYS_FRAME_Reset(SysUsartId_t uart);
 
-/* 收帧出错计数（帧长超限/校验错/帧尾错）——联调排查用 */
-uint16_t SYS_FRAME_ErrCount(void);
+/* 某路串口的收帧出错计数（长度超限 / CRC 错 / 帧尾错）,联调排查用
+ * 帧头低字节对不上属正常重新同步,不计入 */
+uint16_t SYS_FRAME_ErrCount(SysUsartId_t uart);
+
+/* ---- 旧签名兼容层（只作用于 SYS_FRAME_DEFAULT_UART,默认 0 = SYS_USART_1）----
+ * 无 uart 形参的旧调用改用下面这组 *Legacy 名字:
+ *   SYS_FRAME_AvailableLegacy() / FeedLegacy(b) /
+ *   GetLegacy(&cmd, buf, cap, &len) / ResetLegacy() / ErrCountLegacy() */
+uint8_t  SYS_FRAME_AvailableLegacy(void);
+uint8_t  SYS_FRAME_FeedLegacy(uint8_t byte);
+uint8_t  SYS_FRAME_GetLegacy(uint8_t *cmd, uint8_t *payload, uint16_t cap, uint16_t *len);
+void     SYS_FRAME_ResetLegacy(void);
+uint16_t SYS_FRAME_ErrCountLegacy(void);
 
 /* ---- 数据帧的定义与检查（防粘包双保险）---- */
 
-/* 组帧到"你的缓冲区"（不发送）——先组后发/入队/走其它通道
- * 返回 : 帧总字节数（>0）;0 = 参数非法（cap 不够/指针空/长度超限）
- * 用途 : **定义数据帧的统一入口**;与 SYS_FRAME_Verify 对偶（组完可自检）
- * 示例 : uint8_t fbuf[80]; uint16_t n;
- *        n = SYS_FRAME_Build(0x01, &mask, 1, fbuf, sizeof(fbuf));
- *        SYS_USART_SendBuf(SYS_USART_1, fbuf, n);   // 统一节奏发出 */
+/* 组帧到调用方缓冲区（不发送）:先组后发 / 入队 / 走其它通道
+ * 返回 : 帧总字节数（= len + SYS_FRAME_OVERHEAD,> 0）;
+ *        0 = 参数非法（cap 不够 / 指针空 / 长度超限）
+ * 用途 : 组帧入口;与 SYS_FRAME_Verify 对偶
+ * 示例 : n = SYS_FRAME_Build(SYS_FRAME_CMD_ENV, &mask, 1, fbuf, sizeof(fbuf)); */
 uint16_t SYS_FRAME_Build(uint8_t cmd, const uint8_t *payload, uint16_t len,
                          uint8_t *out, uint16_t cap);
 
 /* 校验"一整帧"（缓冲区里已是完整帧:自己的 ISR 收、DMA 收、上位机联调）
- * 返回 : SYS_FRAME_OK(0) 合法;1 帧头 / 2 帧尾 / 3 长度不符 / 4 校验错 / 5 参数
- * 用途 : **检查数据帧的函数**——先 Verify 再剥数据;
- *        "两帧粘接"会被报 ERR_LEN、丢字节报 ERR_CHECK,完全挡在解析前
+ * 返回 : SYS_FRAME_OK(0) 合法;1 帧头 / 2 帧尾 / 3 长度不符 / 4 CRC 错 / 5 参数
+ * 用途 : 数据帧检查,先 Verify 再剥数据。判据:帧头 0xAA55、LEN 与实际长度
+ *        自洽、CRC16 相等。两帧粘接报 ERR_LEN,比特错 / 丢字节报 ERR_CRC;
+ *        接缝处 ...55 AA AA 55... 会出现裸 0xAA55,不可只查帧头两字节。
  * 示例 : if (SYS_FRAME_Verify(buf, n) == SYS_FRAME_OK) { 拆 cmd/data; } */
 uint8_t SYS_FRAME_Verify(const uint8_t *buf, uint16_t len);
+
+/* ---- 环境数据帧（CMD = 0x01）的组帧 / 拆包助手（可选）----
+ * 字段表与换算见区块 1;此处固化 12 字节大端拼装 / 拆解。参数后缀 _x100 /
+ *   _x10 为定点整数:线上不传 float（格式与字节序随编译器变）,由调用方先
+ *   换算,如 25.60℃ → 2560、60.30 %RH → 6030、1013.2 hPa → 10132。 */
+
+/* 组环境帧（拼 12 字节数据段后套帧）
+ * 返回 : 帧总字节数（= SYS_FRAME_ENV_LEN + SYS_FRAME_OVERHEAD = 20）;
+ *        0 = 参数非法（out 空 / cap 小于 20）
+ * 示例 : n = SYS_FRAME_BuildEnv(f, sizeof(f), 2560, 6030, 10132, 320, 15, 812); */
+uint16_t SYS_FRAME_BuildEnv(uint8_t *out, uint16_t cap,
+                            int16_t temp_x100, int16_t humi_x100, int16_t press_x10,
+                            uint16_t light, uint16_t tvoc, uint16_t mq135);
+
+/* 拆环境帧的数据段（喂 SYS_FRAME_Get 取到的 payload,不是整帧）
+ * 参数 : payload/len — 数据段及其长度（len >= 12 才有效）;
+ *        输出指针任一给 0 即跳过该项
+ * 返回 : SYS_FRAME_OK(0) 成功;SYS_FRAME_ERR_PARAM(5) 参数错（空指针/长度不足）
+ * 示例 : SYS_FRAME_UnpackEnv(data, n, &t, &h, &p, &lx, &tv, &mq);
+ *        // t/100.0f = ℃, p/10.0f = hPa */
+uint8_t SYS_FRAME_UnpackEnv(const uint8_t *payload, uint16_t len,
+                            int16_t *temp_x100, int16_t *humi_x100, int16_t *press_x10,
+                            uint16_t *light, uint16_t *tvoc, uint16_t *mq135);
 
 #endif /* __FWLIB_SYS_FRAME_H */

@@ -3,19 +3,12 @@
 #include "gpio_core.h"
 #include "delay.h"      /* 延时（delay_ms 等）独立文件 */
 
-/* ================================================================
- *  beep.c —— 【板载】蜂鸣器模块  实现文件
- * ================================================================
- *  只做"通断"电平控制，节拍靠软件延时组合；
- *  单引脚设计，引脚/极性配置全部集中在 beep.h。
- * ================================================================ */
+/* beep.c — 板载蜂鸣器实现 : 单引脚，只做通断电平控制，节拍由软件延时组合；
+ * 引脚与极性配置集中在 beep.h。 */
 
 
-/* ================================================================
- *            电平极性换算
- * ================================================================
- * 与 led.c 同一套思路：预处理阶段把"响/停"翻译成寄存器操作，
- * 运行时零开销；BEEP_On / BEEP_Off 共用这一个写入口。 */
+/* 电平极性换算 : 预处理阶段把响/停映射为寄存器操作，运行时零开销；
+ * BEEP_On / BEEP_Off 共用此写入口。 */
 #if BEEP_ACTIVE_LOW
     #define BEEP_ON_LEVEL   GPIO_ResetBits
     #define BEEP_OFF_LEVEL  GPIO_SetBits
@@ -24,7 +17,7 @@
     #define BEEP_OFF_LEVEL  GPIO_ResetBits
 #endif
 
-/* 内部辅助：按"语义"写电平（on 非 0 = 鸣响） */
+/* 内部辅助：按语义写电平，on 非 0 为鸣响 */
 static void beep_write(uint8_t on)
 {
     if (on) BEEP_ON_LEVEL (BEEP_PORT, BEEP_PIN);
@@ -32,11 +25,9 @@ static void beep_write(uint8_t on)
 }
 
 
-/* ================================================================
- *                    基础功能
- * ================================================================ */
-/* 初始化：配置为推挽输出(GPIO_OType_PP)后立即静音（GPIO_OutInit 自动开时钟）
- * 先配置、后写电平——避免上电瞬间的引脚不确定电平导致响一声 */
+/* ---- 基础功能 ---- */
+/* 初始化：推挽输出(GPIO_OType_PP)，配置后立即静音；GPIO_OutInit 自动开时钟。
+ * 必须先配置再写电平，否则上电瞬间引脚电平不确定会响一声。 */
 void BEEP_Init(void)
 {
     GPIO_OutInit(BEEP_PORT, BEEP_PIN);
@@ -48,17 +39,15 @@ void BEEP_Off   (void) { beep_write(0); }                        /* 静音（极
 void BEEP_Toggle(void) { GPIO_OutToggle(BEEP_PORT, BEEP_PIN); }  /* 翻转（与极性无关） */
 
 
-/* ================================================================
- *                    扩展功能
- * ================================================================ */
-/* 固定节拍版：响 100ms + 停 100ms，循环 times 次 */
+/* ---- 扩展功能 ---- */
+/* 固定节拍：响 BEEP_ON_MS_DEFAULT + 停 BEEP_OFF_MS_DEFAULT(默认各 100ms)，循环 times 次 */
 void BEEP_Beep(uint32_t times)
 {
-    BEEP_BeepEx(times, 100, 100);
+    BEEP_BeepEx(times, BEEP_ON_MS_DEFAULT, BEEP_OFF_MS_DEFAULT);
 }
 
-/* 自定义节拍版：参数先做防零修正，再按"响-停"节拍循环
- * 说明 : 节拍延时直接用 delay.h 的粗延时（精度要求不高） */
+/* 自定义节拍：on_ms/off_ms 传 0 会被修正为 1；节拍延时用 delay.h 粗延时，阻塞，
+ * 总耗时约为 times × (on_ms + off_ms) */
 void BEEP_BeepEx(uint32_t times, uint32_t on_ms, uint32_t off_ms)
 {
     if (on_ms  == 0) on_ms  = 1;
@@ -71,21 +60,17 @@ void BEEP_BeepEx(uint32_t times, uint32_t on_ms, uint32_t off_ms)
 }
 
 
-/* ================================================================
- *                    扩展功能（音效）
- * ================================================================
- * 全部基于 BEEP_On / BEEP_Off + 粗延时组合，阻塞式；
- * 结束后均回到静音状态。 */
+/* ---- 扩展功能（音效）：基于 BEEP_On/BEEP_Off + 粗延时，阻塞式，结束回到静音 ---- */
 
-/* 按键提示音：短促一声（50ms） */
+/* 按键提示音：短促一声（BEEP_KEY_SOUND_MS，默认 50ms） */
 void BEEP_KeySound(void)
 {
     BEEP_On();
-    delay_ms(50);
+    delay_ms(BEEP_KEY_SOUND_MS);
     BEEP_Off();
 }
 
-/* -------------------- SOS 内部节拍单元 -------------------- */
+/* SOS 内部节拍单元 */
 
 /* 点：响 1 单位 + 停 1 单位 */
 static void beep_sos_dot(void)
@@ -101,8 +86,8 @@ static void beep_sos_dash(void)
     BEEP_Off(); delay_ms(BEEP_SOS_UNIT_MS);
 }
 
-/* SOS 求救信号：三短 → 三长 → 三短，组间加长停顿便于分辨
- * （总时长 ≈ 单位时间 × 28，默认 100ms/单位 → 约 2.8 秒） */
+/* SOS 求救信号：三短 → 三长 → 三短，组间加长停顿。字母组间隔 2 单位，结束停顿 3 单位；
+ * 总时长 = 单位时间 × 28(BEEP_SOS_UNIT_MS 默认 100ms 时约 2.8s) */
 void BEEP_SOS(void)
 {
     /* S：三短 */
@@ -119,17 +104,18 @@ void BEEP_SOS(void)
 }
 
 
-/* ================================================================
- *        扩展功能：非阻塞节拍引擎（报警声不阻塞主循环）
- * ================================================================
- * 状态机 : 响 on_ms → 停 off_ms → … 直到 times 声数完自动静音 */
-static uint32_t beep_as_times;      /* 剩余声数 */
-static uint32_t beep_as_on;         /* 响 ms */
-static uint32_t beep_as_off;        /* 停 ms */
-static uint32_t beep_as_cnt;        /* 当前相位计时 */
-static uint8_t  beep_as_phase;      /* 1 = 响应处于"响"阶段 */
-static uint8_t  beep_as_active;     /* 1 = 引擎运行中 */
+/* ---- 非阻塞节拍引擎（报警声不阻塞主循环）----
+ * 状态机 : 响 on_ms → 停 off_ms → … 直到 times 声数完自动静音。
+ * 这组变量由任务侧(BEEP_AsyncStart/Stop)写、BEEP_Update 读，后者在 1ms 定时器
+ * 中断中调用，必须 volatile，否则编译器将变量缓存于寄存器后中断看不到新参数。 */
+static volatile uint32_t beep_as_times;      /* 剩余声数 */
+static volatile uint32_t beep_as_on;         /* 响 ms */
+static volatile uint32_t beep_as_off;        /* 停 ms */
+static volatile uint32_t beep_as_cnt;        /* 当前相位计时 */
+static volatile uint8_t  beep_as_phase;      /* 1 = 响应处于"响"阶段 */
+static volatile uint8_t  beep_as_active;     /* 1 = 引擎运行中 */
 
+/* 非阻塞启动：times/on_ms/off_ms 任一为 0 则直接返回、不启动引擎 */
 void BEEP_AsyncStart(uint32_t times, uint32_t on_ms, uint32_t off_ms)
 {
     if (times == 0U || on_ms == 0U || off_ms == 0U) return;

@@ -16,7 +16,7 @@
 #define configUSE_PREEMPTION                    1    /* 抢占式调度（核心机制） */
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 0    /* 通用选任务算法 */
 #define configUSE_TICKLESS_IDLE                 0    /* 不用低功耗节拍停摆 */
-/* ⚠ configCPU_CLOCK_HZ 与 sys_clock 的运行时切频无联动：
+/* configCPU_CLOCK_HZ 与 sys_clock 的运行时切频无联动：
  *    上 RTOS 后不要调用 SYS_CLK_Switch 切到低速档，否则节拍频率
  *    名义值不变、实际变慢（真要切频需同步改本值后重建） */
 #define configCPU_CLOCK_HZ                      (168000000UL)          /* 主频 */
@@ -57,18 +57,24 @@
 #define configASSERT(x) \
     if ((x) == 0) { taskDISABLE_INTERRUPTS(); for (;;); }
 
-/* ---------------- 中断优先级（与 NVIC 分组强相关！） ----------------
+/* ---------------- 中断优先级（与 NVIC 分组强相关） ----------------
  * Cortex-M 上"数值越小 = 优先级越高"。
  *    · configLIBRARY_LOWEST_INTERRUPT_PRIORITY(15)：
  *      内核/节拍所在的最低档（数值最大、优先级最低）；
  *    · configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY(5)：
  *      "能调用 FreeRTOS 接口的最高优先级"——
  *      凡是 ISR 里要调用 xxxFromISR 系列接口，其中断优先级
- *      数值必须 ≥ 5！否则会破坏内核临界区（configASSERT 会抓）。
- *  ⚠ 与库模块配合：sys_usart 等模块的 SYS_XXX_IRQ_PRE_PRIO=2，
- *    如果要在它们的中断回调里调用 FromISR 接口，请把对应
- *    优先级宏改成 ≥5；同时 NVIC 分组用 NVIC_PriorityGroup_4
- *    （见 sys_nvic.h，4 位全做抢占，共 16 档，FreeRTOS 推荐）。 */
+ *      数值必须 ≥ 5，否则会破坏内核临界区（configASSERT 会抓）。
+ *  与库模块配合：sys_usart / sys_tim / sys_exti / sys_rtc / sys_dma /
+ *    sys_can 等模块的 SYS_XXX_IRQ_PRE_PRIO 实际都配成 5，正好等于
+ *    configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY，所以可以直接在这些
+ *    ISR 里调用 xxxFromISR 接口，不需要改这些优先级宏。
+ *  NVIC 分组：必须用 NVIC_PriorityGroup_4（见 sys_nvic.h，4 位全做抢占，
+ *    共 16 档，FreeRTOS 推荐）。若改成 Group_2（2 位抢占 + 2 位子优先级），
+ *    PRE=5 会被截成 2 位变成 1，IPR=0x10 < BASEPRI(0x50)，所有 ISR 都会越过
+ *    内核的 syscall 上限，在 ISR 里调 FromISR 接口会破坏临界区，configASSERT
+ *    会抓。分组由 SYS_NVIC_Init() 设置，板1 在 main.c:989、板2 在 main.c:1581
+ *    调用，这两句不要删。 */
 #define configPRIO_BITS                         4    /* NVIC 优先级位数,即 CMSIS 宏 __NVIC_PRIO_BITS */
 #define configLIBRARY_LOWEST_INTERRUPT_PRIORITY       15
 #define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY  5

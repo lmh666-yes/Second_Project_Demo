@@ -21,7 +21,7 @@
 | 库 | ST 标准外设库（SPL）+ FreeRTOS（已挂入工程） |
 | 编译状态 | **0 Error / 0 Warning**（FreeRTOS 内核 7 个文件全部编译进去） |
 
-> ⚠ 与板1 的唯一实质区别：板2 是 **1MB Flash**，可擦写 `FLASH_Sector_0 ~ 11`。
+> 与板1 的唯一实质区别：板2 是 **1MB Flash**，可擦写 `FLASH_Sector_0 ~ 11`。
 > 参数区常放最后一个扇区 `FLASH_Sector_11`（如 `0x080E0000`）。
 > 库函数层面两板 100% 通用，代码可互换（只需改 Keil Device 与 Flash 扇区号）。
 
@@ -38,7 +38,7 @@
 | RS485 | 收发器 + **P6 排针**（含 485R / 485T 选择、PB10 / PB11） | 网表含 `485R` / `485T` |
 | CAN | 收发器 + **P8 排针**（B / A） | 网表含 `CAN_TX` / `CAN_RX` |
 | **以太网** | PHY + RJ45（**COMM1**） | 工程含 `sys_eth.c` + `stm32f4x7_eth.c` |
-| 无线模块接口 | **P11 排针**（含 TXD3 / RXD3 / PB10 / PB11） | ★ 可接 LoRa E22 |
+| 无线模块接口 | **P11 排针**（含 TXD3 / RXD3 / PB10 / PB11） | 可接 LoRa E22 |
 | USB HOST / Device | USB 座（USB1 / USB2） | — |
 | SD 卡 | Micro SD 卡座（TF1） | SDIO |
 | 触摸屏控制器 | XPT2046（SPI） | 与 LCD 同用 |
@@ -87,24 +87,24 @@
 
 | 项目需要 | 板2 是否具备 | 结论 |
 |---|---|---|
-| LoRa E22 接收（UART） | 有 **P11 排针**（TXD3/RXD3/PB10/PB11）和多个 UART 引出；工程已有 `sys_usart`（DMA+空闲中断） | ✅ 可接 |
-| **ESP8266 WiFi** | 有 WiFi 模块接口；工程**已有 `esp8266.c/.h`（20 个 API）** | ✅ 已有 |
-| **MQTT 客户端** | 工程**已有 `mqtt.c/.h`（14 个 API）** | ✅ 已有 |
-| 串口转发 Qt 上位机 | 板载 CH340G + P9；工程已有 `sys_usart` | ✅ 已有 |
-| 串口帧协议 | 工程**已有 `sys_frame.c/.h`**；CRC16-MODBUS 在 `modbus.c` | ✅ 已有 |
-| 看门狗心跳 | 工程**已有 `sys_wdg.c/.h`（含心跳版）** | ✅ 已有 |
-| 本地显示/调试 | LCD 接口、RGB 点阵、EEPROM | ✅ 可用 |
+| LoRa E22 接收（UART） | 有 **P11 排针**（TXD3/RXD3/PB10/PB11）和多个 UART 引出；工程已有 `sys_usart`（DMA+空闲中断） | 可接 |
+| **ESP8266 WiFi** | 有 WiFi 模块接口；工程**已有 `esp8266.c/.h`（20 个 API）** | 已有 |
+| **MQTT 客户端** | 工程**已有 `mqtt.c/.h`（14 个 API）** | 已有 |
+| 串口转发 Qt 上位机 | 板载 CH340G + P9；工程已有 `sys_usart` | 已有 |
+| 串口帧协议 | 工程**已有 `sys_frame.c/.h`**；CRC16-MODBUS 在 `modbus.c` | 已有 |
+| 看门狗心跳 | 工程**已有 `sys_wdg.c/.h`（含心跳版）** | 已有 |
+| 本地显示/调试 | LCD 接口、RGB 点阵、EEPROM | 可用 |
 
 > **结论：板2 作为网关的资源完全足够，且 ESP8266 / MQTT / 帧协议 / 看门狗四个关键驱动工程里都已经有了** ——
 > 板2 侧的主要工作是**写网关任务逻辑**（接收解析 → 双路转发），而不是从零写驱动。
 >
-> ⚠ **唯一硬缺口：LoRa E22 驱动两端都没有**（板1、板2 都要新增 `lora_e22.c/.h`）。
+> **唯一硬缺口：LoRa E22 驱动两端都没有**（板1、板2 都要新增 `lora_e22.c/.h`）。
 
 ---
 
 ## 4. 引脚接线表（待核对后定稿）
 
-> ⚠ **本节需你核对实物后填写。**
+> **本节需你核对实物后填写。**
 > `ZGT6.pdf` 里连接器的**引脚名是以矢量图形绘制的（不是文本对象）**，
 > 我用 PDF 文本层只能取到元件位号（如 `P1`、`P2`、`CN1`、`PAU10105`），
 > **取不到"第几脚 = 哪个 GPIO"**，只能人工对照原理图/实物确认。
@@ -130,8 +130,8 @@
 | 功能 | 外设 | 引脚 | 备注 |
 |---|---|---|---|
 | 调试串口 | USART1 | 待定 | 115200；板载 CH340G |
-| **LoRa E22 收发** | USART? | 待定 | ★ 优先用 P11（TXD3/RXD3）；与模块 TXD/RXD **交叉**接 |
-| **ESP8266 通信** | USART? | 待定 | ★ 与 ESP8266 的 TXD/RXD **交叉**接；注意 3.3V 独立供电 |
+| **LoRa E22 收发** | USART? | 待定 | 优先用 P11（TXD3/RXD3）；与模块 TXD/RXD **交叉**接 |
+| **ESP8266 通信** | USART? | 待定 | 与 ESP8266 的 TXD/RXD **交叉**接；注意 3.3V 独立供电 |
 | Qt 上位机串口 | USART2 | 待定 | 转发帧给 Qt |
 | 帧协议解析 | — | — | 用 `sys_frame` + `modbus` 的 CRC16 |
 | 喂狗 | IWDG | — | 用 `sys_wdg` 心跳版 |
@@ -149,7 +149,7 @@
 | ESP8266 | USART3 或 UART4/5 | 与 LoRa 错开；ESP8266 只跑 AT 指令，波特率 115200 |
 | Qt 上位机 | UART4 / UART5 或 USART6 | 数据量大时可用 DMA 发送 |
 
-> ⚠ 注意：**每个 USART 的 DMA 数据流/通道是固定映射的**，不能随便选。
+> 注意：**每个 USART 的 DMA 数据流/通道是固定映射的**，不能随便选。
 > 查速查工具的「DMA 请求映射表」：
 > `USART1_RX=DMA2_Stream5/通道4`、`USART2_RX=DMA1_Stream5/通道4`、
 > `USART3_RX=DMA1_Stream1/通道4`、`USART6_RX=DMA2_Stream1/通道5`。
@@ -162,19 +162,19 @@
 
 | 驱动 | 用途 | 与本项目关系 |
 |---|---|---|
-| **`esp8266.c/.h`** | WiFi AT 指令驱动（20 个 API：Init/TestAT/SetMode/JoinAP/ConnectTCP/SendData…） | ★★ 网关上云核心，**已有** |
-| **`mqtt.c/.h`** | MQTT 客户端（14 个 API：Connect/Publish/PublishInt/PublishFloat/PubllishStr/Ping/KeepAliveService…） | ★★ 巴法云上报，**已有** |
-| `sys_usart.c/.h` | 串口（DMA + 空闲中断） | ★ LoRa / ESP8266 / Qt 三路串口 |
-| `sys_frame.c/.h` | 串口帧协议 | ★ 20 字节帧收发 |
-| **`modbus.c/.h`** | 含 **CRC16-MODBUS** 实现 | ★★ 协议校验（三端复用同一实现） |
-| `sys_wdg.c/.h` | 看门狗（含心跳版） | ★ MonitorTask 喂狗 |
+| **`esp8266.c/.h`** | WiFi AT 指令驱动（20 个 API：Init/TestAT/SetMode/JoinAP/ConnectTCP/SendData…） | 网关上云核心，**已有** |
+| **`mqtt.c/.h`** | MQTT 客户端（14 个 API：Connect/Publish/PublishInt/PublishFloat/PubllishStr/Ping/KeepAliveService…） | 巴法云上报，**已有** |
+| `sys_usart.c/.h` | 串口（DMA + 空闲中断） | LoRa / ESP8266 / Qt 三路串口 |
+| `sys_frame.c/.h` | 串口帧协议 | 20 字节帧收发 |
+| **`modbus.c/.h`** | 含 **CRC16-MODBUS** 实现 | 协议校验（三端复用同一实现） |
+| `sys_wdg.c/.h` | 看门狗（含心跳版） | MonitorTask 喂狗 |
 | `sys_i2c.c/.h` | 通用 I2C HAL | 传感器/EEPROM |
 | `sys_adc.c/.h` / `sys_dac.c/.h` | ADC / DAC | 模拟量 |
 | `sys_can.c/.h` | CAN | 板载 CAN 接口 |
 | `sys_eth.c/.h` | 以太网 | 备用上行通道 |
 | `sys_rtc.c/.h` | RTC | 时间戳 |
 | `sys_flash.c/.h` / `w25qxx.c/.h` / `at24c02.c/.h` | 片内 Flash / SPI Flash / EEPROM | 参数与日志保存 |
-| `sys_filter.c/.h` / `kalman.c/.h` | 滑动滤波 / 卡尔曼 | ★ 数据滤波（ProcessTask） |
+| `sys_filter.c/.h` / `kalman.c/.h` | 滑动滤波 / 卡尔曼 | 数据滤波（ProcessTask） |
 | `sys_softimer.c/.h` | 软件定时器 | 周期任务 |
 | `sys_str.c/.h` | 字符串处理 | AT 指令拼接 |
 | `sys_fault.c/.h` | 硬件异常捕获 | 可靠性 |
@@ -184,7 +184,7 @@
 ## 6. 待办
 
 - [ ] 按实物/原理图补全第 4 节引脚表（尤其是 LoRa / ESP8266 / Qt 三路串口）
-- [ ] 新建驱动：`lora_e22.c/.h`（★ 两板共用，板1 也要）
+- [ ] 新建驱动：`lora_e22.c/.h`（两板共用，板1 也要）
 - [ ] 写网关任务：CommRxTask（收 LoRa → 信号量）→ ForwardTask（双路转发）
 - [ ] ESP8266 + MQTT 接巴法云联调（先用串口助手手动走通 AT 指令）
 - [ ] LoRa 点对点收发自测（板1 ↔ 板2）
