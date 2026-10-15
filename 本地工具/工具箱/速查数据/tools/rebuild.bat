@@ -112,14 +112,16 @@ if /i NOT "%~1"=="/nodb" (
 ) else (
   echo.
   echo ============================================================
-  echo  [7/8] mobile html + APK  —  跳过（/nodb）
+  echo  [7/8] mobile html + APK  --  skipped by /nodb
   echo ============================================================
 )
 
 echo.
 echo ============================================================
-echo  [8/8] sync check (网页版 ^<-> 手机版 ^<-> APK ^<-> dataset)
+echo  [8/8] sync check  web / mobile / APK / dataset
 echo ============================================================
+rem 上面这行别写成 ^<-> 那种带转义箭头的写法：cmd 会把 ^< 转义后剩下的 > 当成重定向，
+rem 直接报 "> was unexpected at this time" 整段中止（踩过）。echo 行保持 ASCII 最稳。
 rem 这一环治的是"漏跑一环不报错、只会静默用旧数据"的老毛病：
 rem 逐字节对账，任何一环的产物与源头不一致就直接 FAIL。
 rem /nodb 时 APK 本就没重打，用 --skip-apk 跳过那两包（其余照查）。
