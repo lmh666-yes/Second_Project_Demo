@@ -885,16 +885,29 @@ def main(argv):
         return selftest()
     quiet = False
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'RTOS检查报告.md')
+    bad = []
     i = 1
     while i < len(argv):
         if argv[i] == '--quiet':
             quiet = True
             i += 1
-        elif argv[i] == '--out' and i + 1 < len(argv):
+        elif argv[i] == '--out':
+            if i + 1 >= len(argv):
+                bad.append('--out 缺少值')
+                i += 1
+                continue
             out_path = os.path.abspath(argv[i + 1])
             i += 2
         else:
+            bad.append(argv[i])
             i += 1
+
+    # 参数写错要报错退出，不能静默忽略 —— 否则拼错开关会跑成一次全量真实扫描，
+    # 白白覆盖报告，还让人以为"检查过了"。
+    if bad:
+        print('未知参数：%s' % ' '.join(bad))
+        print('可用参数：--out <文件> | --quiet | --selftest')
+        return 2
 
     results = []
     for title, projrel in BOARDS:

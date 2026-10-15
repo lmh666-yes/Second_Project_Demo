@@ -14,11 +14,14 @@
 #include <QCloseEvent>
 #include <QColor>
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
+#include <QFormLayout>
 #include <QFrame>
+#include <QGroupBox>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -28,8 +31,10 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScreen>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QUrl>
 #include <QVBoxLayout>
 
 /* 工具箱根目录：从 exe 位置向上找同时含「程序」「检查」「shared」的目录。
@@ -82,33 +87,15 @@ ToolboxWindow::ToolboxWindow(QWidget *parent)
         "border-radius:8px;padding:8px;"));
     sidelay->addWidget(guide);
 
-    m_themeBtn = new QPushButton(side);
-    m_themeBtn->setText(QStringLiteral("主题：") + Theme::modeName());
-    m_themeBtn->setToolTip(QStringLiteral("深色 / 浅色互切，选择记在 _toolbox.ini"));
-    connect(m_themeBtn, &QPushButton::clicked, this, [this]() {
-        Theme::toggle();
-        m_themeBtn->setText(QStringLiteral("主题：") + Theme::modeName());
-    });
-    sidelay->addWidget(m_themeBtn);
-
-    QPushButton *helpBtn = new QPushButton(QStringLiteral("帮助 / 快捷键"), side);
-    connect(helpBtn, &QPushButton::clicked, this, [this]() {
-        QMessageBox::information(
-            this, QStringLiteral("帮助"),
-            QStringLiteral(
-                "<b>建议顺序</b><br>"
-                "0) STM32 速查：写代码时随手查函数 / 流程 / 引导（首次进页才装载数据）<br>"
-                "1) 项目起手助手：先想清要做什么<br>"
-                "2) RTOS 骨架生成：读配置 → 选场景 → 生成 .h/.c<br>"
-                "3) 写代码时随时点各项检查<br>"
-                "4) 全量检查：一键跑完五个命令行检查<br><br>"
-                "<b>快捷键</b><br>"
-                "Ctrl+R 运行当前工具　Ctrl+O 打开报告<br>"
-                "输出区查找框回车跳到下一处<br><br>"
-                "<b>主题</b><br>侧栏「主题」按钮切换深色 / 浅色，记在 _toolbox.ini。<br><br>"
-                "<b>跨工具联动</b><br>链路仿真页生成后点「发送到协议工作台」，可直接进解帧页。"));
-    });
-    sidelay->addWidget(helpBtn);
+    /* 侧栏只留「建议顺序 + 页面列表 + 设置」。
+       主题、默认选项、帮助这些个性化内容全部收进「设置」页——
+       以前侧栏挂着「主题」「帮助 / 快捷键」两个常驻按钮，既占地方，
+       也和"页面列表"混在一起，新用户不知道哪个是工具、哪个是偏好设置。 */
+    QLabel *hint = new QLabel(side);
+    hint->setWordWrap(true);
+    hint->setText(QStringLiteral("主题 / 默认选项 / 帮助 都在最下面的「设置」里。"));
+    hint->setStyleSheet(QStringLiteral("color:#8a8a8a;font-size:11px;padding:0 2px;"));
+    sidelay->addWidget(hint);
 
     m_list = new QListWidget(side);
     m_list->setFrameShape(QFrame::NoFrame);
@@ -146,6 +133,9 @@ ToolboxWindow::ToolboxWindow(QWidget *parent)
         {"工程体检总览", buildOverviewPage()},
         {"全量检查",     buildFullCheckPage()},
     };
+    const Item prefs[] = {
+        {"设置",         buildSettingsPage()},
+    };
 
     addHeader(QStringLiteral("查资料"));
     for (const Item &it : lookup) {
@@ -164,6 +154,11 @@ ToolboxWindow::ToolboxWindow(QWidget *parent)
     }
     addHeader(QStringLiteral("汇总"));
     for (const Item &it : wrap) {
+        m_list->addItem(QString::fromUtf8(it.name));
+        m_pages->addWidget(it.page);
+    }
+    addHeader(QStringLiteral("设置"));
+    for (const Item &it : prefs) {
         m_list->addItem(QString::fromUtf8(it.name));
         m_pages->addWidget(it.page);
     }
@@ -294,10 +289,12 @@ QWidget *ToolboxWindow::buildWorkbenchPage()
 QWidget *ToolboxWindow::buildLookupPage()
 {
     m_lookup = new MainWindow(this);
-    /* 本页的「🌗 主题」切的是全局主题，同步侧栏按钮文字 */
+    /* 本页的「🌗 主题」切的是全局主题，把设置页那个下拉同步过来 */
     connect(m_lookup, &MainWindow::themeToggled, this, [this]() {
-        if (m_themeBtn)
-            m_themeBtn->setText(QStringLiteral("主题：") + Theme::modeName());
+        if (m_setTheme) {
+            QSignalBlocker b(m_setTheme);
+            m_setTheme->setCurrentIndex(Theme::mode() == Theme::Dark ? 0 : 1);
+        }
     });
     return m_lookup;
 }
@@ -353,6 +350,7 @@ QWidget *ToolboxWindow::buildPinPage()
     board->addItems({QStringLiteral("全部"), QStringLiteral("板1"), QStringLiteral("板2")});
     QLineEdit *use = new QLineEdit(this);
     use->setPlaceholderText(QStringLiteral("模块前缀，如 LORA_E22,W25QXX（留空则不预检）"));
+    m_pinBoard = board;                 /* 设置页要能推值过来 */
 
     /* 选项记忆：下次打开还保持上次的选择 */
     Settings st;
@@ -411,6 +409,7 @@ QWidget *ToolboxWindow::buildEncodingPage()
     eol->setChecked(Settings().value(QStringLiteral("enc/eol"), false).toBool());
     connect(eol, &QCheckBox::toggled, this,
             [](bool on) { Settings().setValue(QStringLiteral("enc/eol"), on); });
+    m_encEol = eol;                     /* 设置页要能推值过来 */
     p->optionsLayout()->insertWidget(0, eol);
 
     p->setSteps({{QStringLiteral("编码守卫"),
@@ -443,6 +442,8 @@ QWidget *ToolboxWindow::buildLinkPage()
     Settings lst;
     scen->setCurrentIndex(lst.value(QStringLiteral("link/scen"), 0).toInt());
     cnt->setValue(lst.value(QStringLiteral("link/count"), 20).toInt());
+    m_linkScen = scen;                  /* 设置页要能推值过来 */
+    m_linkCount = cnt;
     connect(scen, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             [scen](int i) { Settings().setValue(QStringLiteral("link/scen"), i); });
     connect(cnt, QOverload<int>::of(&QSpinBox::valueChanged), this,
@@ -517,4 +518,181 @@ QWidget *ToolboxWindow::buildFullCheckPage()
     p->setSteps(steps);
     m_warnTargets.append(p);
     return p;
+}
+
+/* =====================================================================
+ *  设置页
+ *  ---------------------------------------------------------------------
+ *  把原先散在各处的个性化选项收拢到一处（侧栏不再挂「主题」「帮助」两个常驻按钮）。
+ *
+ *  关键约定：这里的控件与各页自己的选项控件读写**同一份** `_toolbox.ini` 键，不做第二套配置。
+ *    - 在设置里改 → 写键 + applyPrefsToPages() 立刻推给对应页，不用重启；
+ *    - 在页面上改 → 打开设置页时从 Settings 重读，显示的就是新值。
+ *  这样"默认值不变"是自然成立的：默认仍取自同一批键，只是多了个集中编辑的地方。
+ * ===================================================================== */
+QWidget *ToolboxWindow::buildSettingsPage()
+{
+    QWidget *w = new QWidget;
+    QVBoxLayout *lay = new QVBoxLayout(w);
+    lay->setContentsMargins(18, 16, 18, 16);
+    lay->setSpacing(12);
+
+    QLabel *title = new QLabel(QStringLiteral("设置"));
+    QFont tf = title->font();
+    tf.setPointSize(tf.pointSize() + 4);
+    tf.setBold(true);
+    title->setFont(tf);
+    lay->addWidget(title);
+
+    QLabel *sub = new QLabel(QStringLiteral(
+        "这里就是各页里那几项，改完立刻生效，并记在 _toolbox.ini（换机器拷走工具箱目录会一起带走）。"));
+    sub->setWordWrap(true);
+    sub->setStyleSheet(QStringLiteral("color:#8a8a8a;"));
+    lay->addWidget(sub);
+
+    Settings st;
+
+    /* ---- 外观 ---- */
+    QGroupBox *g1 = new QGroupBox(QStringLiteral("外观"));
+    QFormLayout *f1 = new QFormLayout(g1);
+    m_setTheme = new QComboBox;
+    m_setTheme->addItems({QStringLiteral("深色"), QStringLiteral("浅色")});
+    m_setTheme->setCurrentIndex(Theme::mode() == Theme::Dark ? 0 : 1);
+    connect(m_setTheme, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [](int i) {
+        Theme::setMode(i == 0 ? Theme::Dark : Theme::Light);
+    });
+    f1->addRow(QStringLiteral("主题"), m_setTheme);
+    lay->addWidget(g1);
+
+    /* ---- 默认选项（与各页共享同一批键） ---- */
+    QGroupBox *g2 = new QGroupBox(QStringLiteral("默认选项"));
+    QFormLayout *f2 = new QFormLayout(g2);
+
+    m_setPinBoard = new QComboBox;
+    m_setPinBoard->addItems({QStringLiteral("全部"), QStringLiteral("板1"), QStringLiteral("板2")});
+    m_setPinBoard->setCurrentIndex(st.value(QStringLiteral("pin/board"), 0).toInt());
+    connect(m_setPinBoard, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int i) {
+        Settings().setValue(QStringLiteral("pin/board"), i);
+        applyPrefsToPages();
+    });
+    f2->addRow(QStringLiteral("引脚规划 · 默认板卡"), m_setPinBoard);
+
+    m_setLinkScen = new QComboBox;
+    m_setLinkScen->addItems({QStringLiteral("normal"), QStringLiteral("lossy"),
+                             QStringLiteral("noise"), QStringLiteral("replay")});
+    m_setLinkScen->setCurrentIndex(st.value(QStringLiteral("link/scen"), 0).toInt());
+    connect(m_setLinkScen, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int i) {
+        Settings().setValue(QStringLiteral("link/scen"), i);
+        applyPrefsToPages();
+    });
+    f2->addRow(QStringLiteral("链路仿真 · 默认场景"), m_setLinkScen);
+
+    m_setLinkCnt = new QSpinBox;
+    m_setLinkCnt->setRange(1, 1000);
+    m_setLinkCnt->setValue(st.value(QStringLiteral("link/count"), 20).toInt());
+    connect(m_setLinkCnt, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int v) {
+        Settings().setValue(QStringLiteral("link/count"), v);
+        applyPrefsToPages();
+    });
+    f2->addRow(QStringLiteral("链路仿真 · 默认帧数"), m_setLinkCnt);
+
+    m_setEncEol = new QCheckBox(QStringLiteral("检查换行（按 git 索引）"));
+    m_setEncEol->setChecked(st.value(QStringLiteral("enc/eol"), false).toBool());
+    connect(m_setEncEol, &QCheckBox::toggled, this, [this](bool on) {
+        Settings().setValue(QStringLiteral("enc/eol"), on);
+        applyPrefsToPages();
+    });
+    f2->addRow(QStringLiteral("编码守卫 · 默认项"), m_setEncEol);
+
+    lay->addWidget(g2);
+
+    /* ---- 状态文件 ---- */
+    QGroupBox *g3 = new QGroupBox(QStringLiteral("状态文件"));
+    QVBoxLayout *v3 = new QVBoxLayout(g3);
+    QLabel *pth = new QLabel(QStringLiteral("界面状态（主题、默认选项、窗口位置）记在这个文件里：<br><code>%1</code>")
+                                 .arg(Settings().filePath().toHtmlEscaped()));
+    pth->setWordWrap(true);
+    pth->setTextFormat(Qt::RichText);
+    v3->addWidget(pth);
+
+    QHBoxLayout *b3 = new QHBoxLayout;
+    QPushButton *openDir = new QPushButton(QStringLiteral("打开所在文件夹"));
+    QPushButton *reset   = new QPushButton(QStringLiteral("恢复默认选项"));
+    b3->addWidget(openDir);
+    b3->addWidget(reset);
+    b3->addStretch(1);
+    v3->addLayout(b3);
+
+    connect(openDir, &QPushButton::clicked, this, [this]() {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(Settings().filePath()).absolutePath()));
+    });
+    connect(reset, &QPushButton::clicked, this, [this]() {
+        if (QMessageBox::question(this, QStringLiteral("恢复默认"),
+                QStringLiteral("把主题与各项默认选项恢复为初始值？\n（只动这几项，不影响窗口位置与速查的收藏/进度）"))
+            != QMessageBox::Yes)
+            return;
+        Settings s;
+        s.setValue(QStringLiteral("pin/board"), 0);
+        s.setValue(QStringLiteral("link/scen"), 0);
+        s.setValue(QStringLiteral("link/count"), 20);
+        s.setValue(QStringLiteral("enc/eol"), false);
+        Theme::setMode(Theme::Dark);
+        /* 控件回到默认值 */
+        QSignalBlocker b1(m_setTheme), b2(m_setPinBoard), b3(m_setLinkScen),
+                      b4(m_setLinkCnt), b5(m_setEncEol);
+        m_setTheme->setCurrentIndex(0);
+        m_setPinBoard->setCurrentIndex(0);
+        m_setLinkScen->setCurrentIndex(0);
+        m_setLinkCnt->setValue(20);
+        m_setEncEol->setChecked(false);
+        applyPrefsToPages();
+        QMessageBox::information(this, QStringLiteral("恢复默认"), QStringLiteral("已恢复。"));
+    });
+    lay->addWidget(g3);
+
+    /* ---- 帮助 / 快捷键 ---- */
+    QGroupBox *g4 = new QGroupBox(QStringLiteral("帮助 / 快捷键"));
+    QVBoxLayout *v4 = new QVBoxLayout(g4);
+    QLabel *help = new QLabel(QStringLiteral(
+        "<b>建议顺序</b><br>"
+        "0) STM32 速查：写代码时随手查函数 / 流程 / 引导（首次进页才装载数据）<br>"
+        "1) 项目起手助手：先想清要做什么<br>"
+        "2) RTOS 骨架生成：读配置 → 选场景 → 生成 .h/.c<br>"
+        "3) 写代码时随时点各项检查<br>"
+        "4) 全量检查：一键跑完五个命令行检查<br><br>"
+        "<b>快捷键</b><br>"
+        "Ctrl+R 运行当前工具　Ctrl+O 打开报告<br>"
+        "输出区查找框回车跳到下一处<br><br>"
+        "<b>跨工具联动</b><br>"
+        "链路仿真页生成后点「发送到协议工作台」，可直接进解帧页。"));
+    help->setWordWrap(true);
+    help->setTextFormat(Qt::RichText);
+    v4->addWidget(help);
+    lay->addWidget(g4);
+
+    lay->addStretch(1);
+    return w;
+}
+
+/* 设置页改完立刻推给各页。挡信号：这些控件自己也连着"写回 Settings"，
+   不挡会形成 设置→页→Settings→… 的回环。 */
+void ToolboxWindow::applyPrefsToPages()
+{
+    Settings st;
+    if (m_pinBoard) {
+        QSignalBlocker b(m_pinBoard);
+        m_pinBoard->setCurrentIndex(st.value(QStringLiteral("pin/board"), 0).toInt());
+    }
+    if (m_linkScen) {
+        QSignalBlocker b(m_linkScen);
+        m_linkScen->setCurrentIndex(st.value(QStringLiteral("link/scen"), 0).toInt());
+    }
+    if (m_linkCount) {
+        QSignalBlocker b(m_linkCount);
+        m_linkCount->setValue(st.value(QStringLiteral("link/count"), 20).toInt());
+    }
+    if (m_encEol) {
+        QSignalBlocker b(m_encEol);
+        m_encEol->setChecked(st.value(QStringLiteral("enc/eol"), false).toBool());
+    }
 }

@@ -15,6 +15,7 @@ class QListWidget;
 class QTextBrowser;
 class QLabel;
 class QPushButton;
+class QTimer;
 class QUrl;
 
 class MainWindow : public QMainWindow
@@ -67,6 +68,7 @@ private:
 
     QLineEdit    *m_search = nullptr;
     QComboBox    *m_module = nullptr;
+    QTimer       *m_searchTimer = nullptr;   /* 边打字边出结果（防抖，避免每键都全量重排） */
     QPushButton  *m_secBtn[3] = { nullptr, nullptr, nullptr };
     QPushButton  *m_btnFav = nullptr;
     QPushButton  *m_btnRecent = nullptr;

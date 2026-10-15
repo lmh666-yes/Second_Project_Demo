@@ -1,7 +1,7 @@
 @echo off
-chcp 65001 >nul
-rem ä¸‰ç«¯æ‰‹æœºç‰ˆ APK å…¨é‡é‡å»ºï¼ˆcleanï¼Œé˜²å¢žé‡æž„å»ºç©ºæ´žï¼‰
-rem ä½ç½®ï¼šé¢è¯•åˆ·é¢˜\å·¥å…·\build_all_apks.batï¼ˆæŒ‰è„šæœ¬ä½ç½®ç›¸å¯¹å®šä½ï¼Œä»“åº“æ•´ä½“æ¬èµ°ä¹Ÿèƒ½ç”¨ï¼‰
+chcp 936 >nul
+rem Èý¶ËÊÖ»ú°æ APK È«Á¿ÖØ½¨£¨clean£¬·ÀÔöÁ¿¹¹½¨¿Õ¶´£©
+rem Î»ÖÃ£ºÃæÊÔË¢Ìâ\¹¤¾ß\build_all_apks.bat£¨°´½Å±¾Î»ÖÃÏà¶Ô¶¨Î»£¬²Ö¿âÕûÌå°á×ßÒ²ÄÜÓÃ£©
 setlocal EnableExtensions
 set "JAVA_HOME=D:\dev-tools\jdk-17.0.20.1+1"
 set "ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk"
@@ -10,28 +10,28 @@ set "ROOT=%~dp0.."
 set "DONE=D:\dev-tools\apk_build_status.txt"
 echo BEGIN %date% %time% > "%DONE%"
 
-rem ---- 1) å®¢è§‚é¢˜ ----
-echo [1/3] å®¢è§‚é¢˜ ...
-cd /d "%ROOT%\é¢è¯•é¢˜æ‰‹æœºç‰ˆ-å®¢è§‚é¢˜\android"
+rem ---- 1) ¿Í¹ÛÌâ ----
+echo [1/3] ¿Í¹ÛÌâ ...
+cd /d "%ROOT%\ÃæÊÔÌâÊÖ»ú°æ-¿Í¹ÛÌâ\android"
 call gradlew.bat clean assembleDebug --console=plain > ..\apk_build_obj.log 2>&1
 if errorlevel 1 ( echo OBJ-FAIL >> "%DONE%" & goto :eof )
-copy /y "app\build\outputs\apk\debug\app-debug.apk" "..\é¢è¯•åˆ·é¢˜-å®¢è§‚é¢˜.apk" >nul
+copy /y "app\build\outputs\apk\debug\app-debug.apk" "..\ÃæÊÔË¢Ìâ-¿Í¹ÛÌâ.apk" >nul
 echo OBJ-OK >> "%DONE%"
 
-rem ---- 2) ä¸»è§‚é¢˜ ----
-echo [2/3] ä¸»è§‚é¢˜ ...
-cd /d "%ROOT%\é¢è¯•é¢˜æ‰‹æœºç‰ˆ-ä¸»è§‚é¢˜\android"
+rem ---- 2) Ö÷¹ÛÌâ ----
+echo [2/3] Ö÷¹ÛÌâ ...
+cd /d "%ROOT%\ÃæÊÔÌâÊÖ»ú°æ-Ö÷¹ÛÌâ\android"
 call gradlew.bat clean assembleDebug --console=plain > ..\apk_build_subj.log 2>&1
 if errorlevel 1 ( echo SUBJ-FAIL >> "%DONE%" & goto :eof )
-copy /y "app\build\outputs\apk\debug\app-debug.apk" "..\é¢è¯•åˆ·é¢˜-ä¸»è§‚é¢˜.apk" >nul
+copy /y "app\build\outputs\apk\debug\app-debug.apk" "..\ÃæÊÔË¢Ìâ-Ö÷¹ÛÌâ.apk" >nul
 echo SUBJ-OK >> "%DONE%"
 
-rem ---- 3) å¤§é¢˜ ----
-echo [3/3] å¤§é¢˜ ...
-cd /d "%ROOT%\é¢è¯•é¢˜æ‰‹æœºç‰ˆ-å¤§é¢˜\android"
+rem ---- 3) ´óÌâ ----
+echo [3/3] ´óÌâ ...
+cd /d "%ROOT%\ÃæÊÔÌâÊÖ»ú°æ-´óÌâ\android"
 call gradlew.bat clean assembleDebug --console=plain > ..\apk_build_bigq.log 2>&1
 if errorlevel 1 ( echo BIGQ-FAIL >> "%DONE%" & goto :eof )
-copy /y "app\build\outputs\apk\debug\app-debug.apk" "..\é¢è¯•åˆ·é¢˜-å¤§é¢˜.apk" >nul
+copy /y "app\build\outputs\apk\debug\app-debug.apk" "..\ÃæÊÔË¢Ìâ-´óÌâ.apk" >nul
 echo BIGQ-OK >> "%DONE%"
 
 echo ALL-DONE >> "%DONE%"

@@ -12,8 +12,8 @@
 [ref] 时钟树 | 68 | 时钟树与常用频率配置表（F407） | 时钟树与常用频率配置表（F407） / RCC_MCO1Config / RCC_AHB1PeriphClockCmd / RCC_AHB2PeriphClockCmd / RCC_AHB3PeriphClockCmd
 [ref] 复用功能 | 7 | 复用功能表（GPIO_AF 编号） | 复用功能表（GPIO_AF 编号） / SYS_TIM_OcInit / GPIO_PinAFConfig / 结构体成员速查表（SPL Init 结构体逐字段） / GPIO_InitTypeDef
 [ref] GPIO模式 | 13 | GPIO_Init | GPIO_Init / GPIO_InitTypeDef / GPIO_PinAFConfig / SYS_TIM_OcInit / 结构体成员速查表（SPL Init 结构体逐字段）
-[ref] 结构体 | 175 | 结构体成员速查表（SPL Init 结构体逐字段） | 结构体成员速查表（SPL Init 结构体逐字段） / GPIO_StructInit / USART_StructInit / TIM_TimeBaseStructInit / TIM_OCStructInit
-[ref] typedef | 149 | GPIO_InitTypeDef | GPIO_InitTypeDef / NVIC_InitTypeDef / EXTI_InitTypeDef / USART_InitTypeDef / I2C_InitTypeDef
+[ref] 结构体 | 181 | 结构体成员速查表（SPL Init 结构体逐字段） | 结构体成员速查表（SPL Init 结构体逐字段） / GPIO_StructInit / USART_StructInit / TIM_TimeBaseStructInit / TIM_OCStructInit
+[ref] typedef | 150 | FreeRTOS 基础类型一览（typedef 都在这里） | FreeRTOS 基础类型一览（typedef 都在这里） / GPIO_InitTypeDef / NVIC_InitTypeDef / EXTI_InitTypeDef / USART_InitTypeDef
 [ref] 时钟使能 | 139 | 时钟使能表（RCC 外设对应） | 时钟使能表（RCC 外设对应） / 时钟树与常用频率配置表（F407） / RTC 唤醒时钟分频表（WakeUp Timer） / RCC_AHB3PeriphClockLPModeCmd / RCC_AHB1PeriphClockCmd
 [ref] 定时器 PWM | 24 | 定时器通道映射表（TIM 通道 ↔ 引脚） | 定时器通道映射表（TIM 通道 ↔ 引脚） / TIM_CtrlPWMOutputs / TIM_PWMIConfig / TIM_TimeBaseInit / TIM_OC1PreloadConfig
 [ref] ADC 采集 | 63 | MQ-135 空气质量传感器（模拟输出 · ADC 采集） | MQ-135 空气质量传感器（模拟输出 · ADC 采集） / 光敏电阻 + ADC 光照（与 BH1750 对照） / ADC_DMACmd / ADC_Init / ADC_CommonInit

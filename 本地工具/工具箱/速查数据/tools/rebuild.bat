@@ -1,5 +1,5 @@
 @echo off
-chcp 65001 >nul
+chcp 936 >nul
 title Rebuild - STM32 Lookup (whole chain)
 setlocal EnableExtensions
 
@@ -17,35 +17,35 @@ rem    1/8  data checks      check_std_lib_data.py + check_quality.py
 rem    2/8  web regression   _build_regress.js (runs the real page engine)
 rem    3/8  dataset export   export_json.js -> data\dataset.json
 rem    4/8  search baseline  export_json.js --baseline -> data\search_baseline.txt
-rem    5/8  toolbox build    python å·¥å…·ç®±\æž„å»º.py (æ¡Œé¢é€ŸæŸ¥å·²å¹¶å…¥åµŒå…¥å¼å·¥å…·ç®±)
+rem    5/8  toolbox build    python ¹¤¾ßÏä\¹¹½¨.py (×ÀÃæËÙ²éÒÑ²¢ÈëÇ¶ÈëÊ½¹¤¾ßÏä)
 rem    6/8  toolbox selftest Toolbox.exe --selftest (must print 0 failures)
-rem    7/8  mobile + APK     ..\..\..\æ ‡å‡†åº“é€ŸæŸ¥æ‰‹æœºç‰ˆ\æž„å»ºAPK.bat /auto
-rem    8/8  sync check       check_sync.pyï¼ˆç½‘é¡µç‰ˆ â†” æ‰‹æœºç‰ˆ â†” APK â†” dataset é€å­—èŠ‚å¯¹è´¦ï¼‰
+rem    7/8  mobile + APK     ..\..\..\±ê×¼¿âËÙ²éÊÖ»ú°æ\¹¹½¨APK.bat /auto
+rem    8/8  sync check       check_sync.py£¨ÍøÒ³°æ <-> ÊÖ»ú°æ <-> APK <-> dataset Öð×Ö½Ú¶ÔÕË£©
 rem
 rem  Usage:  rebuild.bat            (full chain)
-rem          rebuild.bat /nodb      (skip building the APK; 8/8 ä»è·‘ï¼Œä½†è·³è¿‡ APK ä¸¤åŒ…)
+rem          rebuild.bat /nodb      (skip building the APK; 8/8 ÈÔÅÜ£¬µ«Ìø¹ý APK Á½°ü)
 rem ============================================================
 
 set "HERE=%~dp0"
-rem æœ¬è„šæœ¬åœ¨ å·¥å…·ç®±\é€ŸæŸ¥æ•°æ®\tools\ ä¸‹ï¼ˆ2026-10-15 ä»Ž æœ¬åœ°å·¥å…·\STM32é€ŸæŸ¥\tools\ æ¬è¿›æ¥ï¼‰
+rem ±¾½Å±¾ÔÚ ¹¤¾ßÏä\ËÙ²éÊý¾Ý\tools\ ÏÂ£¨2026-10-15 ´Ó ±¾µØ¹¤¾ß\STM32ËÙ²é\tools\ °á½øÀ´£©
 set "TOOLBOX=%HERE%..\.."
-set "STD=%HERE%..\..\..\æ ‡å‡†åº“é€ŸæŸ¥"
-set "MOBILE=%HERE%..\..\..\æ ‡å‡†åº“é€ŸæŸ¥æ‰‹æœºç‰ˆ"
-set "TBOXEXE=%TOOLBOX%\ç¨‹åº\åµŒå…¥å¼å·¥å…·ç®±\build\release\Toolbox.exe"
-rem ä¸åœ¨è¿™é‡Œå†™æ­» Qt / MinGW è·¯å¾„ï¼šç¼–å·¥å…·ç®±é‚£ä¸€æ­¥äº¤ç»™ å·¥å…·ç®±\æž„å»º.pyï¼ˆå®ƒè‡ªå·±æŽ¢æµ‹å·¥å…·é“¾ï¼‰ã€‚
-rem node / python èµ°ç³»ç»Ÿ PATHã€‚
+set "STD=%HERE%..\..\..\±ê×¼¿âËÙ²é"
+set "MOBILE=%HERE%..\..\..\±ê×¼¿âËÙ²éÊÖ»ú°æ"
+set "TBOXEXE=%TOOLBOX%\³ÌÐò\Ç¶ÈëÊ½¹¤¾ßÏä\build\release\Toolbox.exe"
+rem ²»ÔÚÕâÀïÐ´ËÀ Qt / MinGW Â·¾¶£º±à¹¤¾ßÏäÄÇÒ»²½½»¸ø ¹¤¾ßÏä\¹¹½¨.py£¨Ëü×Ô¼ºÌ½²â¹¤¾ßÁ´£©¡£
+rem node / python ×ßÏµÍ³ PATH¡£
 
 echo ============================================================
 echo  [1/8] data checks (python)
 echo ============================================================
 python "%STD%\check_std_lib_data.py"
 if errorlevel 1 (
-  echo     FAILED: æœ‰éœ€è¦äººå·¥ç¡®è®¤çš„æ ‡è¯†ç¬¦ï¼Œå…ˆçœ‹ä¸Šé¢çš„ [å¹½çµ] åˆ—è¡¨ã€‚
+  echo     FAILED: ÓÐÐèÒªÈË¹¤È·ÈÏµÄ±êÊ¶·û£¬ÏÈ¿´ÉÏÃæµÄ [ÓÄÁé] ÁÐ±í¡£
   exit /b 1
 )
 python "%STD%\check_quality.py"
 if errorlevel 1 (
-  echo     FAILED: å†…å®¹è´¨é‡è‡ªæ£€ï¼ˆQ1~Q9ï¼‰æœ‰é—®é¢˜ï¼Œçœ‹ä¸Šé¢çš„æ˜Žç»†ã€‚
+  echo     FAILED: ÄÚÈÝÖÊÁ¿×Ô¼ì£¨Q1~Q9£©ÓÐÎÊÌâ£¬¿´ÉÏÃæµÄÃ÷Ï¸¡£
   exit /b 1
 )
 
@@ -55,7 +55,7 @@ echo  [2/8] web engine regression
 echo ============================================================
 node "%STD%\_build_regress.js"
 if errorlevel 1 (
-  echo     FAILED: ç½‘é¡µå¼•æ“Žå›žå½’æ²¡è¿‡ï¼ˆæ¿å— / æ¸²æŸ“ / æŽ’åºï¼‰ã€‚
+  echo     FAILED: ÍøÒ³ÒýÇæ»Ø¹éÃ»¹ý£¨°å¿é / äÖÈ¾ / ÅÅÐò£©¡£
   exit /b 1
 )
 
@@ -75,24 +75,24 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo ============================================================
-echo  [5/8] toolbox build (åµŒå…¥å¼å·¥å…·ç®±; æ¡Œé¢é€ŸæŸ¥å·²å¹¶å…¥å…¶ä¸­)
+echo  [5/8] toolbox build (Ç¶ÈëÊ½¹¤¾ßÏä; ×ÀÃæËÙ²éÒÑ²¢ÈëÆäÖÐ)
 echo ============================================================
-rem æž„å»ºè„šæœ¬å†…éƒ¨è‡ªå·±ä¼šé‡è·‘ qmakeï¼ˆæ–°å¢žå¤´æ–‡ä»¶åŽä¸é‡è·‘ä¼šé™é»˜æ¼ç¼–ï¼Œè¸©è¿‡ï¼‰
-python "%TOOLBOX%\æž„å»º.py"
+rem ¹¹½¨½Å±¾ÄÚ²¿×Ô¼º»áÖØÅÜ qmake£¨ÐÂÔöÍ·ÎÄ¼þºó²»ÖØÅÜ»á¾²Ä¬Â©±à£¬²È¹ý£©
+python "%TOOLBOX%\¹¹½¨.py"
 if errorlevel 1 (
-  echo     FAILED: å·¥å…·ç®±æž„å»ºå¤±è´¥ã€‚
+  echo     FAILED: ¹¤¾ßÏä¹¹½¨Ê§°Ü¡£
   exit /b 1
 )
 
 echo.
 echo ============================================================
-echo  [6/8] toolbox selftest (å« STM32 é€ŸæŸ¥çš„æ•°æ®/æœç´¢åŸºçº¿æ–­è¨€)
+echo  [6/8] toolbox selftest (º¬ STM32 ËÙ²éµÄÊý¾Ý/ËÑË÷»ùÏß¶ÏÑÔ)
 echo ============================================================
-rem å…³é”®ï¼šä¸ç”¨ç®¡é“ + findstrï¼ˆä¸­æ–‡åœ¨ GBK æŽ§åˆ¶å°ä¸‹åŒ¹é…ä¸ä¸Šï¼Œä¼šå‡æŠ¥æˆåŠŸï¼‰
-rem       ç›´æŽ¥è·‘ï¼Œé  exe è‡ªå·±çš„é€€å‡ºç åˆ¤æ–­ã€‚
+rem ¹Ø¼ü£º²»ÓÃ¹ÜµÀ + findstr£¨ÖÐÎÄÔÚ GBK ¿ØÖÆÌ¨ÏÂÆ¥Åä²»ÉÏ£¬»á¼Ù±¨³É¹¦£©
+rem       Ö±½ÓÅÜ£¬¿¿ exe ×Ô¼ºµÄÍË³öÂëÅÐ¶Ï¡£
 "%TBOXEXE%" --selftest
 if errorlevel 1 (
-  echo     FAILED: å·¥å…·ç®±è‡ªæ£€æœ‰ FAILï¼ˆç»†èŠ‚çœ‹ä¸Šé¢å‡ è¡Œï¼‰ã€‚
+  echo     FAILED: ¹¤¾ßÏä×Ô¼ìÓÐ FAIL£¨Ï¸½Ú¿´ÉÏÃæ¼¸ÐÐ£©¡£
   exit /b 1
 )
 
@@ -104,9 +104,9 @@ if /i NOT "%~1"=="/nodb" (
   echo ============================================================
   echo  [7/8] mobile html + APK
   echo ============================================================
-  call "%MOBILE%\æž„å»ºAPK.bat" /auto
+  call "%MOBILE%\¹¹½¨APK.bat" /auto
   if errorlevel 1 (
-    echo     FAILED: APK æž„å»ºå¤±è´¥ã€‚
+    echo     FAILED: APK ¹¹½¨Ê§°Ü¡£
     exit /b 1
   )
 ) else (
@@ -120,14 +120,14 @@ echo.
 echo ============================================================
 echo  [8/8] sync check  web / mobile / APK / dataset
 echo ============================================================
-rem ä¸Šé¢è¿™è¡Œåˆ«å†™æˆ ^<-> é‚£ç§å¸¦è½¬ä¹‰ç®­å¤´çš„å†™æ³•ï¼šcmd ä¼šæŠŠ ^< è½¬ä¹‰åŽå‰©ä¸‹çš„ > å½“æˆé‡å®šå‘ï¼Œ
-rem ç›´æŽ¥æŠ¥ "> was unexpected at this time" æ•´æ®µä¸­æ­¢ï¼ˆè¸©è¿‡ï¼‰ã€‚echo è¡Œä¿æŒ ASCII æœ€ç¨³ã€‚
-rem è¿™ä¸€çŽ¯æ²»çš„æ˜¯"æ¼è·‘ä¸€çŽ¯ä¸æŠ¥é”™ã€åªä¼šé™é»˜ç”¨æ—§æ•°æ®"çš„è€æ¯›ç—…ï¼š
-rem é€å­—èŠ‚å¯¹è´¦ï¼Œä»»ä½•ä¸€çŽ¯çš„äº§ç‰©ä¸Žæºå¤´ä¸ä¸€è‡´å°±ç›´æŽ¥ FAILã€‚
-rem /nodb æ—¶ APK æœ¬å°±æ²¡é‡æ‰“ï¼Œç”¨ --skip-apk è·³è¿‡é‚£ä¸¤åŒ…ï¼ˆå…¶ä½™ç…§æŸ¥ï¼‰ã€‚
+rem ÉÏÃæÕâÐÐ±ðÐ´³É ^<-> ÄÇÖÖ´ø×ªÒå¼ýÍ·µÄÐ´·¨£ºcmd »á°Ñ ^< ×ªÒåºóÊ£ÏÂµÄ > µ±³ÉÖØ¶¨Ïò£¬
+rem Ö±½Ó±¨ "> was unexpected at this time" Õû¶ÎÖÐÖ¹£¨²È¹ý£©¡£echo ÐÐ±£³Ö ASCII ×îÎÈ¡£
+rem ÕâÒ»»·ÖÎµÄÊÇ"Â©ÅÜÒ»»·²»±¨´í¡¢Ö»»á¾²Ä¬ÓÃ¾ÉÊý¾Ý"µÄÀÏÃ«²¡£º
+rem Öð×Ö½Ú¶ÔÕË£¬ÈÎºÎÒ»»·µÄ²úÎïÓëÔ´Í·²»Ò»ÖÂ¾ÍÖ±½Ó FAIL¡£
+rem /nodb Ê± APK ±¾¾ÍÃ»ÖØ´ò£¬ÓÃ --skip-apk Ìø¹ýÄÇÁ½°ü£¨ÆäÓàÕÕ²é£©¡£
 python "%HERE%check_sync.py" %SYNCARG%
 if errorlevel 1 (
-  echo     FAILED: æœ‰ä¸åŒæ­¥é¡¹ï¼ˆç»†èŠ‚çœ‹ä¸Šé¢å‡ è¡Œ FAILï¼‰ã€‚
+  echo     FAILED: ÓÐ²»Í¬²½Ïî£¨Ï¸½Ú¿´ÉÏÃæ¼¸ÐÐ FAIL£©¡£
   exit /b 1
 )
 

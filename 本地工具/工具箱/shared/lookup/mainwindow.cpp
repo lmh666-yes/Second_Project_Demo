@@ -22,6 +22,7 @@
 #include <QStatusBar>
 #include <QTextBrowser>
 #include <QTextDocument>
+#include <QTimer>
 #include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -134,6 +135,14 @@ void MainWindow::buildUi()
         "中文 / 英文 / 混排都能搜（如 打开DMA中断、串口 中断、USART_Init）"));
     m_search->setClearButtonEnabled(true);
     connect(m_search, &QLineEdit::returnPressed, this, &MainWindow::onSearchEdited);
+    /* 边打字边出结果：网页版就是即时的，桌面版以前只在回车后才刷新，
+       用户反馈"搜了没反应、得去切一下模块才出来"。这里做 120ms 防抖 ——
+       连续打字期间不重排，停手立刻刷新，手感与网页版一致。 */
+    m_searchTimer = new QTimer(this);
+    m_searchTimer->setSingleShot(true);
+    m_searchTimer->setInterval(120);
+    connect(m_searchTimer, &QTimer::timeout, this, &MainWindow::onSearchEdited);
+    connect(m_search, &QLineEdit::textChanged, this, [this]() { m_searchTimer->start(); });
     m_module = new QComboBox(this);
     m_module->setMinimumWidth(190);
     connect(m_module, QOverload<int>::of(&QComboBox::currentIndexChanged),

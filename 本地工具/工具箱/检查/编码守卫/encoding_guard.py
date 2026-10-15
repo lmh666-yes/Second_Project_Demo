@@ -339,6 +339,7 @@ def main(argv):
     quiet = False
     do_eol = False
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '编码守卫报告.md')
+    bad = []
     i = 1
     while i < len(argv):
         a = argv[i]
@@ -348,11 +349,22 @@ def main(argv):
         elif a == '--eol':
             do_eol = True
             i += 1
-        elif a == '--out' and i + 1 < len(argv):
+        elif a == '--out':
+            if i + 1 >= len(argv):
+                bad.append('--out 缺少值')
+                i += 1
+                continue
             out_path = os.path.abspath(argv[i + 1])
             i += 2
         else:
+            bad.append(a)
             i += 1
+
+    # 参数写错要报错退出，不能静默忽略（否则会跑成一次全量真实扫描并覆盖报告）
+    if bad:
+        print('未知参数：%s' % ' '.join(bad))
+        print('可用参数：--out <文件> | --quiet | --eol | --selftest')
+        return 2
 
     index_eol, ok = git_index_eol() if do_eol else ({}, False)
     if do_eol and not ok:

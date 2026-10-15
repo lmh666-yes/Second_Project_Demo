@@ -1,5 +1,5 @@
 @echo off
-chcp 65001 >nul
+chcp 936 >nul
 title Build APK - STM32 StdPeriph Lookup
 setlocal EnableExtensions
 
@@ -18,7 +18,7 @@ set "JAVA_HOME=D:\dev-tools\jdk-17.0.20.1+1"
 set "ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk"
 set "ANDROID_SDK_ROOT=%ANDROID_HOME%"
 
-rem ä¼  /auto = è¢«åˆ«çš„è„šæœ¬è°ƒç”¨æ—¶ä¸è¦åœä¸‹æ¥ç­‰å›žè½¦ï¼ˆæ–¹ä¾¿æŽ¥è¿›ä¸€é”®é‡å»ºé“¾è·¯ï¼‰
+rem ´« /auto = ±»±ðµÄ½Å±¾µ÷ÓÃÊ±²»ÒªÍ£ÏÂÀ´µÈ»Ø³µ£¨·½±ã½Ó½øÒ»¼üÖØ½¨Á´Â·£©
 set "NOPAUSE="
 if /i "%~1"=="/auto" set "NOPAUSE=1"
 
@@ -41,7 +41,7 @@ if errorlevel 1 (
 
 echo [3/3] Copy APK to project root ...
 copy /y "app\build\outputs\apk\debug\app-debug.apk" "%~dp0STM32-Lookup.apk" >nul
-copy /y "app\build\outputs\apk\debug\app-debug.apk" "%~dp0STM32é€ŸæŸ¥.apk" >nul
+copy /y "app\build\outputs\apk\debug\app-debug.apk" "%~dp0STM32ËÙ²é.apk" >nul
 
 echo.
 echo DONE: %~dp0STM32-Lookup.apk

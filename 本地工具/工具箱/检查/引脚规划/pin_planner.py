@@ -597,11 +597,6 @@ def selftest():
 
         claims, unresolved = scan_dma(tmp)
         by_mod = {c['module']: c for c in claims}
-        owner = {}
-        for c in claims:
-            for st in c['streams']:
-                owner.setdefault(st, set()).add(c['module'])
-        shared = {st for st, mods in owner.items() if len(mods) > 1}
         ck('DMA 宏式声明被解析出流与通道',
            by_mod.get('FOO', {}).get('streams') == {'DMA1_Stream5'}
            and by_mod.get('FOO', {}).get('channels') == {'DMA_Channel_7'},
@@ -610,9 +605,18 @@ def selftest():
            by_mod.get('a', {}).get('streams') == {'DMA2_Stream0'}
            and by_mod.get('b', {}).get('streams') == {'DMA2_Stream0'},
            '、'.join(sorted(by_mod)))
-        ck('同一数据流被多个模块共用被抓到',
-           shared == {'DMA2_Stream0'}, '、'.join(sorted(shared)) or '无')
-        ck('独占的那条流不被误判为共用', 'DMA1_Stream5' not in shared)
+
+        # 「共用」判定必须断言 render_dma 的真实输出，不能在这儿自己复算一遍：
+        # 以前这里另写了一份 owner/shared，等于测了份影子实现 ——
+        # 把 render_dma 里的判定改坏（>1 改成 >99）自检照样全绿。
+        dma_txt = render_dma(tmp)
+        ck('同一数据流被多个模块共用被抓到（走报告输出）',
+           '被多个模块共用的流 1 条' in dma_txt and 'DMA2_Stream0 ←' in dma_txt,
+           [l for l in dma_txt.splitlines() if '共用的流' in l][:1])
+        ck('独占的那条流不被误判为共用（走报告输出）',
+           'DMA1_Stream5 ←' not in dma_txt)
+        ck('无法静态解析的调用写进了报告',
+           '无法静态解析的 DMA 调用' in dma_txt)
         ck('缺 CHANNEL 宏的声明被列为待核（BAR）',
            any(m == 'BAR' for m, _, _ in unresolved))
         ck('形参传流的调用被列为无法静态解析',

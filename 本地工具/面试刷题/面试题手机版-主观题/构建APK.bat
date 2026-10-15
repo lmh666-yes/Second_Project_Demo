@@ -1,17 +1,17 @@
 @echo off
-chcp 65001 >nul
-title æž„å»º APK Â· é¢è¯•åˆ·é¢˜ Â· ä¸»è§‚é¢˜
+chcp 936 >nul
+title ¹¹½¨ APK ¡¤ ÃæÊÔË¢Ìâ ¡¤ Ö÷¹ÛÌâ
 setlocal EnableExtensions
 
 rem ============================================================
-rem  ä¸€é”®æž„å»ºã€Œé¢è¯•åˆ·é¢˜ Â· ä¸»è§‚é¢˜ã€APK
-rem    1) é‡æ–°ç”Ÿæˆå†…åµŒé¢˜åº“ï¼ˆè¯»å– æ¡Œé¢ç‰ˆ é¢˜åº“.jsonï¼‰
-rem    2) ç”¨ Gradle æž„å»º debug APKï¼ˆæ— éœ€ Android Studioï¼‰
-rem    3) æŠŠ APK å¤åˆ¶åˆ°æœ¬æ–‡ä»¶å¤¹ï¼šé¢è¯•åˆ·é¢˜-ä¸»è§‚é¢˜.apk
+rem  Ò»¼ü¹¹½¨¡¸ÃæÊÔË¢Ìâ ¡¤ Ö÷¹ÛÌâ¡¹APK
+rem    1) ÖØÐÂÉú³ÉÄÚÇ¶Ìâ¿â£¨¶ÁÈ¡ ×ÀÃæ°æ Ìâ¿â.json£©
+rem    2) ÓÃ Gradle ¹¹½¨ debug APK£¨ÎÞÐè Android Studio£©
+rem    3) °Ñ APK ¸´ÖÆµ½±¾ÎÄ¼þ¼Ð£ºÃæÊÔË¢Ìâ-Ö÷¹ÛÌâ.apk
 rem
-rem  çŽ¯å¢ƒï¼ˆæœ¬æœºå·²é…å¥½ï¼›æ¢ç”µè„‘è¯·æ”¹ä¸‹é¢ä¸¤è¡Œï¼‰ï¼š
-rem    Â· JDK 17        D:\dev-tools\jdk-17.0.20.1+1
-rem    Â· Android SDK   %LOCALAPPDATA%\Android\Sdkï¼ˆéœ€å« API 35 å¹³å°ï¼‰
+rem  »·¾³£¨±¾»úÒÑÅäºÃ£»»»µçÄÔÇë¸ÄÏÂÃæÁ½ÐÐ£©£º
+rem    ¡¤ JDK 17        D:\dev-tools\jdk-17.0.20.1+1
+rem    ¡¤ Android SDK   %LOCALAPPDATA%\Android\Sdk£¨Ðèº¬ API 35 Æ½Ì¨£©
 rem ============================================================
 
 set "JAVA_HOME=D:\dev-tools\jdk-17.0.20.1+1"
@@ -20,26 +20,26 @@ set "ANDROID_SDK_ROOT=%ANDROID_HOME%"
 
 cd /d "%~dp0"
 
-echo [1/3] é‡æ–°ç”Ÿæˆå†…åµŒé¢˜åº“ ...
+echo [1/3] ÖØÐÂÉú³ÉÄÚÇ¶Ìâ¿â ...
 python "%~dp0build_web.py"
 if errorlevel 1 (
-  echo     å¤±è´¥ï¼šè¯·ç¡®è®¤å·²å®‰è£… Python 3ã€ä¸” æ¡Œé¢ç‰ˆ é¢˜åº“.json å­˜åœ¨
+  echo     Ê§°Ü£ºÇëÈ·ÈÏÒÑ°²×° Python 3¡¢ÇÒ ×ÀÃæ°æ Ìâ¿â.json ´æÔÚ
   pause & exit /b 1
 )
 
-echo [2/3] æž„å»º Debug APKï¼ˆé¦–æ¬¡éœ€è”ç½‘ä¸‹è½½ä¾èµ–ï¼Œå¯èƒ½è¾ƒæ…¢ï¼‰...
+echo [2/3] ¹¹½¨ Debug APK£¨Ê×´ÎÐèÁªÍøÏÂÔØÒÀÀµ£¬¿ÉÄÜ½ÏÂý£©...
 cd /d "%~dp0android"
 call gradlew.bat clean assembleDebug --console=plain
 if errorlevel 1 (
-  echo     æž„å»ºå¤±è´¥ï¼šè¯·æŸ¥çœ‹ä¸Šæ–¹é”™è¯¯ä¿¡æ¯
+  echo     ¹¹½¨Ê§°Ü£ºÇë²é¿´ÉÏ·½´íÎóÐÅÏ¢
   pause & exit /b 1
 )
 
-echo [3/3] å¤åˆ¶ APK åˆ°æœ¬æ–‡ä»¶å¤¹ ...
-copy /y "app\build\outputs\apk\debug\app-debug.apk" "..\é¢è¯•åˆ·é¢˜-ä¸»è§‚é¢˜.apk" >nul
+echo [3/3] ¸´ÖÆ APK µ½±¾ÎÄ¼þ¼Ð ...
+copy /y "app\build\outputs\apk\debug\app-debug.apk" "..\ÃæÊÔË¢Ìâ-Ö÷¹ÛÌâ.apk" >nul
 
 echo.
-echo æž„å»ºæˆåŠŸï¼š%~dp0é¢è¯•åˆ·é¢˜-ä¸»è§‚é¢˜.apk
-echo æŠŠè¿™ä¸ª APK å‘åˆ°æ‰‹æœºï¼ˆå¾®ä¿¡/QQ/ç½‘ç›˜/æ•°æ®çº¿ï¼‰ç›´æŽ¥å®‰è£…å³å¯ã€‚
-echo é¦–æ¬¡å®‰è£…éœ€å…è®¸"å®‰è£…æœªçŸ¥æ¥æºåº”ç”¨"ã€‚
+echo ¹¹½¨³É¹¦£º%~dp0ÃæÊÔË¢Ìâ-Ö÷¹ÛÌâ.apk
+echo °ÑÕâ¸ö APK ·¢µ½ÊÖ»ú£¨Î¢ÐÅ/QQ/ÍøÅÌ/Êý¾ÝÏß£©Ö±½Ó°²×°¼´¿É¡£
+echo Ê×´Î°²×°ÐèÔÊÐí"°²×°Î´ÖªÀ´Ô´Ó¦ÓÃ"¡£
 pause

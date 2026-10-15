@@ -11,6 +11,12 @@
  * 覆盖面提醒：正文列表若靠"可勾选的板块按钮"切换内容（速查页就是这样），
  * 只遍历当前板块会漏掉大部分条目。所以第 3b 步会把每个可勾选按钮各切一次、
  * 每切一次把列表重遍历一遍——否则资料板块那 900+ 张卡永远测不到（曾经就是盲区）。
+ * 遍历按等间隔**抽样**（每块列表最多 40 行 + 补末行）：资料板块 900+ 行逐行点
+ * 要跑 1~2 分钟，抽样后回到秒级，覆盖范围（行数 / 实点行数）照样打印出来。
+ *
+ * 另一处盲区：所有「运行」按钮都在屏蔽表里（怕弹框/长任务），于是"工具箱 -> Python
+ * 子进程"这条链从来没被冒烟真正跑过。第 3c 步专门只跑一页（带硬超时），
+ * 用输出框里有没有东西来证明这条链是通的。
  *
  * 用法（QApplication 之后、窗口对象已构造）：
  *     if (args.contains("--gui-smoke")) return uiSmoke::run(&w);
@@ -23,8 +29,10 @@
 
 #include <QApplication>
 #include <QCheckBox>
+#include <QEventLoop>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QScreen>
 #include <QStackedWidget>
@@ -132,23 +140,44 @@ inline int run(QWidget *w, const QStringList &args = QStringList())
               每轮把"遍历了几个列表、共多少行、最长那个多少行"打出来——
               这样"某个板块到底有没有被渲染到"是可查的，不用靠假设。 */
         auto traverseLists = [&o, w](const QString &label) {
-            int lists = 0, rows = 0, maxRows = 0;
+            /* 抽样遍历：资料板块有 900+ 行，逐行 setCurrentRow 会让冒烟跑好几分钟
+               （实测 3b 步要 1~2 分钟，外层超时得给到 300s）。
+               这里每块列表最多点 kMaxProbe 行（等间隔抽样 + 补最后一行），
+               既覆盖到"切行 → 渲染详情"这条路径，又把耗时压回秒级。
+               行数照样打印出来，覆盖范围可查。 */
+            const int kMaxProbe = 40;
+            int lists = 0, rows = 0, maxRows = 0, probed = 0;
             for (QListWidget *l : w->findChildren<QListWidget *>()) {
-                if (l->count() > 0) {
+                const int n = l->count();
+                if (n > 0) {
                     ++lists;
-                    rows += l->count();
-                    maxRows = qMax(maxRows, l->count());
+                    rows += n;
+                    maxRows = qMax(maxRows, n);
                 }
-                for (int r = 0; r < l->count(); ++r) {
+                if (n == 0)
+                    continue;
+                const int step = (n > kMaxProbe) ? (n / kMaxProbe) : 1;
+                for (int r = 0; r < n; r += step) {
                     QListWidgetItem *it = l->item(r);
                     if (!it || it->flags() == Qt::NoItemFlags)
                         continue;
                     l->setCurrentRow(r);
                     QCoreApplication::processEvents();
+                    ++probed;
+                }
+                /* 抽样步长不整除时补上末行，别让"最后一张卡"永远测不到 */
+                if ((n - 1) % step != 0) {
+                    if (QListWidgetItem *it = l->item(n - 1)) {
+                        if (it->flags() != Qt::NoItemFlags) {
+                            l->setCurrentRow(n - 1);
+                            QCoreApplication::processEvents();
+                            ++probed;
+                        }
+                    }
                 }
             }
             o << "LISTS " << label << "：列表 " << lists << " 个 / 共 " << rows
-              << " 行 / 最长 " << maxRows << " 行\n";
+              << " 行 / 最长 " << maxRows << " 行 / 实点 " << probed << " 行\n";
             o.flush();
         };
         traverseLists(QStringLiteral("首轮"));
@@ -182,6 +211,59 @@ inline int run(QWidget *w, const QStringList &args = QStringList())
             b->click();
             QCoreApplication::processEvents();
             traverseLists(b->text());
+        }
+
+        /* 3c) 运行器页抽查：真跑一次"工具箱 -> Python"这条链。
+               屏蔽表把所有「运行」按钮都挡掉了（怕弹框/长任务），所以这条链在冒烟里
+               从来没通过；这里只挑一页跑，带硬超时，靠"输出框里有没有内容"判定。
+               挂在步骤 4 之前：勾选框那步会翻 CRLF 等选项，先跑免得被改到。 */
+        {
+            QPushButton *runBtn = nullptr;
+            QStackedWidget *runStk = nullptr;
+            QWidget *runPage = nullptr;
+            for (QPushButton *b : w->findChildren<QPushButton *>()) {
+                if (!b->isEnabled() || b->text().trimmed() != QStringLiteral("运行"))
+                    continue;                 /* 只要纯「运行」，不要「运行自检」等 */
+                QWidget *pg = b;
+                while (pg->parentWidget()) {
+                    if (auto *s = qobject_cast<QStackedWidget *>(pg->parentWidget())) {
+                        runStk = s;
+                        runPage = pg;
+                        break;
+                    }
+                    pg = pg->parentWidget();
+                }
+                if (runPage) { runBtn = b; break; }
+            }
+            QPlainTextEdit *outBox = runPage ? runPage->findChild<QPlainTextEdit *>() : nullptr;
+            if (!runBtn || !runStk || !outBox) {
+                o << "RUN   skipped（这一份程序里没有可运行的检查页）\n"; o.flush();
+            } else {
+                if (runStk->currentWidget() != runPage)
+                    runStk->setCurrentWidget(runPage);
+                QCoreApplication::processEvents();
+                outBox->clear();
+                o << "RUN   click 运行（超时 90s）\n"; o.flush();
+                runBtn->click();
+                /* 等输出出现，或超时：用嵌套事件循环，别用忙等（QProcess 靠事件循环收输出） */
+                QEventLoop loop;
+                QTimer guard;
+                guard.setSingleShot(true);
+                QObject::connect(&guard, &QTimer::timeout, &loop, &QEventLoop::quit);
+                QObject::connect(outBox, &QPlainTextEdit::textChanged, &loop, [&]() {
+                    if (!outBox->toPlainText().trimmed().isEmpty())
+                        loop.quit();
+                });
+                guard.start(90000);
+                loop.exec();
+                const QString txt = outBox->toPlainText().trimmed();
+                const QString head = txt.left(60).replace(QLatin1Char('\n'), QLatin1Char(' '));
+                if (txt.isEmpty())
+                    o << "RUN   无输出（进程没起来或没写回来）\n";
+                else
+                    o << "RUNOK 输出 " << txt.size() << " 字节：" << head << "\n";
+                o.flush();
+            }
         }
 
         /* 4) 勾选框翻一遍 */

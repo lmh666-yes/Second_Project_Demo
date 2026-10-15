@@ -319,23 +319,39 @@ def main(argv):
     seed = 1234
     port = None
     baud = 115200
+    bad = []
     i = 1
     while i < len(argv):
         a = argv[i]
-        if a == '--scenario' and i + 1 < len(argv):
-            scenario = argv[i + 1]; i += 2
-        elif a == '--count' and i + 1 < len(argv):
-            count = int(argv[i + 1]); i += 2
-        elif a == '--out' and i + 1 < len(argv):
-            base = os.path.abspath(argv[i + 1]); i += 2
-        elif a == '--seed' and i + 1 < len(argv):
-            seed = int(argv[i + 1]); i += 2
-        elif a == '--port' and i + 1 < len(argv):
-            port = argv[i + 1]; i += 2
-        elif a == '--baud' and i + 1 < len(argv):
-            baud = int(argv[i + 1]); i += 2
+        if a in ('--scenario', '--count', '--out', '--seed', '--port', '--baud'):
+            if i + 1 >= len(argv):
+                bad.append('%s 缺少值' % a)
+                i += 1
+                continue
+            if a == '--scenario':
+                scenario = argv[i + 1]
+            elif a == '--count':
+                count = int(argv[i + 1])
+            elif a == '--out':
+                base = os.path.abspath(argv[i + 1])
+            elif a == '--seed':
+                seed = int(argv[i + 1])
+            elif a == '--port':
+                port = argv[i + 1]
+            else:
+                baud = int(argv[i + 1])
+            i += 2
         else:
+            bad.append(a)
             i += 1
+
+    # 参数写错要报错退出，不能静默忽略（否则会按默认场景生成一堆产物）
+    if bad:
+        print('未知参数：%s' % ' '.join(bad))
+        print('可用参数：--scenario <%s> | --count <N> | --seed <N> | --out <前缀> | '
+              '--port <COM口> | --baud <N> | --selftest'
+              % '|'.join(SCENARIOS))
+        return 2
 
     if scenario not in SCENARIOS:
         print('未知场景：%s（可选 %s）' % (scenario, ' / '.join(SCENARIOS)))
