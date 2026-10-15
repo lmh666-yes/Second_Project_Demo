@@ -5,15 +5,24 @@ r"""FreeRTOS 安全检查器（只读源码，不改任何文件）。
       检查只覆盖能静态判定的部分，命中项逐条附原理说明。
 
 检查项：
-  1) 中断优先级：ISR 里要调 xxxFromISR 时，其抢占优先级数值必须 >=
-     configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY（否则越过内核 BASEPRI）。
-     扫 FWLIB\inc\*.h 里的 SYS_*_IRQ_PRE_PRIO。
+  1) 中断优先级（按实际调用判定）：调了 xxxFromISR 的 ISR，其抢占优先级数值必须 >=
+     configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY，否则越过内核 BASEPRI。
+     做法是把 *_IRQHandler 对回 IRQn，取 FWLIB\src 里真正配下去的那个值；
+     没调 FromISR 的中断不受这条约束。FWLIB\inc 里的 SYS_*_IRQ_PRE_PRIO 声明低于上限
+     只给"注意"级提示（判不出它会不会被用于 FromISR，不该直接判严重）。
   2) NVIC 分组：必须是 NVIC_PriorityGroup_4（4 位抢占）。
   3) ISR 误用：中断上下文里调用了任务态接口（会阻塞或进临界区）。
-     检查 *_IRQHandler 及其转发的 *_isr / *_irq / *_dispatch。
-  4) 任务栈：xTaskCreate 的栈深度单位是字，过小或过大都提示。
-  5) 堆预算：所有任务栈之和是否超过 configTOTAL_HEAP_SIZE。
-  6) configASSERT 是否存在。
+     从 *_IRQHandler / *_isr / *_irq / *_dispatch 出发按调用关系往下追：
+     途中遇到包装宏先展开一层（如 `#define SEND(q,x) xQueueSend((q),(x),0)`），
+     遇到别的函数再往下最多三层。因此 "ISR -> App_ExtiNotify() -> xQueueSend"
+     这类隔着转发、隔着宏的误用也能报出来，并写明是经谁转发过来的。
+     ISR 里进内核临界区（taskENTER_CRITICAL / portENTER_CRITICAL 等）也算这一类，判严重。
+     反例同样守住：任务态函数里调同名接口不报，ISR 里调 xxxFromISR 不报。
+  4) 中断里写、任务里读的共享变量缺 volatile：只看文件作用域声明的变量
+     （局部变量不可能被 ISR 与任务共享），命中给"注意"级。
+  5) 任务栈：xTaskCreate 的栈深度单位是字，过小或过大都提示。
+  6) 堆预算：所有任务栈之和是否超过 configTOTAL_HEAP_SIZE。
+  7) configASSERT 是否存在。
 
 报告写到脚本同目录的 RTOS检查报告.md，并在控制台打印摘要。只读，不改任何文件。
 
@@ -21,6 +30,7 @@ r"""FreeRTOS 安全检查器（只读源码，不改任何文件）。
     python 本地工具\工具箱\检查\RTOS检查\rtos_check.py
     python 本地工具\工具箱\检查\RTOS检查\rtos_check.py --quiet
 """
+import json
 import os
 import re
 import sys
@@ -79,11 +89,49 @@ BLOCKING_API = {
     'xEventGroupWaitBits', 'xEventGroupSetBits', 'xEventGroupClearBits',
     'ulTaskNotifyTake', 'xTaskNotifyWait', 'xTaskNotify', 'xTaskNotifyGive',
     'xTimerStart', 'xTimerStop', 'xTimerChangePeriod', 'xTimerReset',
-    'vTaskPrioritySetFromISR',
 }
 
 RTOS_PREFIX = ('xQueue', 'xSemaphore', 'vTask', 'xTask', 'xEventGroup',
                'xTimer', 'ulTaskNotify', 'vTimerSetTimerID')
+
+# 中断上下文里不能进的内核临界区：ISR 要用 taskENTER_CRITICAL_FROM_ISR /
+# portSET_INTERRUPT_MASK_FROM_ISR。taskENTER_CRITICAL 不但关中断，还会碰内核状态。
+ISR_UNSAFE_CRITICAL = {
+    'taskENTER_CRITICAL', 'taskEXIT_CRITICAL',
+    'portENTER_CRITICAL', 'portEXIT_CRITICAL',
+}
+
+# 规则表（数据模型）外置在 工具箱/速查数据/rules/，检查器与其它工具共读一份：
+# 加一个新的 RTOS 接口只要改表，不用动脚本。表缺失/损坏时回退到上面那三份内置默认值，
+# 行为与老版本完全一致（所以"表没了"不会让检查静默失效，只会退化成内置规则）。
+RULES_PATH = os.path.abspath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), '..', '..', '速查数据', 'rules',
+    'freertos_isr_rules.json'))
+RULES_SOURCE = '内置默认'
+
+
+def load_rules():
+    """读外置规则表并覆盖内置默认值。返回是否成功（失败时保持内置默认，不抛异常）。"""
+    global BLOCKING_API, RTOS_PREFIX, ISR_UNSAFE_CRITICAL, RULES_SOURCE
+    try:
+        with open(RULES_PATH, 'r', encoding='utf-8') as f:
+            d = json.load(f)
+    except Exception:
+        return False
+    if not isinstance(d, dict) or not d.get('blocking_api'):
+        return False
+    BLOCKING_API = set(d['blocking_api'])
+    ISR_UNSAFE_CRITICAL = set(d.get('isr_unsafe_critical') or ISR_UNSAFE_CRITICAL)
+    RTOS_PREFIX = tuple(d.get('rtos_prefix') or RTOS_PREFIX)
+    try:
+        RULES_SOURCE = os.path.relpath(RULES_PATH, ROOT).replace('\\', '/')
+    except Exception:
+        RULES_SOURCE = RULES_PATH
+    return True
+
+
+load_rules()
+
 
 PRINCIPLE = {
     'prio': 'ISR 里调用 FromISR 接口时，其抢占优先级数值必须 >= '
@@ -93,6 +141,13 @@ PRINCIPLE = {
              '分组不对会把抢占值按位截断，例如 PRE=5 被截成 1，使 ISR 越过内核上限。',
     'isr_api': '中断上下文只能用 xxxFromISR 系列与 portYIELD_FROM_ISR。调用会阻塞或'
                '进内核临界区的任务态接口，会破坏内核状态。',
+    'critical': 'ISR 里不能进内核临界区。taskENTER_CRITICAL / portENTER_CRITICAL 会关中断'
+                '并操作内核状态，中断上下文要用 taskENTER_CRITICAL_FROM_ISR /'
+                ' portSET_INTERRUPT_MASK_FROM_ISR，拿到返回值后按序恢复。',
+    'volatile': '中断里写、任务里读的变量必须加 volatile。否则编译器会把该变量缓存在寄存器，'
+                '任务侧读到的是陈旧值（表现为"标志位怎么都不变"）。'
+                '写法：`static volatile uint8_t g_flag;`。只读不写、或只在 ISR 里用，'
+                '不需要 volatile。',
     'stack': 'xTaskCreate 的栈深度单位是字（1 字 = 4 字节）。过小会栈溢出'
              '（configCHECK_FOR_STACK_OVERFLOW 能抓），过大浪费堆。',
     'heap': '所有任务栈、队列、信号量都从 configTOTAL_HEAP_SIZE 里分配。'
@@ -298,6 +353,92 @@ def split_top_commas(s):
     return [x.strip() for x in out]
 
 
+def collect_macros(text):
+    """收集 `#define NAME(...) 体` 的宏体（先拼续行）。用于把 ISR 里调用的包装宏展开一层：
+    固件常见 `#define SEND(q, x) xQueueSend((q), (x), 0)` 这种写法，只看调用名会漏掉背后的接口。"""
+    joined = re.sub(r'\\\s*\n', ' ', text)
+    out = {}
+    for m in re.finditer(r'#\s*define\s+([A-Za-z_]\w*)\s*\(([^)]*)\)[ \t]*(.*)$', joined, re.M):
+        out.setdefault(m.group(1), m.group(3).strip())
+    return out
+
+
+def scan_calls(masked):
+    """返回体里出现的调用名（标识符紧跟左括号），控制语句与已知关键字滤掉。"""
+    return [m.group(1) for m in re.finditer(r'([A-Za-z_]\w*)\s*\(', masked)
+            if m.group(1) not in KEYWORDS]
+
+
+def risky_api(api):
+    """任务态接口判级：会阻塞/进内核临界区的判"严重"，其余 RTOS 前缀接口判"注意"。
+    xxxFromISR 系列与 portYIELD_FROM_ISR 是中断安全的，返回 None。"""
+    if api.endswith('FromISR') or api == 'portYIELD_FROM_ISR':
+        return None
+    if api in ISR_UNSAFE_CRITICAL or api in BLOCKING_API:
+        return '严重'
+    if api.startswith(RTOS_PREFIX):
+        return '注意'
+    return None
+
+
+RE_IRQ_SET = re.compile(r'SYS_NVIC_SetPriority\s*\(\s*([A-Za-z_]\w*)\s*,\s*'
+                        r'([A-Za-z_]\w*|\d+)\s*,\s*([A-Za-z_]\w*|\d+)\s*\)')
+RE_IRQ_CH = re.compile(r'NVIC_IRQChannel\s*=\s*([A-Za-z_]\w*)')
+RE_IRQ_PRE = re.compile(r'NVIC_IRQChannelPreemptionPriority\s*=\s*([A-Za-z_]\w*|\d+)')
+
+
+def read_irq_prios(proj):
+    """扫 FWLIB 的 NVIC 配置，返回 {IRQn: (抢占值, 出处)}。
+
+    覆盖 SYS_NVIC_SetPriority(...) 与 NVIC_InitStructure 两种写法；IRQn 或优先级
+    由形参传入的写法静态解析不了，跳过不猜。目的一：知道某个 ISR 实际拿到多少抢占值，
+    才能判断"它调 FromISR 会不会越过内核屏蔽"，光看宏声明是判不出来的。
+    """
+    inc = os.path.join(proj, 'FWLIB', 'inc')
+    src = os.path.join(proj, 'FWLIB', 'src')
+    macros = {}
+    if os.path.isdir(inc):
+        for fn in sorted(os.listdir(inc)):
+            if not fn.endswith('.h'):
+                continue
+            txt, _ = read_text(os.path.join(inc, fn))
+            for m in re.finditer(r'#\s*define\s+(SYS_\w*_(?:PRE|SUB)_PRIO)\s+(\d+)', txt):
+                macros[m.group(1)] = int(m.group(2))
+
+    def tok(v):
+        return int(v) if v.isdigit() else macros.get(v)
+
+    out = {}
+    if not os.path.isdir(src):
+        return out
+    for fn in sorted(os.listdir(src)):
+        if not fn.endswith('.c'):
+            continue
+        text, _ = read_text(os.path.join(src, fn))
+        lines = text.splitlines()
+        rp = os.path.join('FWLIB', 'src', fn)
+        for i, line in enumerate(lines, 1):
+            m = RE_IRQ_SET.search(line)
+            if m:
+                if not m.group(1).endswith('IRQn') or m.group(1) in out:
+                    continue
+                pre = tok(m.group(2))
+                if pre is not None:
+                    out[m.group(1)] = (pre, '%s:%d' % (rp, i))
+                continue
+            m = RE_IRQ_CH.search(line)
+            if m and m.group(1).endswith('IRQn') and m.group(1) not in out:
+                pre = None
+                for j in range(i, min(i + 15, len(lines))):
+                    mp = RE_IRQ_PRE.search(lines[j])
+                    if mp:
+                        pre = tok(mp.group(1))
+                        break
+                if pre is not None:
+                    out[m.group(1)] = (pre, '%s:%d' % (rp, i))
+    return out
+
+
 def iter_sources(root):
     for base, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs
@@ -348,7 +489,8 @@ def check_board(title, proj):
         findings.append(('注意', 'FWLIB/inc/sys_nvic.h',
                          '未找到 SYS_NVIC_PRIORITY_GROUP = NVIC_PriorityGroup_4', 'group'))
 
-    # 2) 各模块中断抢占优先级
+    # 2) 各模块中断抢占优先级的宏声明：低于内核上限只算"提示"，
+    #    真正算不算违规要看对应的 ISR 是否真的调了 FromISR 接口（见下面 1b 的按实际判定）。
     if mx_lib is not None and os.path.isdir(inc):
         for fn in sorted(os.listdir(inc)):
             if not fn.endswith('.h'):
@@ -357,32 +499,26 @@ def check_board(title, proj):
             for m in re.finditer(r'#\s*define\s+(SYS_\w*_IRQ_PRE_PRIO)\s+(\d+)', txt):
                 val = int(m.group(2))
                 if val < mx_lib:
-                    findings.append(('严重', '%s/%s' % (os.path.basename(inc), fn),
-                                     '%s = %d，小于内核上限 %d' % (m.group(1), val, mx_lib),
-                                     'prio'))
+                    findings.append(('注意', '%s/%s' % (os.path.basename(inc), fn),
+                                     '%s = %d，小于内核上限 %d：该中断一旦调用 FromISR 接口'
+                                     '就会越过内核屏蔽'
+                                     % (m.group(1), val, mx_lib), 'prio'))
 
-    # 3) ISR 误用 RTOS 接口 + 4/5) 任务栈与堆预算
+    # 3) ISR 误用 RTOS 接口（直调 / 经宏展开一层 / 经函数最多三层转发） + 4/5) 任务栈与堆预算
     srcs = list(iter_sources(proj))
+    bodies = {}         # 函数名 -> [(文件, 行, 函数体)]
+    macros = {}         # 宏名 -> 宏体
+    board_texts = []    # 本板所有 .c 的原文，供"文件作用域声明"判定用
     tasks = []          # (文件, 行, 名字, 栈, 优先级)
     for path in srcs:
         text, _ = read_text(path)
         masked = strip_comments(text)
         rel = safe_rel(path)
+        board_texts.append(text)
         for name, line, s, e in find_functions(masked):
-            if not is_isr_name(name):
-                continue
-            body = masked[s + 1:e]
-            for c in re.finditer(r'([A-Za-z_]\w*)\s*\(', body):
-                api = c.group(1)
-                if api.endswith('FromISR') or api == 'portYIELD_FROM_ISR':
-                    continue
-                if api in BLOCKING_API:
-                    findings.append(('严重', '%s:%d' % (rel, line),
-                                     'ISR 上下文（%s）里调用了 %s' % (name, api), 'isr_api'))
-                elif api.startswith(RTOS_PREFIX):
-                    findings.append(('注意', '%s:%d' % (rel, line),
-                                     'ISR 上下文（%s）里调用了 %s（非 FromISR）'
-                                     % (name, api), 'isr_api'))
+            bodies.setdefault(name, []).append((rel, line, masked[s + 1:e]))
+        for mn, mb in collect_macros(text).items():
+            macros.setdefault(mn, mb)
         # 任务创建
         for m in re.finditer(r'\bxTaskCreate(?:Static)?\s*\(', masked):
             lp = m.end() - 1
@@ -398,6 +534,119 @@ def check_board(title, proj):
                 prio = eval_int(parts[4])
                 line = masked.count('\n', 0, m.start()) + 1
                 tasks.append((rel, line, tname, stack, prio))
+
+    # 从每个 ISR 出发按调用关系往下追。ISR 里间接调用会阻塞/进临界区的接口同样是 bug，
+    # 所以不只看直调：包装宏展开一层，普通函数再往下最多三层，并写明转发路径。
+    MAX_HOPS = 3
+    reported = set()
+    fromisr_isrs = set()    # 这条调用链上用了 xxxFromISR 的 ISR：受优先级上限约束
+    for isr_name, defs in bodies.items():
+        if not is_isr_name(isr_name):
+            continue
+        isr_rel, isr_line, isr_body = defs[0]
+        loc = '%s:%d' % (isr_rel, isr_line)
+        queue = [(isr_body, [isr_name], 0)]
+        for _ in range(200):        # 防失控上限，正常调用链远到不了
+            if not queue:
+                break
+            body, chain, depth = queue.pop(0)
+            for api in scan_calls(body):
+                if api.endswith('FromISR') or api == 'portYIELD_FROM_ISR':
+                    fromisr_isrs.add(isr_name)
+                    continue
+                lv = risky_api(api)
+                if lv:
+                    key = (loc, api, tuple(chain))
+                    if key in reported:
+                        continue
+                    reported.add(key)
+                    suffix = '' if lv == '严重' else '（非 FromISR）'
+                    if len(chain) == 1:
+                        msg = 'ISR 上下文（%s）里调用了 %s%s' % (isr_name, api, suffix)
+                    else:
+                        msg = 'ISR 上下文（%s）经 %s 转发调用了 %s%s' % (
+                            isr_name, ' → '.join(chain[1:]), api, suffix)
+                    findings.append((lv, loc, msg, 'isr_api'))
+                    continue
+                mb = macros.get(api)
+                if mb is not None:
+                    # 包装宏只展开一层：宏体里再直接找危险接口
+                    for api2 in scan_calls(mb):
+                        lv2 = risky_api(api2)
+                        if not lv2 or api2 == api:
+                            continue
+                        key = (loc, api2, tuple(chain + ['宏 ' + api]))
+                        if key in reported:
+                            continue
+                        reported.add(key)
+                        suffix2 = '' if lv2 == '严重' else '（非 FromISR）'
+                        findings.append((lv2, loc,
+                                         'ISR 上下文（%s）经宏 %s 调用了 %s%s'
+                                         % (isr_name, api, api2, suffix2), 'isr_api'))
+                    continue
+                if depth >= MAX_HOPS or api in chain:
+                    continue
+                for _, _, cbody in bodies.get(api, []):
+                    queue.append((cbody, chain + [api], depth + 1))
+
+    # 3b) 中断里写、任务里读的变量缺 volatile
+    #     只看"文件作用域声明"的变量（声明行行首顶格）：局部变量不可能被 ISR 与任务共享，
+    #     把它们算进来只会制造误报（i / tmp / cnt 这类名字到处都有）。
+    file_scope = {}         # 变量名 -> 声明行原文
+    for t in board_texts:
+        for m in re.finditer(
+                r'^(?:static\s+|extern\s+|const\s+|volatile\s+|unsigned\s+|signed\s+|'
+                r'u?int\d*_t\s+|u?int\d+\s+|char\s+|short\s+|long\s+|float\s+|double\s+|'
+                r'size_t\s+|bool\s+|TickType_t\s+|BaseType_t\s+|UBaseType_t\s+)+'
+                r'\**\s*([A-Za-z_]\w*)\s*(?:\[[^\]]*\]\s*)?(?:=|;)', t, re.M):
+            file_scope.setdefault(m.group(1), m.group(0).strip())
+
+    isr_written = {}        # 变量名 -> (文件:行, ISR 名)：中断上下文里被赋值的变量
+    for isr_name, defs in bodies.items():
+        if not is_isr_name(isr_name):
+            continue
+        rel, line, body = defs[0]
+        for m in re.finditer(r'\b([A-Za-z_]\w*)\s*(?:\+\+|--|\+=|-=|\|=|&=|=(?!=))', body):
+            nm = m.group(1)
+            if nm in KEYWORDS:
+                continue
+            if m.start() > 0 and body[m.start() - 1] in '.>':   # 成员访问不算共享变量
+                continue
+            isr_written.setdefault(nm, ('%s:%d' % (rel, line), isr_name))
+
+    touched_outside = set()
+    for fname, defs in bodies.items():
+        if is_isr_name(fname):
+            continue
+        for _, _, b in defs:
+            touched_outside.update(re.findall(r'\b[A-Za-z_]\w*\b', b))
+
+    for nm, (loc, isr) in isr_written.items():
+        if nm not in file_scope or nm not in touched_outside or 'volatile' in file_scope[nm]:
+            continue
+        findings.append(('注意', loc,
+                         '变量 %s 在 ISR（%s）里被写入、任务态代码里也读写，'
+                         '但声明「%s」没有 volatile，任务侧可能读到陈旧值'
+                         % (nm, isr, file_scope[nm]), 'volatile'))
+
+    # 1b) FromISR 中断优先级约束，按"实际调没调"判定
+    #     真正的规则是：调了 xxxFromISR 的 ISR，其抢占值必须 >= 内核上限；没调 FromISR 的
+    #     ISR 不受这条约束（官方也是这么说的）。所以这里把 ISR 名对回 IRQn，再取 FWLIB/src
+    #     里真正配下去的那个值 —— 光看 FWLIB/inc 的宏声明判不出来，容易冤枉没用 FromISR 的中断。
+    if mx_lib is not None:
+        irq_prios = read_irq_prios(proj)
+        for isr_name in sorted(fromisr_isrs):
+            if not isr_name.endswith('_IRQHandler'):
+                continue        # _isr/_irq/_dispatch 这类转发名对不上 IRQn，静态定位不了
+            irqn = isr_name[:-len('_IRQHandler')] + '_IRQn'
+            if irqn not in irq_prios:
+                continue
+            pre, where = irq_prios[irqn]
+            if pre < mx_lib:
+                findings.append(('严重', where,
+                                 '%s 里调用了 FromISR 接口，但它的抢占优先级 %d 小于内核上限 %d'
+                                 '（数值越小优先级越高，会越过 BASEPRI）'
+                                 % (isr_name, pre, mx_lib), 'prio'))
 
     min_stack = vals.get('configMINIMAL_STACK_SIZE')
     max_prio = vals.get('configMAX_PRIORITIES')
@@ -504,48 +753,131 @@ def render(results):
     out.append('1) 静态检查只覆盖能判定的部分，命中项需人工确认上下文。')
     out.append('2) 中断优先级上限取 configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY。')
     out.append('3) 本报告每次运行覆盖。')
+    out.append('4) 中断上下文 API 分类规则表：%s。' % RULES_SOURCE)
     out.append('')
     return '\n'.join(out)
 
 
 def selftest():
-    """用一组故意写错的合成工程验证检查确实命中，避免"永远报通过"。"""
-    import tempfile
+    """用一组故意写错的合成工程验证检查确实命中（含"经宏 / 经转发函数"两条最容易漏的路径），
+    并用反例守住不误报：任务态函数里调同名接口、ISR 里调 xxxFromISR、配置齐全时不报配置项。
+    避免"永远报通过"。"""
     import shutil
+    import tempfile
+
+    checks = []
+
+    def ck(name, ok, extra=''):
+        checks.append((name, bool(ok), extra))
 
     d = tempfile.mkdtemp(prefix='rtos_selftest_')
     base = os.path.join(d, 'Project')
-    os.makedirs(os.path.join(base, 'FreeRTOS', 'port'))
-    os.makedirs(os.path.join(base, 'FWLIB', 'inc'))
+    try:
+        os.makedirs(os.path.join(base, 'FreeRTOS', 'port'))
+        os.makedirs(os.path.join(base, 'FWLIB', 'inc'))
+        os.makedirs(os.path.join(base, 'FWLIB', 'src'))
 
-    with open(os.path.join(base, 'FreeRTOS', 'port', 'FreeRTOSConfig.h'),
-              'w', encoding='utf-8') as f:
-        f.write('#define configPRIO_BITS 4\n'
-                '#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY 5\n'
-                '#define configLIBRARY_LOWEST_INTERRUPT_PRIORITY 15\n'
-                '#define configTOTAL_HEAP_SIZE ((size_t)(30 * 1024))\n'
-                '#define configMINIMAL_STACK_SIZE ((unsigned short)128)\n'
-                '#define configMAX_PRIORITIES 8\n'
-                '#define configASSERT(x) if ((x) == 0) { for (;;); }\n')
-    with open(os.path.join(base, 'FWLIB', 'inc', 'sys_nvic.h'), 'w', encoding='utf-8') as f:
-        f.write('#define SYS_NVIC_PRIORITY_GROUP NVIC_PriorityGroup_2\n')
-    with open(os.path.join(base, 'FWLIB', 'inc', 'sys_usart.h'), 'w', encoding='utf-8') as f:
-        f.write('#define SYS_USART_IRQ_PRE_PRIO 2\n')
-    with open(os.path.join(base, 'main.c'), 'w', encoding='utf-8') as f:
-        f.write('void USART1_IRQHandler(void) { xQueueSend(q, &x, 0); }\n'
-                'void app_init(void) { xTaskCreate(taskA, "A", 32, NULL, 2, NULL); }\n')
+        def wr(path, text):
+            with open(path, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(text)
 
-    _, findings, _ = check_board('synthetic', base)
-    keys = {f[3] for f in findings}
-    expect = {'group', 'prio', 'isr_api', 'stack'}
-    ok = expect.issubset(keys)
-    print('RTOS 检查自检：%s' % ('PASS' if ok else 'FAIL'))
-    print('  命中类别: %s' % (', '.join(sorted(keys)) or '无'))
-    print('  期望类别: %s' % ', '.join(sorted(expect)))
+        wr(os.path.join(base, 'FreeRTOS', 'port', 'FreeRTOSConfig.h'),
+           '#define configPRIO_BITS 4\n'
+           '#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY 5\n'
+           '#define configLIBRARY_LOWEST_INTERRUPT_PRIORITY 15\n'
+           '#define configTOTAL_HEAP_SIZE ((size_t)(30 * 1024))\n'
+           '#define configMINIMAL_STACK_SIZE ((unsigned short)128)\n'
+           '#define configMAX_PRIORITIES 8\n'
+           '#define configASSERT(x) if ((x) == 0) { for (;;); }\n')
+        wr(os.path.join(base, 'FWLIB', 'inc', 'sys_nvic.h'),
+           '#define SYS_NVIC_PRIORITY_GROUP NVIC_PriorityGroup_2\n')
+        wr(os.path.join(base, 'FWLIB', 'inc', 'sys_usart.h'),
+           '#define SYS_USART_IRQ_PRE_PRIO 2\n')
+        wr(os.path.join(base, 'FWLIB', 'src', 'nvic.c'),
+           'void Bsp_NvicInit(void)\n{\n'
+           '    SYS_NVIC_SetPriority(USART1_IRQn, SYS_USART_IRQ_PRE_PRIO, 0);\n'
+           '    SYS_NVIC_SetPriority(TIM5_IRQn, 6, 0);\n'
+           '    SYS_NVIC_SetPriority(TIM9_IRQn, 2, 0);\n}\n')
+        wr(os.path.join(base, 'main.c'),
+           '#define SEND(q, x) xQueueSend((q), (x), 0)\n'
+           '\n'
+           'static uint8_t g_tick_flag;\n'
+           'static volatile uint8_t g_ok_flag;\n'
+           '\n'
+           'static void App_ExtiNotify(void) { xSemaphoreGive(s_bin); }\n'
+           'void USART1_IRQHandler(void) { xQueueSendFromISR(s_q, &x, &w); xQueueSend(s_q, &x, 0); }\n'
+           'void EXTI0_IRQHandler(void)  { App_ExtiNotify(); }\n'
+           'void TIM3_IRQHandler(void)   { SEND(s_q, &x); }\n'
+           'void TIM2_IRQHandler(void)   { xQueueCreate(4, 4); }\n'
+           'void TIM4_IRQHandler(void)\n{\n'
+           '    taskENTER_CRITICAL();\n'
+           '    g_tick_flag = 1;\n'
+           '    taskEXIT_CRITICAL();\n}\n'
+           'void TIM5_IRQHandler(void)   { xSemaphoreGiveFromISR(s_bin, &w); }\n'
+           'void TIM6_IRQHandler(void)   { uint8_t tmp; tmp = 1; g_ok_flag = 1; }\n'
+           'void TIM9_IRQHandler(void)   { xQueueSend(s_q, &x, 0); }\n'
+           'void SPI1_IRQHandler(void)   { xQueueSendFromISR(s_q, &x, &w); }\n'
+           'void App_Task(void)          { xQueueSend(s_q, &x, 0); }\n'
+           'void App_Loop(void)          { if (g_tick_flag) { } if (g_ok_flag) { } tmp = 2; }\n'
+           'void app_init(void)\n{\n'
+           '    xTaskCreate(taskA, "A", 32, NULL, 2, NULL);\n'
+           '    xTaskCreate(taskB, "B", 256, NULL, 9, NULL);\n}\n')
+
+        _, findings, _ = check_board('synthetic', base)
+        keys = {f[3] for f in findings}
+        msgs = [(f[0], f[2]) for f in findings]
+
+        def hit(needle, level=None):
+            return any(needle in m and (level is None or lv == level) for lv, m in msgs)
+
+        ck('直调阻塞接口被抓到（严重）',
+           hit('USART1_IRQHandler）里调用了 xQueueSend', '严重'))
+        ck('经普通函数转发被抓到（严重，且写明转发路径）',
+           hit('经 App_ExtiNotify 转发调用了 xSemaphoreGive', '严重'))
+        ck('经包装宏展开被抓到（严重）',
+           hit('经宏 SEND 调用了 xQueueSend', '严重'))
+        ck('非阻塞的 RTOS 接口判为"注意"',
+           hit('TIM2_IRQHandler）里调用了 xQueueCreate', '注意'))
+        ck('反例：ISR 里调 xxxFromISR 不误报',
+           not any('SPI1_IRQHandler' in m or 'xQueueSendFromISR' in m for _, m in msgs))
+        ck('反例：任务态函数里调同名接口不误报', not any('App_Task' in m for _, m in msgs))
+        ck('ISR 里进内核临界区被抓到（严重）',
+           hit('TIM4_IRQHandler）里调用了 taskENTER_CRITICAL', '严重')
+           and hit('TIM4_IRQHandler）里调用了 taskEXIT_CRITICAL', '严重'))
+        ck('中断写、任务读的变量缺 volatile 被抓到（注意）',
+           hit('变量 g_tick_flag', '注意') and 'volatile' in keys)
+        ck('反例：已加 volatile 的共享变量不报', not any('g_ok_flag' in m for _, m in msgs))
+        ck('反例：ISR 里的局部变量不报', not any('tmp' in m for _, m in msgs))
+        ck('调 FromISR 且抢占低于上限 -> 严重（按实际调用判定，而不是看宏声明）',
+           hit('USART1_IRQHandler 里调用了 FromISR 接口', '严重')
+           and hit('抢占优先级 2 小于内核上限 5', '严重'))
+        ck('反例：调 FromISR 但抢占已达上限，不报',
+           not any('TIM5' in m for _, m in msgs))
+        ck('反例：抢占低于上限但没调 FromISR，不报（不冤枉它）',
+           not any('TIM9_IRQn' in m for _, m in msgs))
+        ck('宏声明低于上限降为提示级（不再直接判严重）',
+           hit('SYS_USART_IRQ_PRE_PRIO', '注意') and not hit('SYS_USART_IRQ_PRE_PRIO', '严重'))
+        ck('原有类别仍在（NVIC 分组 / 抢占越界 / 栈过小）',
+           {'group', 'prio', 'stack'}.issubset(keys), '、'.join(sorted(keys)) or '无')
+        ck('任务优先级越界仍命中', hit('超出 configMAX_PRIORITIES', '严重'))
+        ck('反例：配置齐全时不报 configASSERT / 堆预算',
+           'assert' not in keys and 'heap' not in keys, '、'.join(sorted(keys)) or '无')
+        ck('外置规则表已装载（数据模型取自 速查数据/rules，不是内置默认）',
+           RULES_SOURCE != '内置默认' and 'xQueueSend' in BLOCKING_API, RULES_SOURCE)
+        ck('外置规则表生效：阻断类 / 临界区类 / 前缀类都对得上',
+           'xSemaphoreGive' in BLOCKING_API and 'taskENTER_CRITICAL' in ISR_UNSAFE_CRITICAL
+           and 'xQueue' in RTOS_PREFIX, '前缀 %s' % ('、'.join(RTOS_PREFIX)))
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+    bad = [c for c in checks if not c[1]]
+    for name, ok, extra in checks:
+        print('  [%s] %s%s' % ('PASS' if ok else 'FAIL', name,
+                               ('  （实际：%s）' % extra) if (extra and not ok) else ''))
+    print('RTOS 检查自检：%d 通过 / %d 失败' % (len(checks) - len(bad), len(bad)))
     for lv, loc, msg, key in findings:
         print('    [%s][%s] %s' % (lv, key, msg))
-    shutil.rmtree(d, ignore_errors=True)
-    return 0 if ok else 1
+    return 1 if bad else 0
 
 
 def main(argv):

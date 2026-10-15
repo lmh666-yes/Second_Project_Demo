@@ -117,12 +117,13 @@ RtosGenPage::RtosGenPage(QWidget *parent)
     /* ---- 任务清单 ---- */
     QGroupBox *tbox = new QGroupBox(QStringLiteral("任务清单"), this);
     QVBoxLayout *tl = new QVBoxLayout(tbox);
-    m_taskTable = new QTableWidget(0, 8, tbox);
+    m_taskTable = new QTableWidget(0, 9, tbox);
     m_taskTable->setHorizontalHeaderLabels({QStringLiteral("任务名"), QStringLiteral("类型"),
                                             QStringLiteral("周期ms"), QStringLiteral("优先级"),
                                             QStringLiteral("栈(字)"), QStringLiteral("职责"),
                                             QStringLiteral("关联资源"),
-                                            QStringLiteral("补全提示词")});
+                                            QStringLiteral("补全提示词"),
+                                            QStringLiteral("WCET(µs)")});
     m_taskTable->horizontalHeader()->setStretchLastSection(true);
     m_taskTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     tl->addWidget(m_taskTable);
@@ -279,7 +280,7 @@ RtosGenPage::RtosGenPage(QWidget *parent)
     connect(bSave,   &QPushButton::clicked, this, &RtosGenPage::doSave);
 
     addTaskRow(RtosGen::TaskSpec{QStringLiteral("Sensor"), QStringLiteral("周期"), 2000, 3, 256,
-                                 QStringLiteral("读传感器，写采集队列"), {}, {}});
+                                 QStringLiteral("读传感器，写采集队列"), {}, {}, 0});
     addResRow(RtosGen::ResSpec{QStringLiteral("queue"), QStringLiteral("s_q_sensor"),
                                QStringLiteral("SensorMsg_t"), 4, QStringLiteral("采集到处理")});
 }
@@ -307,6 +308,7 @@ void RtosGenPage::addTaskRow(const RtosGen::TaskSpec &t)
     m_taskTable->setItem(r, 5, textItem(t.duty));
     m_taskTable->setItem(r, 6, textItem(t.links.join(QStringLiteral(", "))));
     m_taskTable->setItem(r, 7, textItem(t.apiHint));
+    m_taskTable->setItem(r, 8, textItem(QString::number(t.wcetUs)));
 }
 
 void RtosGenPage::addResRow(const RtosGen::ResSpec &r)
@@ -345,6 +347,8 @@ QVector<RtosGen::TaskSpec> RtosGenPage::readTasks() const
         }
         if (auto *it = m_taskTable->item(r, 7))
             t.apiHint = it->text().trimmed();
+        if (auto *it = m_taskTable->item(r, 8))
+            t.wcetUs = it->text().toInt();
         if (!t.name.isEmpty())
             v << t;
     }
@@ -500,7 +504,7 @@ void RtosGenPage::showConfig()
 void RtosGenPage::addTask()
 {
     addTaskRow(RtosGen::TaskSpec{QStringLiteral("Task%1").arg(m_taskTable->rowCount() + 1),
-                                 QStringLiteral("周期"), 1000, 1, 256, QString(), {}, {}});
+                                 QStringLiteral("周期"), 1000, 1, 256, QString(), {}, {}, 0});
 }
 
 void RtosGenPage::delTask()
@@ -613,7 +617,10 @@ void RtosGenPage::importFromKickstart()
 
 void RtosGenPage::doValidate()
 {
-    const QStringList issues = RtosGen::validate(m_cfg, readTasks(), readResources());
+    /* 把勾选的流程卡一并交给校验：跨卡冲突（同一 IRQn / 同一脚位 / 抢占值不一致）
+       属于"生成前就该拦住"的问题，只校验任务/资源清单是查不出来的。 */
+    const QStringList issues = RtosGen::validate(m_cfg, readTasks(), readResources(),
+                                                 readOptions().flowPicks);
     QStringList out;
     if (!m_cfg.ok)
         out << QStringLiteral("注意：配置未解析，配置类校验已跳过。");

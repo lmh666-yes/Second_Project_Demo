@@ -20,6 +20,8 @@ r"""进度与桩跟踪器（只读源码，不改任何文件）。
 用法：
     python 本地工具\工具箱\检查\进度跟踪\progress_scan.py
     python 本地工具\工具箱\检查\进度跟踪\progress_scan.py --root d:\GitHub_Project --quiet
+    python 本地工具\工具箱\检查\进度跟踪\progress_scan.py --selftest
+（--selftest 在临时目录造合成工程核对判定，不写报告、不动趋势快照。）
 """
 import datetime
 import json
@@ -325,8 +327,12 @@ def scan(root):
             if not reason:
                 continue
             has_marker = any(ln in marker_lines for ln in range(max(1, line - 6), line + 1))
-            # 函数上方几行的注释里若说明"有意留空"，归到另一栏
+            # 函数上方几行的注释里若说明"有意留空"，归到另一栏。
+            # 注意 rfind 在函数名位于文件头 400 字节内时会返回 -1，此时要退到 0，
+            # 否则 ctx 会取成 text[-1:name_at]（空串），文件开头的函数就永远看不到这条注释。
             ctx_start = masked.rfind('\n', 0, max(0, name_at - 400))
+            if ctx_start < 0:
+                ctx_start = 0
             ctx = text[ctx_start:name_at]
             noop = any(k in ctx for k in NOOP_HINT)
             stubs.append((r, line, name, reason, has_marker, noop))
@@ -507,24 +513,106 @@ def render(root, markers, stubs, enc_count, file_count, cur=None, prev=None):
     return '\n'.join(out)
 
 
+def selftest():
+    """自检：在临时目录造一个合成工程，故意埋下"待办标记 / 空桩 / 有意留空 / 产物目录里的待办"
+    四类样本，直接调 scan() 与 render() 核对判定确实命中。
+
+    刻意**不调 main()** ：main 里的 save_snapshot 会把临时目录的计数写进趋势历史，
+    污染真实基线（自检末尾有一条断言专门守这个）。不写真实报告、不碰仓库里任何文件。
+    """
+    import shutil
+    import tempfile
+
+    checks = []
+
+    def ck(name, ok, extra=''):
+        checks.append((name, bool(ok), extra))
+
+    before = load_prev()
+    tmp = tempfile.mkdtemp(prefix='progress_selftest_')
+    try:
+        def wr(name, text):
+            with open(os.path.join(tmp, name), 'w', encoding='utf-8', newline='\n') as f:
+                f.write(text)
+
+        # 样本1：待办标记 + 空函数体（应判为待实现桩）；旁边放一个真有实现的函数做对照
+        wr('a.c', '/* TODO: 采集任务还没写 */\n'
+                  'void App_Sensor(void)\n{\n}\n\n'
+                  'int App_Calc(int x)\n{\n    return x * 2;\n}\n')
+        # 样本2：函数体只有一句 return（应判为待实现桩）
+        wr('b.cpp', 'int App_Read(void)\n{\n    return 0;\n}\n')
+        # 样本3：注释说明有意留空（应归到"非待实现"栏）
+        wr('c.c', '/* 默认态已满足，本回调有意留空 */\nvoid App_Cb(void)\n{\n}\n')
+        # 样本4：落在被排除目录里，它的待办不得计入
+        os.makedirs(os.path.join(tmp, 'build'))
+        wr(os.path.join('build', 'gen.c'), '// TODO: 产物目录里的待办\nvoid Lib_Foo(void)\n{\n}\n')
+
+        markers, stubs, enc_count, file_count = scan(tmp)
+        todo = [s for s in stubs if not s[5]]
+        noop = [s for s in stubs if s[5]]
+        todo_names = sorted(s[2] for s in todo)
+        noop_names = sorted(s[2] for s in noop)
+        reason = {s[2]: s[3] for s in stubs}
+        all_names = [s[2] for s in stubs]
+
+        ck('待办标记命中 1 处（产物目录里的不计）', len(markers) == 1, '%d 处' % len(markers))
+        ck('源码文件计 3 个（build/ 已排除）', file_count == 3, '%d 个' % file_count)
+        ck('待实现桩 2 个', todo_names == ['App_Read', 'App_Sensor'], '、'.join(todo_names) or '无')
+        ck('有意留空 1 个且未混进待实现', noop_names == ['App_Cb'], '、'.join(noop_names) or '无')
+        ck('真有实现的函数未被误判', 'App_Calc' not in all_names)
+        ck('空函数体 / 单句 return 的原因判定正确',
+           reason.get('App_Sensor') == '空函数体' and reason.get('App_Read') == '只有一句 return',
+           '%s / %s' % (reason.get('App_Sensor'), reason.get('App_Read')))
+        ck('待办标记与上方的桩关联上', any(s[2] == 'App_Sensor' and s[4] for s in todo))
+
+        report = render(tmp, markers, stubs, enc_count, file_count)
+        ck('报告渲染不炸且含两栏清单',
+           '## 2. 疑似桩函数（待实现）' in report and 'App_Sensor' in report
+           and '## 3. 疑似有意留空' in report and 'App_Cb' in report)
+        ck('自检未污染趋势快照', load_prev() == before)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    bad = [c for c in checks if not c[1]]
+    for name, ok, extra in checks:
+        print('  [%s] %s%s' % ('PASS' if ok else 'FAIL', name,
+                               ('  （实际：%s）' % extra) if (extra and not ok) else ''))
+    print('进度跟踪自检：%d 通过 / %d 失败' % (len(checks) - len(bad), len(bad)))
+    return 1 if bad else 0
+
+
 def main(argv):
+    if '--selftest' in argv:
+        return selftest()
+
     root = ROOT
     quiet = False
+    bad = []
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '进度报告.md')
     i = 1
     while i < len(argv):
         a = argv[i]
-        if a == '--root' and i + 1 < len(argv):
-            root = os.path.abspath(argv[i + 1])
-            i += 2
-        elif a == '--out' and i + 1 < len(argv):
-            out_path = os.path.abspath(argv[i + 1])
+        if a in ('--root', '--out'):
+            if i + 1 >= len(argv):
+                bad.append('%s 缺少值' % a)
+                i += 1
+                continue
+            if a == '--root':
+                root = os.path.abspath(argv[i + 1])
+            else:
+                out_path = os.path.abspath(argv[i + 1])
             i += 2
         elif a == '--quiet':
             quiet = True
             i += 1
         else:
+            bad.append(a)
             i += 1
+
+    if bad:
+        print('未知参数：%s' % ' '.join(bad))
+        print('可用参数：--root <目录> | --out <文件> | --quiet | --selftest')
+        return 2
 
     if not os.path.isdir(root):
         print('扫描根不存在：%s' % root)

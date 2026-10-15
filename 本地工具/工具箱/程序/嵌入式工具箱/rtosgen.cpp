@@ -2,12 +2,17 @@
 
 #include <QDir>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QRegularExpression>
 #include <QStringConverter>
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
 
+#include "apppaths.h"     /* 与检查器共读同一份规则表：速查数据/rules/ */
 #include "lookupdata.h"   /* 从「STM32 速查」的 dataset.json 取补全素材 */
 
 namespace RtosGen {
@@ -175,8 +180,423 @@ static QString kindText(const QString &kind)
     return kind;
 }
 
+/* ---------------- 跨流程卡冲突检测 ----------------
+   勾选的每张流程卡都自带一段"可直接搬用"的初始化代码。两张卡若都往同一个中断向量里
+   挂自己的 ISR、或都把某个脚配成自己的复用，同时并入就必然打架。这里只从卡片的可复用
+   代码里**提取事实**（IRQn / 抢占值 / GPIO 脚位）后两两比对，不改任何代码、不内置手册表。 */
+
+/* 剥掉注释与字符串（保留换行），避免注释里提到的 *_IRQn / GPIO_Pin_x 被当成占用。 */
+static QString stripCodeComments(const QString &in)
+{
+    QString s = in;
+    int i = 0;
+    const int n = s.size();
+    while (i < n) {
+        const QChar c = s.at(i);
+        if (c == QLatin1Char('/') && i + 1 < n && s.at(i + 1) == QLatin1Char('/')) {
+            while (i < n && s.at(i) != QLatin1Char('\n'))
+                s[i++] = QLatin1Char(' ');
+        } else if (c == QLatin1Char('/') && i + 1 < n && s.at(i + 1) == QLatin1Char('*')) {
+            s[i] = s[i + 1] = QLatin1Char(' ');
+            i += 2;
+            while (i + 1 < n && !(s.at(i) == QLatin1Char('*') && s.at(i + 1) == QLatin1Char('/'))) {
+                if (s.at(i) != QLatin1Char('\n'))
+                    s[i] = QLatin1Char(' ');
+                ++i;
+            }
+            if (i + 1 < n) {
+                s[i] = s[i + 1] = QLatin1Char(' ');
+                i += 2;
+            } else {
+                i = n;
+            }
+        } else if (c == QLatin1Char('"') || c == QLatin1Char('\'')) {
+            const QChar q = c;
+            s[i++] = QLatin1Char(' ');
+            while (i < n && s.at(i) != q) {
+                if (s.at(i) == QLatin1Char('\\') && i + 1 < n) {
+                    s[i] = s[i + 1] = QLatin1Char(' ');
+                    i += 2;
+                } else {
+                    if (s.at(i) != QLatin1Char('\n'))
+                        s[i] = QLatin1Char(' ');
+                    ++i;
+                }
+            }
+            if (i < n)
+                s[i++] = QLatin1Char(' ');
+        } else {
+            ++i;
+        }
+    }
+    return s;
+}
+
+CardRefs extractCardRefs(const QString &code)
+{
+    CardRefs r;
+    const QString s = stripCodeComments(code);
+    auto toNum = [](const QString &v) -> int {
+        bool ok = false;
+        const int n = v.toInt(&ok);
+        return ok ? n : -1;   /* 值写成宏（SYS_USART_IRQ_PRE_PRIO）时判不出数，记 -1 */
+    };
+    auto addIrq = [&r](const QString &q) {
+        if (!q.isEmpty() && !r.irqs.contains(q))
+            r.irqs << q;
+    };
+
+    /* (a) 所有 *_IRQn 符号 */
+    static const QRegularExpression irqRe(QStringLiteral("\\b([A-Za-z_]\\w*_IRQn)\\b"));
+    {
+        auto it = irqRe.globalMatch(s);
+        while (it.hasNext())
+            addIrq(it.next().captured(1));
+    }
+
+    /* (b) xxxNVIC_SetPriority(IRQn, 抢占值, ...) —— 覆盖 SYS_/HAL_/__ 前缀与裸名 */
+    static const QRegularExpression setRe(QStringLiteral(
+        "[A-Za-z_]*NVIC_SetPriority\\s*\\(\\s*([A-Za-z_]\\w*_IRQn)\\s*,\\s*(\\w+)"));
+    {
+        auto it = setRe.globalMatch(s);
+        while (it.hasNext()) {
+            const QRegularExpressionMatch m = it.next();
+            addIrq(m.captured(1));
+            r.irqPreempt.insert(m.captured(1), toNum(m.captured(2)));
+        }
+    }
+
+    /* (c) NVIC_InitStructure 写法：先 NVIC_IRQChannel = X_IRQn，随后 PreemptionPriority = N */
+    static const QRegularExpression chRe(QStringLiteral("NVIC_IRQChannel\\s*=\\s*([A-Za-z_]\\w*)"));
+    static const QRegularExpression preRe(
+        QStringLiteral("NVIC_IRQChannelPreemptionPriority\\s*=\\s*(\\w+)"));
+    {
+        QString cur;
+        for (const QString &line : s.split(QLatin1Char('\n'))) {
+            const QRegularExpressionMatch mc = chRe.match(line);
+            if (mc.hasMatch())
+                cur = mc.captured(1);
+            const QRegularExpressionMatch mp = preRe.match(line);
+            if (mp.hasMatch()) {
+                if (cur.isEmpty())
+                    r.preemptNoChannel = true;
+                else
+                    r.irqPreempt.insert(cur, toNum(mp.captured(1)));
+            }
+        }
+    }
+
+    /* (d) 引脚：GPIO_PinAFConfig 是"端口+脚"写在同一个调用里，最可靠 */
+    static const QRegularExpression afRe(QStringLiteral(
+        "GPIO_PinAFConfig\\s*\\(\\s*GPIO([A-K])\\s*,\\s*GPIO_PinSource\\s*(\\d+)"));
+    auto addPin = [&r](const QString &p) {
+        if (!p.isEmpty() && !r.pins.contains(p))
+            r.pins << p;
+    };
+    /* 脚位统一写成 PXn（PA9 / PB10），跨卡比对才好对上 */
+    auto mkPin = [](const QString &port, const QString &num) {
+        return QStringLiteral("P") + port + num;
+    };
+    {
+        auto it = afRe.globalMatch(s);
+        while (it.hasNext()) {
+            const QRegularExpressionMatch m = it.next();
+            addPin(mkPin(m.captured(1), m.captured(2)));
+        }
+    }
+
+    /* (e) 引脚：GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9 | GPIO_Pin_10; 这类赋值先记下来，
+       等 GPIO_Init(GPIOx, &GPIO_InitStructure) 出现时再落到端口上（卡里普遍这么写）。
+       同一行同时出现唯一端口 token 的，直接就地关联。 */
+    static const QRegularExpression pinRe(QStringLiteral("GPIO_Pin_(\\d+)"));
+    static const QRegularExpression portRe(QStringLiteral("\\bGPIO([A-K])\\b"));
+    static const QRegularExpression initRe(QStringLiteral("GPIO_Init\\s*\\(\\s*GPIO([A-K])\\b"));
+    {
+        QStringList pending;
+        for (const QString &line : s.split(QLatin1Char('\n'))) {
+            QStringList ports;
+            auto pit = portRe.globalMatch(line);
+            while (pit.hasNext())
+                ports << pit.next().captured(1);
+            const QRegularExpressionMatch mi = initRe.match(line);
+            if (mi.hasMatch()) {
+                const QString port = mi.captured(1);
+                for (const QString &p : pending)
+                    addPin(mkPin(port, p));
+                pending.clear();
+                continue;
+            }
+            QStringList nums;
+            auto nit = pinRe.globalMatch(line);
+            while (nit.hasNext())
+                nums << nit.next().captured(1);
+            if (nums.isEmpty())
+                continue;
+            if (line.contains(QLatin1Char('='))) {
+                /* 赋值给 InitStructure 的 Pin 字段 → 待定，等 GPIO_Init 落端口 */
+                for (const QString &x : nums)
+                    if (!pending.contains(x))
+                        pending << x;
+            } else if (ports.size() == 1) {
+                for (const QString &x : nums)
+                    addPin(mkPin(ports.first(), x));
+            }
+            /* 端口不只一个又没走 GPIO_Init → 关联不确定，宁可不报（避免误报） */
+        }
+    }
+    return r;
+}
+
+QStringList flowConflictsFromRefs(const QStringList &names, const QVector<CardRefs> &refs)
+{
+    QStringList out;
+    const int n = qMin(names.size(), int(refs.size()));
+    for (int i = 0; i < n; ++i) {
+        for (int j = i + 1; j < n; ++j) {
+            for (const QString &irq : refs.at(i).irqs) {
+                if (!refs.at(j).irqs.contains(irq))
+                    continue;
+                out << QStringLiteral(
+                           "[参考卡] 「%1」与「%2」都要用中断向量 %3：两者会往同一个 ISR 上挂自己的处理，"
+                           "同时并入只能留一个，请确定由谁处理")
+                           .arg(names.at(i), names.at(j), irq);
+                const int a = refs.at(i).irqPreempt.value(irq, -2);
+                const int b = refs.at(j).irqPreempt.value(irq, -2);
+                if (a >= 0 && b >= 0 && a != b)
+                    out << QStringLiteral(
+                               "[参考卡] 「%1」与「%2」给 %3 配的抢占值不一致（%4 / %5）："
+                               "同一中断只能有一个抢占值，后配的会盖掉先配的，需统一")
+                               .arg(names.at(i), names.at(j), irq).arg(a).arg(b);
+            }
+            QStringList shared;
+            for (const QString &p : refs.at(i).pins)
+                if (refs.at(j).pins.contains(p) && !shared.contains(p))
+                    shared << p;
+            if (!shared.isEmpty())
+                out << QStringLiteral(
+                           "[参考卡] 「%1」与「%2」都占用了引脚 %3：同一脚位不能配两种复用，需确定归谁用")
+                           .arg(names.at(i), names.at(j), shared.join(QStringLiteral("、")));
+        }
+    }
+    QStringList uniq;
+    for (const QString &m : out)
+        if (!uniq.contains(m))
+            uniq << m;
+    return uniq;
+}
+
+/* ---------------- 规则表（数据模型）：与检查器共读同一份 ----------------
+   中断上下文的 API 分类（哪些接口会阻塞 / 哪些内核临界区不能进）不是"芯片手册数据"，
+   而是 FreeRTOS 自身的规则，已经外置在 工具箱/速查数据/rules/freertos_isr_rules.json：
+   检查器 rtos_check.py 读它，这里也读它 —— 一份数据两处用，改表就两边同时生效。
+   表读不到时本功能静默关闭（不猜、不内置第二份，避免两份规则漂移）。 */
+
+namespace {
+
+struct IsrRules {
+    QStringList blocking;   /* 任务态接口：ISR 里调会阻塞 / 破坏内核 */
+    QStringList critical;   /* 内核临界区：ISR 里要改用 *_FROM_ISR 版本 */
+    QString     source;
+    bool        loaded = false;
+};
+
+const IsrRules &isrRules()
+{
+    static const IsrRules r = [] {
+        IsrRules x;
+        const QString root = AppPaths::toolRoot();
+        if (root.isEmpty())
+            return x;
+        const QString p = QDir(root).filePath(QStringLiteral("rules/freertos_isr_rules.json"));
+        QFile f(p);
+        if (!f.open(QIODevice::ReadOnly))
+            return x;
+        const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+        const QJsonArray b = o.value(QStringLiteral("blocking_api")).toArray();
+        const QJsonArray c = o.value(QStringLiteral("isr_unsafe_critical")).toArray();
+        for (const QJsonValue &v : b)
+            x.blocking << v.toString();
+        for (const QJsonValue &v : c)
+            x.critical << v.toString();
+        x.source = p;
+        x.loaded = !x.blocking.isEmpty();
+        return x;
+    }();
+    return r;
+}
+
+} // namespace
+
+QStringList cardIsrApiIssues(const QString &cardName, const QString &code)
+{
+    QStringList out;
+    const IsrRules &rules = isrRules();
+    if (!rules.loaded || code.trimmed().isEmpty())
+        return out;
+    const QString s = stripCodeComments(code);
+
+    static const QRegularExpression hdrRe(QStringLiteral(
+        "\\b(\\w+_IRQHandler|\\w+_isr|\\w+_irq)\\s*\\([^;{)]*\\)\\s*\\{"));
+    static const QRegularExpression callRe(QStringLiteral("([A-Za-z_]\\w*)\\s*\\("));
+    auto it = hdrRe.globalMatch(s);
+    while (it.hasNext()) {
+        const QRegularExpressionMatch m = it.next();
+        const QString fname = m.captured(1);
+        /* 从 '{' 之后开始数括号，取出整段函数体 */
+        const int bodyStart = m.capturedEnd();
+        int depth = 1, i = bodyStart;
+        while (i < s.size() && depth > 0) {
+            const QChar ch = s.at(i);
+            if (ch == QLatin1Char('{'))
+                ++depth;
+            else if (ch == QLatin1Char('}'))
+                --depth;
+            ++i;
+        }
+        const QString body = s.mid(bodyStart, qMax(0, i - bodyStart - 1));
+        auto it2 = callRe.globalMatch(body);
+        while (it2.hasNext()) {
+            const QString api = it2.next().captured(1);
+            if (rules.blocking.contains(api))
+                out << QStringLiteral("[参考卡] 「%1」的中断服务函数 %2 里调用了 %3（任务态接口）："
+                                      "中断上下文只能用 %3FromISR 系列，直接调会阻塞、破坏内核临界区")
+                           .arg(cardName, fname, api);
+            else if (rules.critical.contains(api))
+                out << QStringLiteral("[参考卡] 「%1」的中断服务函数 %2 里调用了 %3（内核临界区）："
+                                      "中断上下文要改用对应的 *_FROM_ISR 版本")
+                           .arg(cardName, fname, api);
+        }
+    }
+    QStringList uniq;
+    for (const QString &msg : out)
+        if (!uniq.contains(msg))
+            uniq << msg;
+    return uniq;
+}
+
+QStringList flowConflicts(const QStringList &flowPicks)
+{
+    QStringList out;
+    if (flowPicks.isEmpty())
+        return out;   /* 没勾卡就不碰速查数据 */
+    QString err;
+    if (!LookupData::load(&err)) {
+        out << QStringLiteral("[参考卡] 勾了 %1 张卡，但读不到「STM32 速查」数据，跨卡冲突检查做不了：%2")
+                   .arg(flowPicks.size()).arg(err);
+        return out;
+    }
+    QStringList names;
+    QVector<CardRefs> refs;
+    for (const QString &name : flowPicks) {
+        const LookupData::FlowHit h = LookupData::flowByName(name);
+        if (h.name.isEmpty()) {
+            out << QStringLiteral("[参考卡] 勾选的卡「%1」在速查数据里找不到（名字要与速查里一字不差）")
+                       .arg(name);
+            continue;
+        }
+        QStringList fns, incs;
+        names << name;
+        refs << extractCardRefs(LookupData::extractReusable(h.code, &fns, &incs));
+        /* 同一份规则表也用来拦"卡片里的 ISR 调了任务态接口"（检查器读的也是它） */
+        out += cardIsrApiIssues(name, h.code);
+    }
+    out += flowConflictsFromRefs(names, refs);
+    QStringList uniq;
+    for (const QString &m : out)
+        if (!uniq.contains(m))
+            uniq << m;
+    return uniq;
+}
+
+/* ---------------- 周期任务可调度性（确定性数学，只给建议不改任务） ---------------- */
+
+QStringList scheduleAnalysis(const QVector<TaskSpec> &tasks)
+{
+    QStringList out;
+    QVector<const TaskSpec *> per;   /* 填了 WCET 的周期任务才纳入分析 */
+    int missing = 0;
+    for (const TaskSpec &t : tasks) {
+        if (t.kind != QStringLiteral("周期"))
+            continue;
+        if (t.wcetUs > 0 && t.periodMs > 0)
+            per << &t;
+        else
+            ++missing;
+    }
+    if (per.isEmpty())
+        return out;
+
+    const int n = per.size();
+    double U = 0.0;
+    for (const TaskSpec *t : per)
+        U += double(t->wcetUs) / (double(t->periodMs) * 1000.0);
+    const double bound = n * (std::pow(2.0, 1.0 / n) - 1.0);
+
+    out << QStringLiteral("[可调度] 周期任务利用率 U = %1（%2 个任务填了 WCET），"
+                          "RMS 上界 n(2^(1/n)-1) = %3")
+               .arg(U, 0, 'f', 3).arg(n).arg(bound, 0, 'f', 3);
+
+    /* RMS 的前提是"周期越短优先级越高"；用户手填的优先级若没按这个来，
+       上界结论就不适用，必须先讲清楚，别让人照着错的前提调参。 */
+    bool monotonic = true;
+    for (const TaskSpec *a : per)
+        for (const TaskSpec *b : per)
+            if (a->periodMs < b->periodMs && a->prio < b->prio)
+                monotonic = false;
+    if (!monotonic)
+        out << QStringLiteral("[可调度] 优先级没有按「周期越短越高」分配，而 RMS 上界只在"
+                              "该前提下成立——先把周期短的排到更高优先级，再按本结论调参");
+
+    if (U > bound + 1e-9)
+        out << QStringLiteral("[可调度] U 超过 RMS 上界：按固定优先级调度可能丢周期。"
+                              "建议：加大任务周期 / 降低 WCET / 减少周期任务数（三者择一，改完重算）");
+    else
+        out << QStringLiteral("[可调度] U 未超上界，按固定优先级（RMS）调度可调度");
+
+    /* 最坏响应时间：Ri = Ci + Σ_{j 优先级更高} ceil(Ri/Tj)·Cj，迭代到收敛 */
+    for (const TaskSpec *t : per) {
+        const double Ci = double(t->wcetUs);
+        const double Ti = double(t->periodMs) * 1000.0;
+        double R = Ci;
+        bool blew = false;
+        bool conv = false;
+        for (int k = 0; k < 64 && !blew && !conv; ++k) {
+            double next = Ci;
+            for (const TaskSpec *j : per) {
+                if (j == t || j->prio <= t->prio)
+                    continue;
+                next += std::ceil(R / (double(j->periodMs) * 1000.0)) * double(j->wcetUs);
+            }
+            if (next > Ti) {
+                R = next;
+                blew = true;
+            } else if (std::fabs(next - R) < 0.5) {
+                R = next;
+                conv = true;
+            } else {
+                R = next;
+            }
+        }
+        if (blew)
+            out << QStringLiteral("[可调度] 任务 %1 的最坏响应时间 %2 ms 已超过其周期 %3 ms："
+                                  "更低优先级任务的执行时间被它算漏了，实际会丢周期——"
+                                  "应提高它的优先级，或压掉抢占它的高优先级任务的 WCET")
+                       .arg(t->name)
+                       .arg(R / 1000.0, 0, 'f', 1)
+                       .arg(t->periodMs);
+        else if (!conv)
+            out << QStringLiteral("[可调度] 任务 %1 的响应时间迭代不收敛（用时太长），"
+                                  "说明负载已过重，会丢周期").arg(t->name);
+    }
+
+    if (missing > 0)
+        out << QStringLiteral("[可调度] 另有 %1 个周期任务未填 WCET(µs)，未纳入上面的分析"
+                              "（填上最坏执行时间才算得准）").arg(missing);
+    return out;
+}
+
 QStringList validate(const FwConfig &cfg, const QVector<TaskSpec> &tasks,
-                     const QVector<ResSpec> &res)
+                     const QVector<ResSpec> &res, const QStringList &flowPicks)
 {
     QStringList out;
     const int maxPrio = cfg.ints.value(QStringLiteral("configMAX_PRIORITIES"), 0);
@@ -239,6 +659,13 @@ QStringList validate(const FwConfig &cfg, const QVector<TaskSpec> &tasks,
             if (!resNames.contains(ln))
                 out << QStringLiteral("[关联] 任务 %1 关联的资源 %2 未在资源表中声明")
                        .arg(t.name, ln);
+
+    /* 生成前拦截①：勾选的流程卡之间会不会打架（同一 IRQn / 同一脚位 / 抢占值不一致）。
+       卡片的代码是可搬用的真代码，冲突必须在"生成之前"讲清楚，别等用户编完才发现。 */
+    out += flowConflicts(flowPicks);
+
+    /* 生成前拦截②：周期任务可调度性（只给带解释的建议，不改任务） */
+    out += scheduleAnalysis(tasks);
     return out;
 }
 
@@ -765,16 +1192,16 @@ QVector<ScenarioSpec> scenarios()
         s.name = QStringLiteral("网关端（5 任务）");
         s.desc = QStringLiteral("板2：收帧 → 转发 → 命令 → 补传 → 监控");
         s.tasks << TaskSpec{QStringLiteral("LoraRx"), QStringLiteral("周期"), 20, 3, 512,
-                            QStringLiteral("收 LoRa 帧，校验后入队"), {QStringLiteral("s_q_frame")}, {}};
+                            QStringLiteral("收 LoRa 帧，校验后入队"), {QStringLiteral("s_q_frame")}, {}, 0};
         s.tasks << TaskSpec{QStringLiteral("Forward"), QStringLiteral("事件"), 0, 4, 512,
                             QStringLiteral("取帧写 Flash 缓存并经上位机串口转发"),
-                            {QStringLiteral("s_q_frame"), QStringLiteral("s_qt_tx_mtx")}, {}};
+                            {QStringLiteral("s_q_frame"), QStringLiteral("s_qt_tx_mtx")}, {}, 0};
         s.tasks << TaskSpec{QStringLiteral("CmdRx"), QStringLiteral("周期"), 20, 3, 512,
-                            QStringLiteral("收上位机命令，执行并应答"), {QStringLiteral("s_qt_tx_mtx")}, {}};
+                            QStringLiteral("收上位机命令，执行并应答"), {QStringLiteral("s_qt_tx_mtx")}, {}, 0};
         s.tasks << TaskSpec{QStringLiteral("Replay"), QStringLiteral("周期"), 50, 3, 256,
-                            QStringLiteral("从最老记录补传历史帧，回报进度"), {}, {}};
+                            QStringLiteral("从最老记录补传历史帧，回报进度"), {}, {}, 0};
         s.tasks << TaskSpec{QStringLiteral("Monitor"), QStringLiteral("周期"), 1000, 5, 256,
-                            QStringLiteral("打印统计、喂狗"), {}, {}};
+                            QStringLiteral("打印统计、喂狗"), {}, {}, 0};
         s.res << ResSpec{QStringLiteral("queue"), QStringLiteral("s_q_frame"),
                          QStringLiteral("uint8_t"), 4, QStringLiteral("收帧到转发")};
         s.res << ResSpec{QStringLiteral("mutex"), QStringLiteral("s_qt_tx_mtx"),
@@ -786,9 +1213,9 @@ QVector<ScenarioSpec> scenarios()
         s.name = QStringLiteral("最小入门（2 任务）");
         s.desc = QStringLiteral("一个周期任务 + 一个事件任务，练手用");
         s.tasks << TaskSpec{QStringLiteral("Sample"), QStringLiteral("周期"), 1000, 2, 256,
-                            QStringLiteral("周期采样"), {QStringLiteral("s_q_data")}, {}};
+                            QStringLiteral("周期采样"), {QStringLiteral("s_q_data")}, {}, 0};
         s.tasks << TaskSpec{QStringLiteral("Handle"), QStringLiteral("事件"), 0, 2, 256,
-                            QStringLiteral("阻塞取数据并处理"), {QStringLiteral("s_q_data")}, {}};
+                            QStringLiteral("阻塞取数据并处理"), {QStringLiteral("s_q_data")}, {}, 0};
         s.res << ResSpec{QStringLiteral("queue"), QStringLiteral("s_q_data"),
                          QStringLiteral("uint8_t"), 4, QStringLiteral("采样到处理")};
         out << s;
@@ -844,12 +1271,12 @@ QVector<TaskSpec> sampleTasks()
 {
     QVector<TaskSpec> v;
     v << TaskSpec{QStringLiteral("Sensor"),  QStringLiteral("周期"), 2000, 3, 512,
-                  QStringLiteral("读温湿度，写采集队列"), {QStringLiteral("s_q_sensor")}, {}};
+                  QStringLiteral("读温湿度，写采集队列"), {QStringLiteral("s_q_sensor")}, {}, 0};
     v << TaskSpec{QStringLiteral("Process"), QStringLiteral("事件"), 0, 3, 512,
                   QStringLiteral("从采集队列取数据，组帧，写发送队列"),
-                  {QStringLiteral("s_q_sensor"), QStringLiteral("s_q_frame")}, {}};
+                  {QStringLiteral("s_q_sensor"), QStringLiteral("s_q_frame")}, {}, 0};
     v << TaskSpec{QStringLiteral("Comm"),    QStringLiteral("事件"), 0, 4, 512,
-                  QStringLiteral("从发送队列取帧，经 LoRa 发出"), {QStringLiteral("s_q_frame")}, {}};
+                  QStringLiteral("从发送队列取帧，经 LoRa 发出"), {QStringLiteral("s_q_frame")}, {}, 0};
     return v;
 }
 
@@ -935,7 +1362,7 @@ int selftest(QStringList &log, const QString &envMonitorRoot)
     c2.ints.insert(QStringLiteral("configTOTAL_HEAP_SIZE"), 30720);
     c2.ints.insert(QStringLiteral("configUSE_MUTEXES"), 0);
     QVector<TaskSpec> bad;
-    bad << TaskSpec{QStringLiteral("Bad"), QStringLiteral("周期"), 1000, 99, 32, QString(), {}, {}};
+    bad << TaskSpec{QStringLiteral("Bad"), QStringLiteral("周期"), 1000, 99, 32, QString(), {}, {}, 0};
     QVector<ResSpec> badres;
     badres << ResSpec{QStringLiteral("mutex"), QStringLiteral("m"), QString(), 0, QString()};
     const QStringList issues = validate(c2, bad, badres);
@@ -996,7 +1423,7 @@ int selftest(QStringList &log, const QString &envMonitorRoot)
     c3.ints.insert(QStringLiteral("configMAX_PRIORITIES"), 4);
     c3.ints.insert(QStringLiteral("configTOTAL_HEAP_SIZE"), 1024);
     QVector<TaskSpec> big;
-    big << TaskSpec{QStringLiteral("Big"), QStringLiteral("周期"), 1000, 9, 4096, QString(), {}, {}};
+    big << TaskSpec{QStringLiteral("Big"), QStringLiteral("周期"), 1000, 9, 4096, QString(), {}, {}, 0};
     const QString sug = configSnippet(c3, big, {});
     expect(sug.contains(QStringLiteral("configMAX_PRIORITIES"))
                && sug.contains(QStringLiteral("configTOTAL_HEAP_SIZE")),
@@ -1077,6 +1504,144 @@ int selftest(QStringList &log, const QString &envMonitorRoot)
         expect(hout.contains(QStringLiteral("速查提示[xQueueCreate]"))
                    && hout.contains(QStringLiteral("xQueueCreate(")),
                QStringLiteral("符号级：任务桩里含速查提示与原型的片段"));
+    }
+
+    /* ---------------- 生成前拦截：跨流程卡冲突 ----------------
+       真卡片之间未必冲突（也就测不到检测器），所以这里用合成"卡"验提取与比对本身：
+       错例必须抓到，反例（不搭界的两张卡）必须不报。 */
+    {
+        const QString cardA = QStringLiteral(
+            "GPIO_InitTypeDef GPIO_InitStructure;\n"
+            "void USART1_IRQHandler(void) {\n"
+            "    SYS_NVIC_SetPriority(USART1_IRQn, 5, 0);\n"
+            "}\n"
+            "GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9 | GPIO_Pin_10;\n"
+            "GPIO_Init(GPIOA, &GPIO_InitStructure);\n");
+        const RtosGen::CardRefs ra = RtosGen::extractCardRefs(cardA);
+        expect(ra.irqs.contains(QStringLiteral("USART1_IRQn")),
+               QStringLiteral("跨卡提取：抓到中断向量"));
+        expect(ra.irqPreempt.value(QStringLiteral("USART1_IRQn")) == 5,
+               QStringLiteral("跨卡提取：抓到 SYS_NVIC_SetPriority 的抢占值字面量（5）"));
+        expect(ra.pins.contains(QStringLiteral("PA9")) && ra.pins.contains(QStringLiteral("PA10")),
+               QStringLiteral("跨卡提取：GPIO_Pin 赋值经 GPIO_Init 落到端口（PA9 / PA10）"));
+
+        /* 反例：注释里的名字不算占用 */
+        const RtosGen::CardRefs rc = RtosGen::extractCardRefs(QStringLiteral(
+            "/* 注释里写着 TIM3_IRQn 与 GPIO_Pin_5，都不算占用 */\n"
+            "/* NVIC_IRQChannelPreemptionPriority = 2 */\n"));
+        expect(rc.irqs.isEmpty() && rc.pins.isEmpty(),
+               QStringLiteral("跨卡提取反例：注释里的 IRQn / 脚位不当作占用"));
+
+        /* 错例：两卡抢同一 IRQn（抢占值还不同）+ 同一脚位 → 三类都要报 */
+        const RtosGen::CardRefs rb = RtosGen::extractCardRefs(QStringLiteral(
+            "void USART1_IRQHandler(void) { SYS_NVIC_SetPriority(USART1_IRQn, 6, 0); }\n"
+            "GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;\n"
+            "GPIO_Init(GPIOA, &GPIO_InitStructure);\n"));
+        QStringList cfNames;
+        cfNames << QStringLiteral("卡A") << QStringLiteral("卡B");
+        QVector<RtosGen::CardRefs> cfRefs;
+        cfRefs << ra << rb;
+        const QStringList cf = RtosGen::flowConflictsFromRefs(cfNames, cfRefs);
+        const QString cfj = cf.join(QStringLiteral("\n"));
+        expect(cfj.contains(QStringLiteral("USART1_IRQn")) && cfj.contains(QStringLiteral("卡A"))
+                   && cfj.contains(QStringLiteral("卡B")),
+               QStringLiteral("跨卡冲突：两卡抢同一中断向量要报出，并写明是哪两张卡"));
+        expect(cfj.contains(QStringLiteral("抢占值不一致")),
+               QStringLiteral("跨卡冲突：同一 IRQn 配了不同抢占值要报出（5 / 6）"));
+        expect(cfj.contains(QStringLiteral("PA10")),
+               QStringLiteral("跨卡冲突：两卡占同一脚位要报出（PA10）"));
+
+        /* 反例：不搭界的两张卡不该报 */
+        const RtosGen::CardRefs rd = RtosGen::extractCardRefs(QStringLiteral(
+            "void TIM2_IRQHandler(void) { SYS_NVIC_SetPriority(TIM2_IRQn, 5, 0); }\n"
+            "GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3;\n"
+            "GPIO_Init(GPIOB, &GPIO_InitStructure);\n"));
+        QStringList okNames;
+        okNames << QStringLiteral("卡A") << QStringLiteral("卡D");
+        QVector<RtosGen::CardRefs> okRefs;
+        okRefs << ra << rd;
+        expect(RtosGen::flowConflictsFromRefs(okNames, okRefs).isEmpty(),
+               QStringLiteral("跨卡冲突反例：不搭界的两张卡不报"));
+
+        /* validate() 真的把勾选接上了（名字取自卡片清单，写错就查不到） */
+        expect(RtosGen::validate(c2, sampleTasks(), sampleResources(),
+                                 QStringList{QStringLiteral("速查里没有的卡")})
+                   .filter(QStringLiteral("找不到")).size() > 0,
+               QStringLiteral("生成前拦截：勾了速查里没有的卡名会报出"));
+        expect(RtosGen::validate(c2, sampleTasks(), sampleResources(), QStringList())
+                   .filter(QStringLiteral("参考卡")).isEmpty(),
+               QStringLiteral("生成前拦截反例：没勾卡时不出现跨卡告警"));
+
+        /* 共读的规则表（速查数据/rules）：卡片自己的 ISR 调任务态接口要拦下来 ——
+           错例必抓、反例（ISR 里调 FromISR 版 / 任务态函数里调同名接口）必不报。 */
+        const QStringList isrBad = RtosGen::cardIsrApiIssues(QStringLiteral("合成卡"), QStringLiteral(
+            "void USART1_IRQHandler(void) {\n"
+            "    xQueueSend(s_q, &x, 0);\n"
+            "    taskENTER_CRITICAL();\n"
+            "}\n"));
+        expect(!isrBad.isEmpty() && isrBad.join(QStringLiteral("\n")).contains(QStringLiteral("USART1_IRQHandler"))
+                   && isrBad.join(QStringLiteral("\n")).contains(QStringLiteral("xQueueSend")),
+               QStringLiteral("规则表共读：卡片 ISR 里调任务态接口要拦下（并写明是哪个 ISR）"));
+        expect(isrBad.join(QStringLiteral("\n")).contains(QStringLiteral("taskENTER_CRITICAL")),
+               QStringLiteral("规则表共读：卡片 ISR 里进内核临界区要拦下"));
+        expect(RtosGen::cardIsrApiIssues(QStringLiteral("合成卡"), QStringLiteral(
+                   "void SPI1_IRQHandler(void) { xQueueSendFromISR(s_q, &x, &w); }\n"
+                   "void App_Task(void) { xQueueSend(s_q, &x, 0); }\n"))
+                   .isEmpty(),
+               QStringLiteral("规则表共读反例：ISR 里调 FromISR / 任务态函数里调同名接口都不报"));
+        /* 反例（真实数据）：速查里那张串口卡本身是正确写法，不该被拦 —— 拦了就是误报 */
+        const LookupData::FlowHit realCard =
+            LookupData::flowByName(QStringLiteral("① 串口 USART + DMA + 空闲中断接收（不定长帧）"));
+        const QStringList realIsr =
+            RtosGen::cardIsrApiIssues(realCard.name, realCard.code);
+        expect(realIsr.isEmpty(),
+               QStringLiteral("规则表共读反例：真实串口卡的 ISR 不误报（%1）")
+                   .arg(realIsr.isEmpty() ? QStringLiteral("无告警")
+                                          : realIsr.join(QStringLiteral(" / "))));
+    }
+
+    /* ---------------- 生成前拦截：周期任务可调度性 ---------------- */
+    {
+        /* 可调度：3 个周期任务，U≈0.35 < RMS 上界 0.78 */
+        QVector<TaskSpec> good;
+        good << TaskSpec{QStringLiteral("A"), QStringLiteral("周期"), 10, 3, 256, {}, {}, {}, 1000};
+        good << TaskSpec{QStringLiteral("B"), QStringLiteral("周期"), 20, 2, 256, {}, {}, {}, 3000};
+        good << TaskSpec{QStringLiteral("C"), QStringLiteral("周期"), 50, 1, 256, {}, {}, {}, 5000};
+        const QString gj = RtosGen::scheduleAnalysis(good).join(QStringLiteral("\n"));
+        expect(gj.contains(QStringLiteral("利用率")) && gj.contains(QStringLiteral("RMS 上界")),
+               QStringLiteral("可调度性：给出利用率与 RMS 上界"));
+        expect(!gj.contains(QStringLiteral("丢周期")),
+               QStringLiteral("可调度性反例：U 未超上界不报丢周期"));
+        expect(!gj.contains(QStringLiteral("优先级没有按")),
+               QStringLiteral("可调度性：优先级按周期单调分配时不提前提告警"));
+
+        /* 超载：U=1.2 超上界 0.83，且 Y 的响应时间超周期 → 要报丢周期 */
+        QVector<TaskSpec> over;
+        over << TaskSpec{QStringLiteral("X"), QStringLiteral("周期"), 10, 3, 256, {}, {}, {}, 8000};
+        over << TaskSpec{QStringLiteral("Y"), QStringLiteral("周期"), 20, 2, 256, {}, {}, {}, 8000};
+        const QString oj = RtosGen::scheduleAnalysis(over).join(QStringLiteral("\n"));
+        expect(oj.contains(QStringLiteral("丢周期")),
+               QStringLiteral("可调度性：U 超上界 / 响应时间超周期要报出丢周期"));
+
+        /* 优先级没按周期排 → 要提醒 RMS 前提不成立 */
+        QVector<TaskSpec> wrong;
+        wrong << TaskSpec{QStringLiteral("Long"), QStringLiteral("周期"), 50, 3, 256, {}, {}, {}, 1000};
+        wrong << TaskSpec{QStringLiteral("Short"), QStringLiteral("周期"), 10, 1, 256, {}, {}, {}, 1000};
+        expect(RtosGen::scheduleAnalysis(wrong).join(QStringLiteral("\n"))
+                   .contains(QStringLiteral("优先级没有按")),
+               QStringLiteral("可调度性：优先级未按周期单调分配时提前提告警"));
+
+        /* 只填了一部分 WCET → 要说明还有几个没纳入 */
+        QVector<TaskSpec> part;
+        part << TaskSpec{QStringLiteral("P"), QStringLiteral("周期"), 10, 2, 256, {}, {}, {}, 1000};
+        part << TaskSpec{QStringLiteral("Q"), QStringLiteral("周期"), 20, 1, 256, {}, {}, {}, 0};
+        expect(RtosGen::scheduleAnalysis(part).join(QStringLiteral("\n"))
+                   .contains(QStringLiteral("未填 WCET")),
+               QStringLiteral("可调度性：有周期任务没填 WCET 时给出提示"));
+
+        /* 反例：一条 WCET 都没填 → 不输出（别在没数据时刷屏） */
+        expect(RtosGen::scheduleAnalysis(sampleTasks()).isEmpty(),
+               QStringLiteral("可调度性反例：没有填 WCET 的周期任务时不输出"));
     }
 
     return fail;

@@ -31,6 +31,7 @@ struct TaskSpec {
     QString duty;                 /* 职责描述，写进 TODO 注释 */
     QStringList links;            /* 关联资源名（对应资源表里的变量名），生成时直接引用 */
     QString apiHint;              /* 补全提示词（函数前缀 / 关键词），生成时从速查取原型注释 */
+    int     wcetUs     = 0;       /* 最坏执行时间（微秒）；0 = 未填，可调度性分析用 */
 };
 
 /* 一个资源：队列 / 互斥量 / 递归互斥量 / 计数信号量 / 二值信号量 / 软定时器 */
@@ -58,9 +59,38 @@ struct GenOptions {
 /* 解析 FreeRTOSConfig.h，取关键宏。 */
 FwConfig parseConfig(const QString &configHeaderPath);
 
-/* 生成前校验，返回逐条提示（空 = 无问题）。 */
+/* 生成前校验（真正的生成前拦截），返回逐条提示（空 = 无问题）。
+   除任务/资源清单外，还要接收"勾选了哪些流程卡"，才能查出跨卡冲突；
+   flowPicks 为空时不做卡片相关检查（也不去碰那 4MB 速查数据）。 */
 QStringList validate(const FwConfig &cfg, const QVector<TaskSpec> &tasks,
-                     const QVector<ResSpec> &res);
+                     const QVector<ResSpec> &res,
+                     const QStringList &flowPicks = QStringList());
+
+/* 从一段（流程卡）代码里提取的硬件引用：中断向量、抢占优先级、GPIO 脚位。
+   提取前会剥掉注释与字符串，避免注释里提到的名字被当成占用。 */
+struct CardRefs {
+    QStringList         irqs;          /* 形如 USART1_IRQn / DMA2_Stream0_IRQn */
+    QHash<QString, int> irqPreempt;    /* IRQn -> 抢占值；-1 = 写了但不是字面整数 */
+    QStringList         pins;          /* 形如 PA9 / PB10 */
+    bool                preemptNoChannel = false;  /* 写了抢占值但判不出对应 IRQn */
+};
+CardRefs extractCardRefs(const QString &code);
+
+/* 跨卡冲突（可测内核）：names 与 refs 一一对应，返回逐条提示（空 = 无冲突）。 */
+QStringList flowConflictsFromRefs(const QStringList &names, const QVector<CardRefs> &refs);
+
+/* 跨流程卡冲突检测：按卡片名从速查取可复用代码，提取引用后两两比对。 */
+QStringList flowConflicts(const QStringList &flowPicks);
+
+/* 生成前拦截：卡片自己的中断服务函数里调了任务态接口（xQueueSend 等）或内核临界区
+   （taskENTER_CRITICAL 等）。规则表与检查器共读同一份：
+   工具箱/速查数据/rules/freertos_isr_rules.json；表读不到时本检查静默关闭。 */
+QStringList cardIsrApiIssues(const QString &cardName, const QString &code);
+
+/* 周期任务可调度性分析（纯函数）：利用率 U=ΣCi/Ti 对比 RMS 上界 n(2^(1/n)-1)，
+   并做最坏响应时间迭代 Ri = Ci + Σ_{j∈hp(i)} ceil(Ri/Tj)·Cj。只给带解释的建议，
+   不改任何任务；没有"填了 WCET 的周期任务"时返回空。 */
+QStringList scheduleAnalysis(const QVector<TaskSpec> &tasks);
 
 /* 渲染 main.c / .c 骨架（splitHeader 时含 .h，并含 USER CODE 保护区）。 */
 QString render(const FwConfig &cfg, const QVector<TaskSpec> &tasks,

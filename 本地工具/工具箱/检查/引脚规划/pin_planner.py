@@ -17,6 +17,8 @@ r"""引脚与资源规划器（幂等，只读源码，不改任何文件）。
     python 本地工具\工具箱\检查\引脚规划\pin_planner.py
     python 本地工具\工具箱\检查\引脚规划\pin_planner.py --use "LORA_E22,W25QXX,RS485"
     python 本地工具\工具箱\检查\引脚规划\pin_planner.py --board 2 --quiet
+    python 本地工具\工具箱\检查\引脚规划\pin_planner.py --selftest
+（--selftest 在临时目录造合成板核对判定，不写报告、不碰仓库。）
 """
 import os
 import re
@@ -90,6 +92,14 @@ def read_lines(path):
     return raw.decode('latin-1', 'replace').splitlines()
 
 
+def rel(path):
+    """相对仓库根的展示路径；跨盘符（如临时目录在 C:、仓库在 D:）退回绝对路径，不抛异常。"""
+    try:
+        return os.path.relpath(path, ROOT)
+    except ValueError:
+        return path
+
+
 def module_of(base):
     """把 `LORA_E22_TX` 这类基名归到一个模块名（去掉功能尾缀）。"""
     parts = base.split('_')
@@ -107,15 +117,15 @@ def scan_pins(inc_dir):
     pins_seen = {}
     files = sorted(f for f in os.listdir(inc_dir) if f.lower().endswith('.h'))
     for fn in files:
-        rel = os.path.relpath(os.path.join(inc_dir, fn), ROOT)
+        here = rel(os.path.join(inc_dir, fn))
         for i, line in enumerate(read_lines(os.path.join(inc_dir, fn)), 1):
             m = RE_PORT.match(line)
             if m:
-                ports_seen.setdefault(m.group(1), []).append((m.group(2)[4:], rel, i))
+                ports_seen.setdefault(m.group(1), []).append((m.group(2)[4:], here, i))
                 continue
             m = RE_PIN.match(line)
             if m:
-                pins_seen.setdefault(m.group(1), []).append((RE_BIT.findall(m.group(2)), rel, i))
+                pins_seen.setdefault(m.group(1), []).append((RE_BIT.findall(m.group(2)), here, i))
 
     for base, ports in ports_seen.items():
         port = ports[0][0]
@@ -160,7 +170,7 @@ def scan_irqs(src_dir, prio, max_syscall):
         if not fn.lower().endswith('.c'):
             continue
         path = os.path.join(src_dir, fn)
-        rel = os.path.relpath(path, ROOT)
+        here = rel(path)
         lines = read_lines(path)
         for i, line in enumerate(lines, 1):
             m = RE_IRQ_SET.search(line)
@@ -171,7 +181,7 @@ def scan_irqs(src_dir, prio, max_syscall):
                 sub = resolve(m.group(3), prio)
                 if pre is None:
                     continue      # 优先级也不是已知宏/常数
-                found.append((m.group(1), pre, sub, '%s:%d' % (rel, i),
+                found.append((m.group(1), pre, sub, '%s:%d' % (here, i),
                               max_syscall is not None and pre < max_syscall))
                 continue
             m = RE_IRQ_CH.search(line)
@@ -187,7 +197,7 @@ def scan_irqs(src_dir, prio, max_syscall):
                         sub = resolve(ms.group(1), prio)
                 if pre is None:
                     continue
-                found.append((irqn, pre, sub, '%s:%d' % (rel, i),
+                found.append((irqn, pre, sub, '%s:%d' % (here, i),
                               max_syscall is not None and pre < max_syscall))
     # 去重（同一 IRQn 多次出现保留首次）
     seen = {}
@@ -208,6 +218,184 @@ def read_max_syscall(cfg):
         if m:
             return int(m.group(1))
     return None
+
+
+RE_DMA_STREAM = re.compile(r'\bDMA([12])_Stream([0-7])\b')
+RE_DMA_CHANNEL = re.compile(r'\bDMA_Channel_([0-7])\b')
+RE_DMA_MACRO = re.compile(r'^\s*#\s*define\s+([A-Za-z_]\w*?)_DMA_(STREAM|CHANNEL|IRQ)\s+(\S+)')
+RE_DMA_CALL = re.compile(r'\b(SYS_DMA_\w+|DMA_Init|DMA_DeInit|DMA_ITConfig)\s*\(\s*([^,)]+)')
+# "真占用"只认这三种写法：字面量当流参数传进去、赋给某个字段/变量、被 return 出去。
+# 驱动内部的枚举表（dma_irqn() 数组、X-Macro 清单、指针范围比较）不算占用，
+# 否则整个 FWLIB 会把 16 条流全报一遍，听起来像全都在抢。
+RE_DMA_CLAIM = re.compile(
+    r'(?:DMA_Init|DMA_DeInit|DMA_ITConfig|SYS_DMA_\w+)\s*\(\s*(DMA[12]_Stream[0-7])\b'
+    r'|=\s*(DMA[12]_Stream[0-7])\b'
+    r'|\breturn\s+(DMA[12]_Stream[0-7])\b')
+RE_DMA_CH_CLAIM = re.compile(
+    r'(?:DMA_Init|DMA_DeInit|SYS_DMA_\w+)\s*\([^,]*,\s*(DMA_Channel_[0-7])'
+    r'|=\s*(DMA_Channel_[0-7])'
+    r'|\breturn\s+(DMA_Channel_[0-7])')
+
+
+def strip_comments(s):
+    """把注释与字符串内容替换成空格（保留换行），长度不变。
+    扫"真占用"时必须用它：工程里有注释写着 `= DMA1_Stream0~7`，直接扫原文会把它当占用。"""
+    out = list(s)
+    i, n = 0, len(s)
+    while i < n:
+        c = s[i]
+        if c == '/' and i + 1 < n and s[i + 1] == '/':
+            while i < n and s[i] != '\n':
+                out[i] = ' '
+                i += 1
+        elif c == '/' and i + 1 < n and s[i + 1] == '*':
+            out[i] = out[i + 1] = ' '
+            i += 2
+            while i < n and not (s[i] == '*' and i + 1 < n and s[i + 1] == '/'):
+                if s[i] != '\n':
+                    out[i] = ' '
+                i += 1
+            if i < n:
+                out[i] = out[i + 1] = ' '
+                i += 2
+        elif c == '"' or c == "'":
+            q = c
+            out[i] = ' '
+            i += 1
+            while i < n and s[i] != q:
+                if s[i] == '\\' and i + 1 < n:
+                    out[i] = out[i + 1] = ' '
+                    i += 2
+                else:
+                    if s[i] != '\n':
+                        out[i] = ' '
+                    i += 1
+            if i < n:
+                out[i] = ' '
+                i += 1
+        else:
+            i += 1
+    return ''.join(out)
+
+
+def scan_dma(proj):
+    """扫工程里的 DMA 占用，返回 (claims, unresolved)。
+
+    claims 每条 = {'module', 'streams', 'channels', 'loc'}；数据只有两类来源：
+    FWLIB\\inc 里的 *_DMA_STREAM / *_DMA_CHANNEL 宏，以及 FWLIB\\src 里真实出现的
+    DMAx_Streamn / DMA_Channel_n 字面量。流由形参或结构体字段传进去的写法
+    （p->tx_stream / adc_dma_stream(adc)）静态判不出，归到 unresolved 列出来，不猜。
+    """
+    inc = os.path.join(proj, 'FWLIB', 'inc')
+    src = os.path.join(proj, 'FWLIB', 'src')
+    claims = []
+    unresolved = []
+
+    if os.path.isdir(inc):
+        for fn in sorted(os.listdir(inc)):
+            if not fn.endswith('.h'):
+                continue
+            here = rel(os.path.join(inc, fn))
+            st, ch = {}, {}
+            for i, line in enumerate(read_lines(os.path.join(inc, fn)), 1):
+                m = RE_DMA_MACRO.match(line)
+                if not m:
+                    continue
+                if m.group(2) == 'STREAM':
+                    v = RE_DMA_STREAM.search(m.group(3))
+                    if v:
+                        st[m.group(1)] = ('DMA%s_Stream%s' % (v.group(1), v.group(2)),
+                                          '%s:%d' % (here, i))
+                elif m.group(2) == 'CHANNEL':
+                    v = RE_DMA_CHANNEL.search(m.group(3))
+                    if v:
+                        ch[m.group(1)] = 'DMA_Channel_%s' % v.group(1)
+            for mod, (stream, loc) in st.items():
+                claims.append({'module': mod, 'streams': {stream},
+                               'channels': {ch[mod]} if mod in ch else set(), 'loc': loc})
+                if mod not in ch:
+                    unresolved.append((mod, loc, '只声明了 STREAM 宏，没写对应的 CHANNEL 宏'))
+
+    if os.path.isdir(src):
+        for fn in sorted(os.listdir(src)):
+            if not fn.endswith('.c'):
+                continue
+            here = rel(os.path.join(src, fn))
+            mod = os.path.splitext(fn)[0]
+            streams, channels, first = set(), set(), ''
+            raw_lines = read_lines(os.path.join(src, fn))
+            masked_lines = strip_comments('\n'.join(raw_lines)).splitlines()
+            for i, line in enumerate(masked_lines, 1):
+                for v in RE_DMA_CLAIM.finditer(line):
+                    st = v.group(1) or v.group(2) or v.group(3)
+                    streams.add(st)
+                    first = first or '%s:%d' % (here, i)
+                for v in RE_DMA_CH_CLAIM.finditer(line):
+                    channels.add(v.group(1) or v.group(2) or v.group(3))
+                    first = first or '%s:%d' % (here, i)
+                for v in RE_DMA_CALL.finditer(line):
+                    arg = v.group(2).strip()
+                    if 'DMA' in arg or arg.isdigit():
+                        continue        # 字面量流/通道，已被上面的扫描覆盖
+                    unresolved.append((mod, '%s:%d' % (here, i),
+                                       '%s(...) 的第一个参数是 `%s`，静态判不出是哪条流'
+                                       % (v.group(1), arg)))
+            if streams or channels:
+                claims.append({'module': mod, 'streams': streams,
+                               'channels': channels, 'loc': first})
+    return claims, unresolved
+
+
+def render_dma(proj):
+    """DMA 资源一节：把工程里真实写下来的数据流/通道占用列成矩阵，
+    并把"同一条流被多个模块用"单独标出来。"""
+    out = ['### DMA 资源', '']
+    claims, unresolved = scan_dma(proj)
+    if not claims and not unresolved:
+        out.append('未找到可静态解析的 DMA 资源占用（工程可能还没用 DMA）。')
+        out.append('')
+        return '\n'.join(out)
+
+    owner = {}
+    for c in claims:
+        for st in c['streams']:
+            owner.setdefault(st, set()).add(c['module'])
+    shared = sorted((st, sorted(mods)) for st, mods in owner.items() if len(mods) > 1)
+
+    out.append('模块 %d 个，数据流 %d 条，被多个模块共用的流 %d 条，'
+               '无法静态解析的调用 %d 处。'
+               % (len(claims), len(owner), len(shared), len(unresolved)))
+    out.append('')
+    out.append('| 模块 | 数据流 | 通道 | 出处 |')
+    out.append('|---|---|---|---|')
+    for c in sorted(claims, key=lambda x: x['module']):
+        out.append('| `%s` | %s | %s | `%s` |'
+                   % (c['module'], ' '.join(sorted(c['streams'])) or '-',
+                      ' '.join(sorted(c['channels'])) or '-', c['loc']))
+    out.append('')
+    out.append('同一数据流被多个模块使用（同时用会互相改掉对方的 DMA 配置，'
+               '要么二选一、要么自己做占用登记）：')
+    out.append('')
+    if shared:
+        for st, mods in shared:
+            out.append('- %s ← %s' % (st, '、'.join(mods)))
+    else:
+        out.append('无。')
+    out.append('')
+    if unresolved:
+        out.append('无法静态解析的 DMA 调用（流由形参/字段传入，需人工核对）：')
+        out.append('')
+        show = unresolved[:20]
+        for mod, loc, why in show:
+            out.append('- `%s` @ `%s`：%s' % (mod, loc, why))
+        if len(unresolved) > len(show):
+            out.append('- ……另有 %d 处同类调用，按上面的写法自查即可。'
+                       % (len(unresolved) - len(show)))
+        out.append('')
+    out.append('注：这里只列工程自己写下的映射，不内置芯片手册的"外设-通道"对照表 —— '
+               '那张表必须对着数据手册核，凭印象写出来是害人。')
+    out.append('')
+    return '\n'.join(out)
 
 
 def fmt_pin(pb):
@@ -304,13 +492,150 @@ def render_board(title, inc_dir, use_list, result):
     else:
         out.append('未找到可静态解析的 NVIC 配置调用（IRQn 由形参传入的写法不计入）。')
     out.append('')
+
+    out.append(render_dma(os.path.dirname(os.path.dirname(inc_dir))))
     return '\n'.join(out)
 
 
+def selftest():
+    """自检：在临时目录造一块合成板的 FWLIB，故意埋下三类错例 ——
+    两个模块抢同一个引脚、一对只有 _PORT 没有 _PIN 的宏、抢占低于内核上限的 ISR
+    （其中 ISR 用 SYS_NVIC_SetPriority 与 NVIC_InitStructure 两种写法各一个，覆盖两条解析路径）。
+    直接调 scan_pins / read_max_syscall / scan_irqs / render_board 核对确实命中，不写报告、不碰仓库。
+    """
+    import shutil
+    import tempfile
+
+    checks = []
+
+    def ck(name, ok, extra=''):
+        checks.append((name, bool(ok), extra))
+
+    tmp = tempfile.mkdtemp(prefix='pin_selftest_')
+    try:
+        inc = os.path.join(tmp, 'FWLIB', 'inc')
+        src = os.path.join(tmp, 'FWLIB', 'src')
+        cfgdir = os.path.join(tmp, 'FreeRTOS', 'port')
+        os.makedirs(inc)
+        os.makedirs(src)
+        os.makedirs(cfgdir)
+
+        def wr(path, text):
+            with open(path, 'w', encoding='utf-8', newline='\n') as f:
+                f.write(text)
+
+        # 引脚宏：LORA_E22 与 W25QXX 故意抢同一个 PB5；TFT 独占 PC7；ADC 只有 _PORT 不成对
+        wr(os.path.join(inc, 'pin_cfg.h'),
+           '#define LORA_E22_PORT   GPIOB\n'
+           '#define LORA_E22_PIN    GPIO_Pin_5\n'
+           '#define W25QXX_PORT     GPIOB\n'
+           '#define W25QXX_PIN      GPIO_Pin_5\n'
+           '#define TFT_PORT        GPIOC\n'
+           '#define TFT_PIN         GPIO_Pin_7\n'
+           '#define ADC_PORT        GPIOA\n')
+        wr(os.path.join(inc, 'prio_cfg.h'),
+           '#define SYS_USART1_PRE_PRIO  4\n'
+           '#define SYS_SPI1_PRE_PRIO    5\n')
+        wr(os.path.join(cfgdir, 'FreeRTOSConfig.h'),
+           '#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY 5\n')
+        wr(os.path.join(src, 'irq.c'),
+           'void Bsp_IrqInit(void)\n{\n'
+           '    SYS_NVIC_SetPriority(USART1_IRQn, SYS_USART1_PRE_PRIO, 0);\n'
+           '    SYS_NVIC_SetPriority(SPI1_IRQn, SYS_SPI1_PRE_PRIO, 1);\n'
+           '    NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;\n'
+           '    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 3;\n'
+           '    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;\n}\n')
+        # DMA：宏式声明一条完整的（FOO）、一条缺 CHANNEL 的（BAR）；
+        # 另外让 a.c 与 b.c 都去用 DMA2_Stream0（应判为"被多个模块共用"），
+        # c.c 用形参传流（应归入"无法静态解析"）。
+        wr(os.path.join(inc, 'dma_cfg.h'),
+           '#define FOO_DMA_STREAM   DMA1_Stream5\n'
+           '#define FOO_DMA_CHANNEL  DMA_Channel_7\n'
+           '#define FOO_DMA_IRQ      DMA1_Stream5_IRQn\n'
+           '#define BAR_DMA_STREAM   DMA2_Stream3\n')
+        wr(os.path.join(src, 'a.c'),
+           'void Bsp_A_Init(void) { DMA_DeInit(DMA2_Stream0); }\n')
+        wr(os.path.join(src, 'b.c'),
+           'void Bsp_B_Init(void) { DMA_DeInit(DMA2_Stream0); p->dma_ch = DMA_Channel_2; }\n')
+        wr(os.path.join(src, 'c.c'),
+           'void Bsp_C_Start(void)\n{\n'
+           '    SYS_DMA_MemToPeriph(p->tx_stream, 4, buf, 8);\n}\n')
+
+        bases, owners, unpaired, dup_base, nfiles = scan_pins(inc)
+        result = (bases, owners, unpaired, dup_base, nfiles)
+        conflicts = sorted(((k, v) for k, v in owners.items() if len(v) > 1),
+                           key=lambda kv: (kv[0][0], kv[0][1]))
+
+        ck('引脚冲突命中 1 个且在 PB5',
+           len(conflicts) == 1 and conflicts[0][0] == ('B', 5),
+           '、'.join(fmt_pin(k) for k, _ in conflicts) or '无')
+        ck('冲突的两个模块都点出来',
+           len(conflicts) == 1 and sorted(conflicts[0][1]) == ['LORA_E22', 'W25QXX'],
+           '、'.join(conflicts[0][1]) if conflicts else '无')
+        ck('不成对的宏被列出（ADC）', unpaired == ['ADC'], '、'.join(unpaired) or '无')
+        ck('模块与占用脚计数正确（3 个模块 / 2 个脚）',
+           len(bases) == 3 and len(owners) == 2 and nfiles == 3,
+           '%d / %d / %d' % (len(bases), len(owners), nfiles))
+
+        max_syscall = read_max_syscall(os.path.join(cfgdir, 'FreeRTOSConfig.h'))
+        ck('内核上限宏解析正确', max_syscall == 5, str(max_syscall))
+
+        prio = read_prio_macros(inc)
+        irqs = scan_irqs(src, prio, max_syscall)
+        bad = sorted(i[0] for i in irqs if i[4])
+        ck('抢占越界项抓到 2 个（两种写法各一）',
+           bad == ['TIM2_IRQn', 'USART1_IRQn'], '、'.join(bad) or '无')
+        ck('不越界的 SPI1 未被误报', not any(i[0] == 'SPI1_IRQn' and i[4] for i in irqs))
+        ck('抢占值都按宏/常数解析出来',
+           {i[0]: i[1] for i in irqs} == {'USART1_IRQn': 4, 'SPI1_IRQn': 5, 'TIM2_IRQn': 3},
+           str({i[0]: i[1] for i in irqs}))
+
+        txt = render_board('板X', inc, ['LORA_E22', 'W25QXX'], result)
+        ck('方案检查报出选中模块之间的冲突',
+           '选中模块之间的冲突' in txt and 'PB5' in txt and 'LORA_E22' in txt)
+        ck('报告渲染不炸且含中断资源表', '### 中断资源' in txt and 'USART1_IRQn' in txt)
+
+        claims, unresolved = scan_dma(tmp)
+        by_mod = {c['module']: c for c in claims}
+        owner = {}
+        for c in claims:
+            for st in c['streams']:
+                owner.setdefault(st, set()).add(c['module'])
+        shared = {st for st, mods in owner.items() if len(mods) > 1}
+        ck('DMA 宏式声明被解析出流与通道',
+           by_mod.get('FOO', {}).get('streams') == {'DMA1_Stream5'}
+           and by_mod.get('FOO', {}).get('channels') == {'DMA_Channel_7'},
+           str(by_mod.get('FOO')))
+        ck('DMA 字面量占用被解析（a.c / b.c 都在用 DMA2_Stream0）',
+           by_mod.get('a', {}).get('streams') == {'DMA2_Stream0'}
+           and by_mod.get('b', {}).get('streams') == {'DMA2_Stream0'},
+           '、'.join(sorted(by_mod)))
+        ck('同一数据流被多个模块共用被抓到',
+           shared == {'DMA2_Stream0'}, '、'.join(sorted(shared)) or '无')
+        ck('独占的那条流不被误判为共用', 'DMA1_Stream5' not in shared)
+        ck('缺 CHANNEL 宏的声明被列为待核（BAR）',
+           any(m == 'BAR' for m, _, _ in unresolved))
+        ck('形参传流的调用被列为无法静态解析',
+           any('p->tx_stream' in w for _, _, w in unresolved))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    bad_items = [c for c in checks if not c[1]]
+    for name, ok, extra in checks:
+        print('  [%s] %s%s' % ('PASS' if ok else 'FAIL', name,
+                               ('  （实际：%s）' % extra) if (extra and not ok) else ''))
+    print('引脚规划自检：%d 通过 / %d 失败' % (len(checks) - len(bad_items), len(bad_items)))
+    return 1 if bad_items else 0
+
+
 def main(argv):
+    if '--selftest' in argv:
+        return selftest()
+
     quiet = False
     only = None
     use_list = []
+    bad = []
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '引脚规划报告.md')
     i = 1
     while i < len(argv):
@@ -318,17 +643,26 @@ def main(argv):
         if a == '--quiet':
             quiet = True
             i += 1
-        elif a == '--board' and i + 1 < len(argv):
-            only = argv[i + 1]
-            i += 2
-        elif a == '--use' and i + 1 < len(argv):
-            use_list = [x.strip() for x in re.split(r'[,\s]+', argv[i + 1]) if x.strip()]
-            i += 2
-        elif a == '--out' and i + 1 < len(argv):
-            out_path = os.path.abspath(argv[i + 1])
+        elif a in ('--board', '--use', '--out'):
+            if i + 1 >= len(argv):
+                bad.append('%s 缺少值' % a)
+                i += 1
+                continue
+            if a == '--board':
+                only = argv[i + 1]
+            elif a == '--use':
+                use_list = [x.strip() for x in re.split(r'[,\s]+', argv[i + 1]) if x.strip()]
+            else:
+                out_path = os.path.abspath(argv[i + 1])
             i += 2
         else:
+            bad.append(a)
             i += 1
+
+    if bad:
+        print('未知参数：%s' % ' '.join(bad))
+        print('可用参数：--board <1|2> | --use <模块,模块> | --out <文件> | --quiet | --selftest')
+        return 2
 
     out = ['# 引脚规划报告', '',
            '来源：`本地工具/工具箱/检查/引脚规划/pin_planner.py`（只读扫描，可重复运行）', '']

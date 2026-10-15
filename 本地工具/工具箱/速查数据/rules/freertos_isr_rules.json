@@ -1,0 +1,57 @@
+{
+  "_说明": "FreeRTOS 中断上下文 API 分类规则表（数据模型）。检查器与其它工具共读这一份；文件缺失时读取方回退到内置同名表，行为不变。",
+  "_口径": "这里只放 FreeRTOS 内核自身的 API 分类规则，不含任何芯片手册数据（哪些外设/引脚可用一律从工程真值里扫出来，不内置凭印象写的对照表）。",
+  "_读取方": [
+    "本地工具/工具箱/检查/RTOS检查/rtos_check.py"
+  ],
+  "blocking_api": [
+    "xQueueSend",
+    "xQueueSendToBack",
+    "xQueueSendToFront",
+    "xQueueReceive",
+    "xQueuePeek",
+    "xQueueReset",
+    "xQueueOverwrite",
+    "xSemaphoreTake",
+    "xSemaphoreGive",
+    "xSemaphoreTakeRecursive",
+    "xSemaphoreGiveRecursive",
+    "vSemaphoreCreateBinary",
+    "vTaskDelay",
+    "vTaskDelayUntil",
+    "vTaskDelete",
+    "vTaskSuspend",
+    "vTaskResume",
+    "vTaskPrioritySet",
+    "vTaskStartScheduler",
+    "vTaskSuspendAll",
+    "xTaskResumeAll",
+    "xEventGroupWaitBits",
+    "xEventGroupSetBits",
+    "xEventGroupClearBits",
+    "ulTaskNotifyTake",
+    "xTaskNotifyWait",
+    "xTaskNotify",
+    "xTaskNotifyGive",
+    "xTimerStart",
+    "xTimerStop",
+    "xTimerChangePeriod",
+    "xTimerReset"
+  ],
+  "isr_unsafe_critical": [
+    "taskENTER_CRITICAL",
+    "taskEXIT_CRITICAL",
+    "portENTER_CRITICAL",
+    "portEXIT_CRITICAL"
+  ],
+  "rtos_prefix": [
+    "xQueue",
+    "xSemaphore",
+    "vTask",
+    "xTask",
+    "xEventGroup",
+    "xTimer",
+    "ulTaskNotify",
+    "vTimerSetTimerID"
+  ]
+}
