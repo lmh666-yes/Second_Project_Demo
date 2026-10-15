@@ -81,6 +81,18 @@ EnvMonitor/QT_project/SerialMonitor/build_*
 /.venv/
 /.vscode/
 
+# ---- 外设资料（EnvMonitor/项目外设资料/）：只入库说明与示例代码 ----
+# 手册 / 原理图 / 尺寸图 / 安装包体积大、且会随器件版本更新，不入库（本地保留，随时可查）。
+# 入库的是文本与代码：说明.md + 各器件的 Arduino 示例代码（.ino/.cpp/.h/.properties/README.md）。
+EnvMonitor/项目外设资料/**/*.pdf
+EnvMonitor/项目外设资料/**/*.PDF
+EnvMonitor/项目外设资料/**/*.jpg
+EnvMonitor/项目外设资料/**/*.JPG
+EnvMonitor/项目外设资料/**/*.png
+EnvMonitor/项目外设资料/**/*.doc
+EnvMonitor/项目外设资料/**/*.docx
+EnvMonitor/项目外设资料/**/*.zip
+
 # ---- Linux-32：Linux 与 STM32 结合的自学试验场（2026-10-14 新建）----
 # 现状：整套工程从 EnvMonitor 复制而来，尚未改写；含大量 Keil 编译产物，
 # 且最终形态（交叉编译 / 网关换 Linux / 仅做开发环境迁移）还没定。
