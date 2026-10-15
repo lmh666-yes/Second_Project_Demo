@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#1f4e79</item>
+        <item name="android:navigationBarColor">#f2f4f7</item>
+        <!-- Android 15 默认把内容画到状态栏/导航栏下方（edge-to-edge）；
+             本项目页面自带顶部栏，先豁免，保持经典布局不与状态栏重叠 -->
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+        <item name="android:windowBackground">#f2f4f7</item>
+    </style>
+</resources>

@@ -1,0 +1,5 @@
+// 顶层构建文件：声明 Android Gradle Plugin 版本
+// AGP 9.0.0 + Gradle 9.1.0：兼容新版 Android Studio 自带的 Java 25 运行环境
+plugins {
+    id 'com.android.application' version '9.0.0' apply false
+}

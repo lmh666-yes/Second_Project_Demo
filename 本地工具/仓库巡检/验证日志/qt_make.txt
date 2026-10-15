@@ -1,0 +1,4 @@
+﻿E:/Qt/Tools/mingw1310_64/bin/mingw32-make -f Makefile.Release
+mingw32-make[1]: Entering directory 'D:/GitHub_Project/EnvMonitor/QT_project/SerialMonitor/build_verify'
+mingw32-make[1]: Nothing to be done for 'first'.
+mingw32-make[1]: Leaving directory 'D:/GitHub_Project/EnvMonitor/QT_project/SerialMonitor/build_verify'

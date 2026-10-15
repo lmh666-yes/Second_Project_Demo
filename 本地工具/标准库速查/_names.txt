@@ -1,0 +1,1004 @@
+ADC 通道映射表（通道 ↔ 引脚 / 内部源）
+ADC_AnalogWatchdogCmd
+ADC_AnalogWatchdogSingleChannelConfig
+ADC_AnalogWatchdogThresholdsConfig
+ADC_AutoInjectedConvCmd
+ADC_ClearFlag
+ADC_ClearITPendingBit
+ADC_Cmd
+ADC_CommonInit
+ADC_CommonInitTypeDef
+ADC_CommonStructInit
+ADC_ContinuousModeCmd
+ADC_DMACmd
+ADC_DMARequestAfterLastTransferCmd
+ADC_DeInit
+ADC_DiscModeChannelCountConfig
+ADC_DiscModeCmd
+ADC_EOCOnEachRegularChannelCmd
+ADC_ExternalTrigInjectedConvConfig
+ADC_ExternalTrigInjectedConvEdgeConfig
+ADC_GetConversionValue
+ADC_GetFlagStatus
+ADC_GetITStatus
+ADC_GetInjectedConversionValue
+ADC_GetMultiModeConversionValue
+ADC_GetSoftwareStartConvStatus
+ADC_GetSoftwareStartInjectedConvCmdStatus
+ADC_ITConfig
+ADC_Init
+ADC_InitTypeDef
+ADC_InjectedChannelConfig
+ADC_InjectedDiscModeCmd
+ADC_InjectedSequencerLengthConfig
+ADC_MultiModeDMARequestAfterLastTransferCmd
+ADC_RegularChannelConfig
+ADC_SetInjectedOffset
+ADC_SoftwareStartConv
+ADC_SoftwareStartInjectedConv
+ADC_StructInit
+ADC_TempSensorVrefintCmd
+ADC_VBATCmd
+AHT10 温湿度传感器（备用）
+BH1750 光照传感器
+BMP280 气压传感器
+CAN 波特率配置表（APB1 = 42 MHz）
+CAN_CancelTransmit
+CAN_ClearFlag
+CAN_ClearITPendingBit
+CAN_DBGFreeze
+CAN_DeInit
+CAN_FIFORelease
+CAN_FilterInit
+CAN_FilterInitTypeDef
+CAN_GetFlagStatus
+CAN_GetITStatus
+CAN_GetLSBTransmitErrorCounter
+CAN_GetLastErrorCode
+CAN_GetReceiveErrorCounter
+CAN_ITConfig
+CAN_Init
+CAN_InitTypeDef
+CAN_MessagePending
+CAN_OperatingModeRequest
+CAN_Receive
+CAN_SlaveStartBank
+CAN_Sleep
+CAN_StructInit
+CAN_TTComModeCmd
+CAN_Transmit
+CAN_TransmitStatus
+CAN_WakeUp
+CCS811 空气质量传感器（TVOC / eCO₂）
+CRC16-MODBUS 计算流程（逐字节查表 / 逐位移位）
+CRC_CalcBlockCRC
+CRC_CalcCRC
+CRC_GetCRC
+CRC_GetIDRegister
+CRC_ResetDR
+CRC_SetIDRegister
+CRYP_AES_CBC
+CRYP_AES_CCM
+CRYP_AES_CTR
+CRYP_AES_ECB
+CRYP_AES_GCM
+CRYP_Cmd
+CRYP_Context
+CRYP_DES_CBC
+CRYP_DES_ECB
+CRYP_DMACmd
+CRYP_DataIn
+CRYP_DataOut
+CRYP_DeInit
+CRYP_FIFOFlush
+CRYP_GetCmdStatus
+CRYP_GetFlagStatus
+CRYP_GetITStatus
+CRYP_ITConfig
+CRYP_IVInit
+CRYP_IVInitTypeDef
+CRYP_IVStructInit
+CRYP_Init
+CRYP_InitTypeDef
+CRYP_KeyInit
+CRYP_KeyInitTypeDef
+CRYP_KeyStructInit
+CRYP_PhaseConfig
+CRYP_RestoreContext
+CRYP_SaveContext
+CRYP_StructInit
+CRYP_TDES_CBC
+CRYP_TDES_ECB
+CanRxMsg
+CanTxMsg
+DAC_ClearFlag
+DAC_ClearITPendingBit
+DAC_Cmd
+DAC_DMACmd
+DAC_DeInit
+DAC_DualSoftwareTriggerCmd
+DAC_GetDataOutputValue
+DAC_GetFlagStatus
+DAC_GetITStatus
+DAC_ITConfig
+DAC_Init
+DAC_InitTypeDef
+DAC_SetChannel1Data
+DAC_SetChannel2Data
+DAC_SetDualChannelData
+DAC_SoftwareTriggerCmd
+DAC_StructInit
+DAC_WaveGenerationCmd
+DBGMCU_APB1PeriphConfig
+DBGMCU_APB2PeriphConfig
+DBGMCU_Config
+DBGMCU_GetDEVID
+DCMI_CROPCmd
+DCMI_CROPConfig
+DCMI_CROPInitTypeDef
+DCMI_CaptureCmd
+DCMI_ClearFlag
+DCMI_ClearITPendingBit
+DCMI_Cmd
+DCMI_CodesInitTypeDef
+DCMI_DeInit
+DCMI_GetFlagStatus
+DCMI_GetITStatus
+DCMI_ITConfig
+DCMI_Init
+DCMI_InitTypeDef
+DCMI_JPEGCmd
+DCMI_ReadData
+DCMI_SetEmbeddedSynchroCodes
+DCMI_StructInit
+DHT11 温湿度传感器（单总线）
+DMA 请求映射表（常用外设）
+DMA2D_AbortTransfer
+DMA2D_BGConfig
+DMA2D_BGStart
+DMA2D_BG_InitTypeDef
+DMA2D_BG_StructInit
+DMA2D_ClearFlag
+DMA2D_ClearITPendingBit
+DMA2D_DeInit
+DMA2D_DeadTimeConfig
+DMA2D_FGConfig
+DMA2D_FGStart
+DMA2D_FG_InitTypeDef
+DMA2D_FG_StructInit
+DMA2D_GetFlagStatus
+DMA2D_GetITStatus
+DMA2D_ITConfig
+DMA2D_Init
+DMA2D_InitTypeDef
+DMA2D_LineWatermarkConfig
+DMA2D_StartTransfer
+DMA2D_StructInit
+DMA2D_Suspend
+DMA_ClearFlag
+DMA_ClearITPendingBit
+DMA_Cmd
+DMA_DeInit
+DMA_DoubleBufferModeCmd
+DMA_DoubleBufferModeConfig
+DMA_FlowControllerConfig
+DMA_GetCmdStatus
+DMA_GetCurrDataCounter
+DMA_GetCurrentMemoryTarget
+DMA_GetFIFOStatus
+DMA_GetFlagStatus
+DMA_GetITStatus
+DMA_ITConfig
+DMA_Init
+DMA_InitTypeDef
+DMA_MemoryTargetConfig
+DMA_PeriphIncOffsetSizeConfig
+DMA_SetCurrDataCounter
+DMA_StructInit
+EXTI 中断线表（外部中断）
+EXTI_ClearFlag
+EXTI_ClearITPendingBit
+EXTI_DeInit
+EXTI_GenerateSWInterrupt
+EXTI_GetFlagStatus
+EXTI_GetITStatus
+EXTI_Init
+EXTI_InitTypeDef
+EXTI_StructInit
+F407ZET6 vs F407ZGT6 差异对照
+FLASH 扇区表（F407）
+FLASH_ClearFlag
+FLASH_DataCacheCmd
+FLASH_DataCacheReset
+FLASH_EraseAllBank1Sectors
+FLASH_EraseAllBank2Sectors
+FLASH_EraseAllSectors
+FLASH_EraseSector
+FLASH_GetFlagStatus
+FLASH_GetStatus
+FLASH_ITConfig
+FLASH_InstructionCacheCmd
+FLASH_InstructionCacheReset
+FLASH_Lock
+FLASH_OB_BORConfig
+FLASH_OB_BootConfig
+FLASH_OB_GetBOR
+FLASH_OB_GetPCROP
+FLASH_OB_GetPCROP1
+FLASH_OB_GetRDP
+FLASH_OB_GetUser
+FLASH_OB_GetWRP
+FLASH_OB_GetWRP1
+FLASH_OB_Launch
+FLASH_OB_Lock
+FLASH_OB_PCROP1Config
+FLASH_OB_PCROPConfig
+FLASH_OB_PCROPSelectionConfig
+FLASH_OB_RDPConfig
+FLASH_OB_Unlock
+FLASH_OB_UserConfig
+FLASH_OB_WRP1Config
+FLASH_OB_WRPConfig
+FLASH_PrefetchBufferCmd
+FLASH_ProgramByte
+FLASH_ProgramDoubleWord
+FLASH_ProgramHalfWord
+FLASH_ProgramWord
+FLASH_SetLatency
+FLASH_Unlock
+FLASH_WaitForLastOperation
+FMC_ClearFlag
+FMC_ClearITPendingBit
+FMC_GetECC
+FMC_GetFlagStatus
+FMC_GetITStatus
+FMC_GetModeStatus
+FMC_ITConfig
+FMC_NANDCmd
+FMC_NANDDeInit
+FMC_NANDECCCmd
+FMC_NANDInit
+FMC_NANDInitTypeDef
+FMC_NANDStructInit
+FMC_NAND_PCCARDTimingInitTypeDef
+FMC_NORSRAMCmd
+FMC_NORSRAMDeInit
+FMC_NORSRAMInit
+FMC_NORSRAMInitTypeDef
+FMC_NORSRAMStructInit
+FMC_NORSRAMTimingInitTypeDef
+FMC_PCCARDCmd
+FMC_PCCARDDeInit
+FMC_PCCARDInit
+FMC_PCCARDInitTypeDef
+FMC_PCCARDStructInit
+FMC_SDRAMCmdConfig
+FMC_SDRAMCommandTypeDef
+FMC_SDRAMDeInit
+FMC_SDRAMInit
+FMC_SDRAMInitTypeDef
+FMC_SDRAMStructInit
+FMC_SDRAMTimingInitTypeDef
+FMC_SDRAMWriteProtectionConfig
+FMC_SetAutoRefresh_Number
+FMC_SetRefreshCount
+FSMC_ClearFlag
+FSMC_ClearITPendingBit
+FSMC_GetECC
+FSMC_GetFlagStatus
+FSMC_GetITStatus
+FSMC_ITConfig
+FSMC_NANDCmd
+FSMC_NANDDeInit
+FSMC_NANDECCCmd
+FSMC_NANDInit
+FSMC_NANDInitTypeDef
+FSMC_NANDStructInit
+FSMC_NAND_PCCARDTimingInitTypeDef
+FSMC_NORSRAMCmd
+FSMC_NORSRAMDeInit
+FSMC_NORSRAMInit
+FSMC_NORSRAMInitTypeDef
+FSMC_NORSRAMStructInit
+FSMC_NORSRAMTimingInitTypeDef
+FSMC_PCCARDCmd
+FSMC_PCCARDDeInit
+FSMC_PCCARDInit
+FSMC_PCCARDInitTypeDef
+FSMC_PCCARDStructInit
+FreeRTOS 任务版 / 中断版 API 对照表（含优先级规则）
+FreeRTOS 常用配置宏表（本项目取值）
+GPIO_DeInit
+GPIO_Init
+GPIO_InitTypeDef
+GPIO_PinAFConfig
+GPIO_PinLockConfig
+GPIO_ReadInputData
+GPIO_ReadInputDataBit
+GPIO_ReadOutputData
+GPIO_ReadOutputDataBit
+GPIO_ResetBits
+GPIO_SetBits
+GPIO_StructInit
+GPIO_ToggleBits
+GPIO_Write
+GPIO_WriteBit
+HASH_AutoStartDigest
+HASH_ClearFlag
+HASH_ClearITPendingBit
+HASH_Context
+HASH_DMACmd
+HASH_DataIn
+HASH_DeInit
+HASH_GetDigest
+HASH_GetFlagStatus
+HASH_GetITStatus
+HASH_GetInFIFOWordsNbr
+HASH_ITConfig
+HASH_Init
+HASH_InitTypeDef
+HASH_MD5
+HASH_MsgDigest
+HASH_Reset
+HASH_RestoreContext
+HASH_SHA1
+HASH_SaveContext
+HASH_SetLastWordValidBitsNbr
+HASH_StartDigest
+HASH_StructInit
+HMAC_MD5
+HMAC_SHA1
+I2C 速率配置表（100 kHz / 400 kHz @ APB1 42 MHz）
+I2C_ARPCmd
+I2C_AcknowledgeConfig
+I2C_AnalogFilterCmd
+I2C_CalculatePEC
+I2C_CheckEvent
+I2C_ClearFlag
+I2C_ClearITPendingBit
+I2C_Cmd
+I2C_DMACmd
+I2C_DMALastTransferCmd
+I2C_DeInit
+I2C_DigitalFilterConfig
+I2C_DualAddressCmd
+I2C_FastModeDutyCycleConfig
+I2C_GeneralCallCmd
+I2C_GenerateSTART
+I2C_GenerateSTOP
+I2C_GetFlagStatus
+I2C_GetITStatus
+I2C_GetLastEvent
+I2C_GetPEC
+I2C_ITConfig
+I2C_Init
+I2C_InitTypeDef
+I2C_NACKPositionConfig
+I2C_OwnAddress2Config
+I2C_PECPositionConfig
+I2C_ReadRegister
+I2C_ReceiveData
+I2C_SMBusAlertConfig
+I2C_Send7bitAddress
+I2C_SendData
+I2C_SoftwareResetCmd
+I2C_StretchClockCmd
+I2C_StructInit
+I2C_TransmitPEC
+I2S_Cmd
+I2S_FullDuplexConfig
+I2S_Init
+I2S_InitTypeDef
+I2S_StructInit
+IWDG_Enable
+IWDG_GetFlagStatus
+IWDG_ReloadCounter
+IWDG_SetPrescaler
+IWDG_SetReload
+IWDG_WriteAccessCmd
+LTDC_CLUTCmd
+LTDC_CLUTInit
+LTDC_CLUTStructInit
+LTDC_CLUT_InitTypeDef
+LTDC_ClearFlag
+LTDC_ClearITPendingBit
+LTDC_Cmd
+LTDC_ColorKeyingConfig
+LTDC_ColorKeyingStructInit
+LTDC_ColorKeying_InitTypeDef
+LTDC_DeInit
+LTDC_DitherCmd
+LTDC_GetCDStatus
+LTDC_GetFlagStatus
+LTDC_GetITStatus
+LTDC_GetPosStatus
+LTDC_GetRGBWidth
+LTDC_ITConfig
+LTDC_Init
+LTDC_InitTypeDef
+LTDC_LIPConfig
+LTDC_LayerAddress
+LTDC_LayerAlpha
+LTDC_LayerCmd
+LTDC_LayerInit
+LTDC_LayerPixelFormat
+LTDC_LayerPosition
+LTDC_LayerSize
+LTDC_LayerStructInit
+LTDC_Layer_InitTypeDef
+LTDC_PosStructInit
+LTDC_PosTypeDef
+LTDC_RGBStructInit
+LTDC_RGBTypeDef
+LTDC_ReloadConfig
+LTDC_StructInit
+LoRa E22-400T22S 模式脚与透传速查
+MQ-135 空气质量传感器（模拟输出 · ADC 采集）
+Modbus RTU 从机速查（功能码 / 帧格式 / 3.5 字符间隔）
+NVIC 优先级分组表
+NVIC_DisableIRQ
+NVIC_EnableIRQ
+NVIC_EncodePriority
+NVIC_GetActive
+NVIC_GetPendingIRQ
+NVIC_GetPriorityGrouping
+NVIC_Init
+NVIC_InitTypeDef
+NVIC_PriorityGroupConfig
+NVIC_SetPendingIRQ
+NVIC_SetPriority
+NVIC_SetVectorTable
+NVIC_SystemLPConfig
+NVIC_SystemReset
+OTA 分区与标志位表（板1 ZE 512KB / 板2 ZG 1MB）
+PID 闭环控制流程（位置式 / 增量式）
+PWR_BackupAccessCmd
+PWR_BackupRegulatorCmd
+PWR_ClearFlag
+PWR_EnterSTANDBYMode
+PWR_EnterSTOPMode
+PWR_EnterUnderDriveSTOPMode
+PWR_FlashPowerDownCmd
+PWR_GetFlagStatus
+PWR_MainRegulatorModeConfig
+PWR_OverDriveCmd
+PWR_OverDriveSWCmd
+PWR_PVDCmd
+PWR_PVDLevelConfig
+PWR_UnderDriveCmd
+PWR_WakeUpPinCmd
+RCC_AHB1PeriphClockCmd
+RCC_AHB1PeriphClockLPModeCmd
+RCC_AHB1PeriphResetCmd
+RCC_AHB2PeriphClockCmd
+RCC_AHB2PeriphClockLPModeCmd
+RCC_AHB2PeriphResetCmd
+RCC_AHB3PeriphClockCmd
+RCC_AHB3PeriphClockLPModeCmd
+RCC_AHB3PeriphResetCmd
+RCC_APB1PeriphClockCmd
+RCC_APB1PeriphClockLPModeCmd
+RCC_APB1PeriphResetCmd
+RCC_APB2PeriphClockCmd
+RCC_APB2PeriphClockLPModeCmd
+RCC_APB2PeriphResetCmd
+RCC_AdjustHSICalibrationValue
+RCC_BackupResetCmd
+RCC_ClearFlag
+RCC_ClearITPendingBit
+RCC_ClockSecuritySystemCmd
+RCC_ClocksTypeDef
+RCC_DeInit
+RCC_GetClocksFreq
+RCC_GetFlagStatus
+RCC_GetITStatus
+RCC_GetSYSCLKSource
+RCC_HCLKConfig
+RCC_HSEConfig
+RCC_HSICmd
+RCC_I2SCLKConfig
+RCC_ITConfig
+RCC_LSEConfig
+RCC_LSICmd
+RCC_LTDCCLKDivConfig
+RCC_MCO1Config
+RCC_MCO2Config
+RCC_PCLK1Config
+RCC_PCLK2Config
+RCC_PLLCmd
+RCC_PLLConfig
+RCC_PLLI2SCmd
+RCC_PLLI2SConfig
+RCC_PLLSAICmd
+RCC_PLLSAIConfig
+RCC_RTCCLKCmd
+RCC_RTCCLKConfig
+RCC_SAIBlockACLKConfig
+RCC_SAIBlockBCLKConfig
+RCC_SAIPLLI2SClkDivConfig
+RCC_SAIPLLSAIClkDivConfig
+RCC_SYSCLKConfig
+RCC_TIMCLKPresConfig
+RCC_WaitForHSEStartUp
+RNG_ClearFlag
+RNG_ClearITPendingBit
+RNG_Cmd
+RNG_GetFlagStatus
+RNG_GetITStatus
+RNG_GetRandomNumber
+RNG_ITConfig
+RTC 唤醒时钟分频表（WakeUp Timer）
+RTC_AlarmCmd
+RTC_AlarmStructInit
+RTC_AlarmSubSecondConfig
+RTC_AlarmTypeDef
+RTC_BypassShadowCmd
+RTC_CalibOutputCmd
+RTC_CalibOutputConfig
+RTC_ClearFlag
+RTC_ClearITPendingBit
+RTC_CoarseCalibCmd
+RTC_CoarseCalibConfig
+RTC_DateStructInit
+RTC_DateTypeDef
+RTC_DayLightSavingConfig
+RTC_DeInit
+RTC_EnterInitMode
+RTC_ExitInitMode
+RTC_GetAlarm
+RTC_GetAlarmSubSecond
+RTC_GetDate
+RTC_GetFlagStatus
+RTC_GetITStatus
+RTC_GetStoreOperation
+RTC_GetSubSecond
+RTC_GetTime
+RTC_GetTimeStamp
+RTC_GetTimeStampSubSecond
+RTC_GetWakeUpCounter
+RTC_ITConfig
+RTC_Init
+RTC_InitTypeDef
+RTC_OutputConfig
+RTC_OutputTypeConfig
+RTC_ReadBackupRegister
+RTC_RefClockCmd
+RTC_SetAlarm
+RTC_SetDate
+RTC_SetTime
+RTC_SetWakeUpCounter
+RTC_SmoothCalibConfig
+RTC_StructInit
+RTC_SynchroShiftConfig
+RTC_TamperCmd
+RTC_TamperFilterConfig
+RTC_TamperPinSelection
+RTC_TamperPinsPrechargeDuration
+RTC_TamperPullUpCmd
+RTC_TamperSamplingFreqConfig
+RTC_TamperTriggerConfig
+RTC_TimeStampCmd
+RTC_TimeStampOnTamperDetectionCmd
+RTC_TimeStampPinSelection
+RTC_TimeStructInit
+RTC_TimeTypeDef
+RTC_WaitForSynchro
+RTC_WakeUpClockConfig
+RTC_WakeUpCmd
+RTC_WriteBackupRegister
+RTC_WriteProtectionCmd
+SAI_ClearFlag
+SAI_ClearITPendingBit
+SAI_Cmd
+SAI_CompandingModeConfig
+SAI_DMACmd
+SAI_DeInit
+SAI_FlushFIFO
+SAI_FrameInit
+SAI_FrameInitTypeDef
+SAI_FrameStructInit
+SAI_GetCmdStatus
+SAI_GetFIFOStatus
+SAI_GetFlagStatus
+SAI_GetITStatus
+SAI_ITConfig
+SAI_Init
+SAI_InitTypeDef
+SAI_MonoModeConfig
+SAI_MuteFrameCounterConfig
+SAI_MuteModeCmd
+SAI_MuteValueConfig
+SAI_ReceiveData
+SAI_SendData
+SAI_SlotInit
+SAI_SlotInitTypeDef
+SAI_SlotStructInit
+SAI_StructInit
+SAI_TRIStateConfig
+SDIO_CEATAITCmd
+SDIO_ClearFlag
+SDIO_ClearITPendingBit
+SDIO_ClockCmd
+SDIO_CmdInitTypeDef
+SDIO_CmdStructInit
+SDIO_CommandCompletionCmd
+SDIO_DMACmd
+SDIO_DataConfig
+SDIO_DataInitTypeDef
+SDIO_DataStructInit
+SDIO_DeInit
+SDIO_GetCommandResponse
+SDIO_GetDataCounter
+SDIO_GetFIFOCount
+SDIO_GetFlagStatus
+SDIO_GetITStatus
+SDIO_GetPowerState
+SDIO_GetResponse
+SDIO_ITConfig
+SDIO_Init
+SDIO_InitTypeDef
+SDIO_ReadData
+SDIO_SendCEATACmd
+SDIO_SendCommand
+SDIO_SendSDIOSuspendCmd
+SDIO_SetPowerState
+SDIO_SetSDIOOperation
+SDIO_SetSDIOReadWaitMode
+SDIO_StartSDIOReadWait
+SDIO_StopSDIOReadWait
+SDIO_StructInit
+SDIO_WriteData
+SHT30 温湿度传感器
+SPI 波特率分频表（fPCLK/2 ~ fPCLK/256）
+SPI_BiDirectionalLineConfig
+SPI_CalculateCRC
+SPI_Cmd
+SPI_DataSizeConfig
+SPI_GetCRC
+SPI_GetCRCPolynomial
+SPI_I2S_ClearFlag
+SPI_I2S_ClearITPendingBit
+SPI_I2S_DMACmd
+SPI_I2S_DeInit
+SPI_I2S_GetFlagStatus
+SPI_I2S_GetITStatus
+SPI_I2S_ITConfig
+SPI_I2S_ReceiveData
+SPI_I2S_SendData
+SPI_Init
+SPI_InitTypeDef
+SPI_NSSInternalSoftwareConfig
+SPI_SSOutputCmd
+SPI_StructInit
+SPI_TIModeCmd
+SPI_TransmitCRC
+SSD1306 OLED 显存与刷新流程（页寻址 / 脏页刷新）
+SYSCFG_CompensationCellCmd
+SYSCFG_ETH_MediaInterfaceConfig
+SYSCFG_EXTILineConfig
+SYSCFG_GetCompensationCellStatus
+SYSCFG_MemoryRemapConfig
+SYSCFG_MemorySwappingBank
+SYS_SPI_Init
+SYS_SPI_Transfer
+SYS_SPI_TransferByte
+SYS_TIM_OcInit
+SYS_TIM_OcInitIT
+SYS_TIM_OcSetCompare
+SYS_TIM_OcSetFreq
+SYS_TIM_OcStop
+SysTick_CLKSourceConfig
+TIM_ARRPreloadConfig
+TIM_BDTRConfig
+TIM_BDTRInitTypeDef
+TIM_BDTRStructInit
+TIM_CCPreloadControl
+TIM_CCxCmd
+TIM_CCxNCmd
+TIM_ClearFlag
+TIM_ClearITPendingBit
+TIM_ClearOC1Ref
+TIM_ClearOC2Ref
+TIM_ClearOC3Ref
+TIM_ClearOC4Ref
+TIM_Cmd
+TIM_CounterModeConfig
+TIM_CtrlPWMOutputs
+TIM_DMACmd
+TIM_DMAConfig
+TIM_DeInit
+TIM_ETRClockMode1Config
+TIM_ETRClockMode2Config
+TIM_ETRConfig
+TIM_EncoderInterfaceConfig
+TIM_ForcedOC1Config
+TIM_ForcedOC2Config
+TIM_ForcedOC3Config
+TIM_ForcedOC4Config
+TIM_GenerateEvent
+TIM_GetCapture1
+TIM_GetCapture2
+TIM_GetCapture3
+TIM_GetCapture4
+TIM_GetCounter
+TIM_GetFlagStatus
+TIM_GetITStatus
+TIM_GetPrescaler
+TIM_ICInit
+TIM_ICInitTypeDef
+TIM_ICStructInit
+TIM_ITConfig
+TIM_ITRxExternalClockConfig
+TIM_InternalClockConfig
+TIM_OC1FastConfig
+TIM_OC1Init
+TIM_OC1NPolarityConfig
+TIM_OC1PolarityConfig
+TIM_OC1PreloadConfig
+TIM_OC2FastConfig
+TIM_OC2Init
+TIM_OC2NPolarityConfig
+TIM_OC2PolarityConfig
+TIM_OC2PreloadConfig
+TIM_OC3FastConfig
+TIM_OC3Init
+TIM_OC3NPolarityConfig
+TIM_OC3PolarityConfig
+TIM_OC3PreloadConfig
+TIM_OC4FastConfig
+TIM_OC4Init
+TIM_OC4PolarityConfig
+TIM_OC4PreloadConfig
+TIM_OCInitTypeDef
+TIM_OCStructInit
+TIM_PWMIConfig
+TIM_PrescalerConfig
+TIM_RemapConfig
+TIM_SelectCCDMA
+TIM_SelectCOM
+TIM_SelectHallSensor
+TIM_SelectInputTrigger
+TIM_SelectMasterSlaveMode
+TIM_SelectOCxM
+TIM_SelectOnePulseMode
+TIM_SelectOutputTrigger
+TIM_SelectSlaveMode
+TIM_SetAutoreload
+TIM_SetClockDivision
+TIM_SetCompare1
+TIM_SetCompare2
+TIM_SetCompare3
+TIM_SetCompare4
+TIM_SetCounter
+TIM_SetIC1Prescaler
+TIM_SetIC2Prescaler
+TIM_SetIC3Prescaler
+TIM_SetIC4Prescaler
+TIM_TIxExternalClockConfig
+TIM_TimeBaseInit
+TIM_TimeBaseInitTypeDef
+TIM_TimeBaseStructInit
+TIM_UpdateDisableConfig
+TIM_UpdateRequestConfig
+USART 常用波特率配置表（BRR 值与误差）
+USART_ClearFlag
+USART_ClearITPendingBit
+USART_ClockInit
+USART_ClockInitTypeDef
+USART_ClockStructInit
+USART_Cmd
+USART_DMACmd
+USART_DeInit
+USART_GetFlagStatus
+USART_GetITStatus
+USART_HalfDuplexCmd
+USART_ITConfig
+USART_Init
+USART_InitTypeDef
+USART_IrDACmd
+USART_IrDAConfig
+USART_LINBreakDetectLengthConfig
+USART_LINCmd
+USART_OneBitMethodCmd
+USART_OverSampling8Cmd
+USART_ReceiveData
+USART_ReceiverWakeUpCmd
+USART_SendBreak
+USART_SendData
+USART_SetAddress
+USART_SetGuardTime
+USART_SetPrescaler
+USART_SmartCardCmd
+USART_SmartCardNACKCmd
+USART_StructInit
+USART_WakeUpConfig
+W25Q128 SPI Flash 常用指令表
+W25QXX_Init
+WWDG_ClearFlag
+WWDG_DeInit
+WWDG_Enable
+WWDG_EnableIT
+WWDG_GetFlagStatus
+WWDG_SetCounter
+WWDG_SetPrescaler
+WWDG_SetWindowValue
+portYIELD_FROM_ISR
+taskENTER_CRITICAL
+taskENTER_CRITICAL_FROM_ISR
+taskEXIT_CRITICAL
+taskEXIT_CRITICAL_FROM_ISR
+taskYIELD
+ulTaskNotifyTake
+uxQueueMessagesWaiting
+uxTaskGetNumberOfTasks
+uxTaskGetStackHighWaterMark
+uxTaskPriorityGet
+vApplicationMallocFailedHook
+vApplicationStackOverflowHook
+vQueueDelete
+vSemaphoreDelete
+vTaskDelay
+vTaskDelayUntil
+vTaskDelete
+vTaskPrioritySet
+vTaskResume
+vTaskStartScheduler
+vTaskSuspend
+xEventGroupClearBits
+xEventGroupCreate
+xEventGroupSetBits
+xEventGroupWaitBits
+xPortGetFreeHeapSize
+xPortGetMinimumEverFreeHeapSize
+xQueueCreate
+xQueueOverwrite
+xQueuePeek
+xQueueReceive
+xQueueReceiveFromISR
+xQueueReset
+xQueueSend
+xQueueSendFromISR
+xQueueSendToFront
+xSemaphoreCreateBinary
+xSemaphoreCreateCounting
+xSemaphoreCreateMutex
+xSemaphoreCreateRecursiveMutex
+xSemaphoreGive
+xSemaphoreGiveFromISR
+xSemaphoreGiveRecursive
+xSemaphoreTake
+xSemaphoreTakeFromISR
+xSemaphoreTakeRecursive
+xTaskCreate
+xTaskGetCurrentTaskHandle
+xTaskGetSchedulerState
+xTaskGetTickCount
+xTaskNotifyGive
+xTaskNotifyGiveFromISR
+xTaskNotifyWait
+xTimerChangePeriod
+xTimerCreate
+xTimerDelete
+xTimerReset
+xTimerStart
+xTimerStop
+⏱ 板2 · 阶段 2｜时钟、滴答与基础外设
+① 串口 USART + DMA + 空闲中断接收（不定长帧）
+② 串口发送 + printf 重定向（调试必备）
+③ I2C 读/写从机寄存器（接 SHT30 / BH1750 / CCS811 / BMP280 / OLED）
+④ ADC + DMA 循环采集（MQ-135 等模拟量，后台自动刷新）
+⑤ 定时器输出 PWM（调光 / 调速 / 蜂鸣器）
+⑥ 定时器输入捕获（测脉宽 / 频率 / 红外解码）
+⑦ EXTI 外部中断（按键 / 传感器报警脚 / 唤醒）
+⑧ FreeRTOS 任务 + 队列 + 信号量（本项目主骨架）
+⑨ 数据帧组包 + CRC16-MODBUS 校验（已定案协议）
+⑩ LoRa E22-400T22S 模块收发（AT 配置 + 透传）
+⑪ ESP8266 WiFi + MQTT 上报巴法云
+⑫ 独立看门狗 IWDG + 心跳喂狗（防任务卡死）
+⑬ SPI 主机通信（W25QXX Flash / NRF24L01 / XPT2046 触摸）
+⑭ 定时器输出比较 OC（单脉冲 / 精确翻转，别和 PWM 混）
+⑮ DAC 模拟电压输出（12 位真模拟量，不是 PWM 滤波）
+⑯ CAN 总线通信（工业现场抗干扰首选）
+⑰ RTC 闹钟 + 周期唤醒（到点自己动，不用主循环轮询）
+⑱ SPI Flash 断网缓存日志（掉线先存本地，上线再补传）
+⑲ LoRa E22-400T22S 点对点无线通信（板1 采集 → 板2 网关）
+⑳ ESP8266 AT 联网 + MQTT 上报云端（无线上行主通道）
+✅ 板2 · 阶段 8｜联调验收
+㉑ Modbus RTU 从机 + RS485 半双工（把板子挂进工业现场有线链路）
+㉒ sys_frame 自定义 20 字节数据帧协议（AA 55 帧头 + CRC16-MODBUS + 55 AA 帧尾）
+㉓ SSD1306 OLED 显示（I2C）
+㉔ DHT11 单总线温湿度（检测端的第一路数据源）
+㉕ 一条 I2C 总线挂多个器件 + AT24C02 掉电保存参数
+㉖ FreeRTOS 双板闭环联调总览（检测端采集 → LoRa → 网关端 → MQTT 云端 / 断网落盘）
+㉗ 数字滤波 + 卡尔曼 + PID 闭环（把抖动的读数变成可信的控制量）
+㉘ TFT 并口彩屏 ILI9481（FSMC NE4 + A6 当 RS，320×480）
+㉙ XPT2046 电阻触摸（软件时序 + 校准参数保存）
+㉚ DS18B20 单总线温度（-55~+125℃，一根线挂多颗）
+㉛ HC-SR04 超声波测距（TRIG 触发 + ECHO 回波宽度换算）
+㉜ VL53L0X 激光测距（I2C，30~2000 mm，ToF）
+㉝ MPU6050 六轴姿态（两板 API 不同，附统一封装）
+㉞ 直流电机 TB6612 + 编码器测速（速度环闭环）
+㉟ ULN2003 步进电机（28BYJ-48 类，8 拍 2038 步一圈）
+㊱ 外扩 SRAM（FSMC NE3，1 MB，当普通内存用）
+㊲ 板1 系统 OLED（I2C1 PB8/PB9，0x3C，脏页刷新）
+㊳ 蜂鸣器 / 按键 / LED 基础外设（两板引脚与按键顺序都不同）
+㊴ OTA 固件升级（应用区 + 下载区 + CRC 校验 + 断电安全）
+两板外设驱动一览表
+中断向量表（IRQn ↔ 处理函数名）
+中断宏表（XXX_IT_*，共 165 个）
+传感器寄存器与换算表
+光敏电阻 + ADC 光照（与 BH1750 对照）
+卡尔曼滤波一维实现流程（从抖动读数到可信值）
+复用功能表（GPIO_AF 编号）
+外设常用计算公式表（频率 / 时间 / 波特率）
+外设引脚映射表（USART / I2C / SPI / CAN / USB / ETH / SDIO）
+存储映射与位带地址表（F407）
+定时器通道映射表（TIM 通道 ↔ 引脚）
+常用器件 I2C 地址表（7 位地址）
+断网缓存与补传速查（离线落盘 / 原子提交 / 上线补传）
+时钟使能表（RCC 外设对应）
+时钟树与常用频率配置表（F407）
+本项目中断优先级分配表（两板 FWLIB + FreeRTOS）
+本项目传感器总线与地址总表
+标志宏表（XXX_FLAG_*，共 207 个）
+测距与温度传感器速查（HC-SR04 / VL53L0X / DS18B20 / DHT11）
+电机与执行器速查（TB6612 / ULN2003 / 舵机 / 继电器）
+看门狗配置表（IWDG / WWDG 超时，含常用值）
+结构体成员速查表（SPL Init 结构体逐字段）
+自定义帧协议 sys_frame 速查（帧格式 / 字段 / CRC16 / 状态机）
+触摸屏 XPT2046 速查（软件 SPI / 采样 / 校准）
+🌐 板2 · 阶段 5｜上行链路：ESP8266 AT 与 MQTT
+🏗 板1 · 阶段 0｜先拿地图：分工、路线与验收习惯
+🏗 板1 · 阶段 1｜开工准备与工程骨架
+🏗 板1 · 阶段 2｜时钟、滴答与基础外设
+💾 板2 · 阶段 6｜Flash 缓存与断网补传
+📡 板2 · 阶段 4｜LoRa 接收与协议解析
+🖥 板2 · 阶段 7｜本地显示与触摸
+🧭 ADC + DMA 循环采集引导（MQ-135 等模拟量）
+🧭 CAN 总线通信引导（工业现场最抗干扰的总线）
+🧭 DAC 模拟电压输出引导（真的输出电压，不是 PWM 滤波）
+🧭 EXTI 外部中断引导（按键 / 报警脚 / 唤醒）
+🧭 FreeRTOS 任务框架引导（本项目采集→处理→通信→喂狗）
+🧭 I2C 接传感器引导（多个传感器挂一条总线）
+🧭 Qt · 阶段 0｜先拿地图：Qt 端职责与自检习惯
+🧭 Qt · 阶段 1｜工程与串口打通
+🧭 Qt · 阶段 2｜协议解析与数据模型
+🧭 Qt · 阶段 3｜界面布局与曲线
+🧭 Qt · 阶段 4｜告警与阈值
+🧭 Qt · 阶段 5｜记录与导出
+🧭 Qt · 阶段 6｜设备控制与历史补传
+🧭 Qt · 阶段 7｜自检与联调
+🧭 RTC 电子钟引导（初始化 + 秒中断自动走时）
+🧭 RTC 闹钟与周期唤醒引导（让 CPU 真正能去睡觉）
+🧭 SPI 主机引导（接 W25QXX Flash / NRF24L01 / 触摸屏）
+🧭 ⑱ SPI Flash 断网缓存日志引导（先存本地，上线再补传）
+🧭 ⑲ LoRa E22-400T22S 点对点链路引导（从接线到两板互通）
+🧭 ⑳ ESP8266 AT 联网 + MQTT 上报云端引导（从一条 AT 到一条 MQTT 报文）
+🧭 ㉑ Modbus RTU 从机 + RS485 半双工引导（从接线到能被组态软件读）
+🧭 ㉒ sys_frame 自定义帧协议引导（从「串口只能收字节」到一条能自检的帧）
+🧭 ㉓ OLED 显示引导（从一堆散落函数到一块能跑起来的屏）
+🧭 ㉔ DHT11 单总线温湿度引导（从一根线到一次可信的读数）
+🧭 ㉕ I2C 多器件与参数保存引导（一条总线接多个器件，含参数保存）
+🧭 ㉖ FreeRTOS 双板闭环联调向导（从「编译过了」到「两板真的通」）
+🧭 ㉗ 数字滤波 + 卡尔曼 + PID 闭环引导（从抖动的读数到能用的控制量）
+🧭 ㉘ TFT 并口彩屏 ILI9481 引导（FSMC 并口，从黑屏到出字）
+🧭 ㉙ DS18B20 单总线温度引导（一根线读温度，从复位到算出摄氏度）
+🧭 ㉚ OTA 在线升级引导（板1 经 LoRa、板2 经 ESP8266/MQTT 下发固件）
+🧭 串口 DMA + 空闲中断接收引导（不定长帧收包）
+🧭 定时器 PWM 输出引导（调光 / 调速 / 蜂鸣器）
+🧭 定时器输入捕获引导（测脉宽 / 频率 / 占空比）
+🧭 定时器输出比较 OC 引导（PWM ≠ 输出比较，别混）
+🧭 数据帧组包 + CRC16-MODBUS 校验引导（已定案协议）
+🧭 板1 · 阶段 4｜传感器采集：把 6 路数据读准
+🧭 板1 · 阶段 5｜数据处理与阈值：从原始值到能报警的干净数
+🧭 板1 · 阶段 6｜协议组帧与 CRC：20 字节定长帧
+🧭 板1 · 阶段 7｜LoRa 发送：把帧交给 E22
+🧭 板1 · 阶段 8｜本地显示与交互：OLED、按键、蜂鸣器
+🧭 板1 · 阶段 9｜联调验收：与板2 对接、跑 30 分钟
+🧭 板2 · 阶段 0｜先拿地图：板2 的角色与验收习惯
+🧭 板2 · 阶段 1｜开工准备与工程骨架
+🧭 板载 FLASH 扇区配置与参数保存引导（ZE 512KB / ZG 1MB）
+🧭 独立看门狗 IWDG 引导（心跳喂狗防卡死）
+🧭 窗口看门狗 WWDG 引导（喂早也复位，比 IWDG 更严）
+🧵 板1 · 阶段 3｜FreeRTOS 任务框架：谁采、谁处理、谁发
+🧵 板2 · 阶段 3｜FreeRTOS 任务框架：谁收、谁转发、谁补传

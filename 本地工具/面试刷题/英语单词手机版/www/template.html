@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>计算机专业英语词汇 · 刷词（手机版）</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;font-family:"Microsoft YaHei","PingFang SC",sans-serif;background:linear-gradient(165deg,#e8f0fa 0%,#f6f8fc 45%,#eaf6ef 100%)}
+#app{display:flex;flex-direction:column;height:100%;max-width:520px;margin:0 auto}
+/* 顶部 */
+header{background:linear-gradient(135deg,#14486e 0%,#1a5276 55%,#2980b9 100%);color:#fff;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;box-shadow:0 3px 12px rgba(26,82,118,.28)}
+header .title{font-size:16px;font-weight:bold;letter-spacing:.5px}
+header .stat{font-size:11px;opacity:.95;background:rgba(255,255,255,.16);padding:3px 9px;border-radius:20px}
+/* 模式栏 */
+.tabs{display:flex;background:#2c3e50}
+.tabs button{flex:1;padding:11px 0;border:none;background:transparent;color:#bdc3c7;font-size:14px;cursor:pointer;transition:color .25s,background .25s}
+.tabs button.active{background:#1a5276;color:#fff;font-weight:bold;box-shadow:inset 0 -3px 0 #58d68d}
+/* 考试栏 + 题号导航 */
+#examBar{display:none;background:#34495e;padding:6px 8px;gap:6px}
+#examBar button{flex:1;border:none;border-radius:8px;padding:8px;color:#fff;font-size:13px;cursor:pointer;transition:transform .12s,filter .2s}
+#examBar button:active{transform:scale(.96)}
+#qnav{display:none;flex-wrap:wrap;gap:5px;padding:8px 10px;background:#fff;border-radius:12px;margin:0 12px;box-shadow:0 1px 5px rgba(0,0,0,.06);max-height:130px;overflow-y:auto}
+#qnav button{width:32px;height:32px;border:none;border-radius:9px;font-size:12px;cursor:pointer;transition:transform .12s,filter .2s}
+#qnav button:active{transform:scale(.92)}
+#qnav button.un{background:#f1f3f5;color:#555}
+#qnav button.ok{background:#27ae60;color:#fff}
+#qnav button.no{background:#c62828;color:#fff}
+/* 主体 */
+main{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+.head{color:#1a5276;font-size:13px;font-weight:bold}
+/* 单词卡片 */
+.wordcard{background:#fff;border-radius:14px;padding:16px 16px 14px;box-shadow:0 2px 12px rgba(0,0,0,.07);animation:fadeSlide .3s ease}
+.word{font-size:26px;font-weight:bold;color:#14486e;line-height:1.35;word-break:break-word}
+.note{font-size:12px;color:#7f8c8d;margin-top:6px;line-height:1.5}
+/* 提示/说明卡（考试说明、成绩页） */
+.card{background:#fff;border-radius:14px;padding:14px 16px;font-size:14px;line-height:1.75;white-space:pre-wrap;word-break:break-word;box-shadow:0 2px 12px rgba(0,0,0,.07);animation:fadeSlide .3s ease}
+/* 选项 */
+#opts{display:flex;flex-direction:column;gap:9px}
+.opt{background:#fff;border:1.5px solid #e3e8ee;border-radius:12px;padding:13px 14px;font-size:15px;word-break:break-word;overflow-wrap:break-word;cursor:pointer;transition:transform .12s,border-color .2s,background .2s,box-shadow .2s;box-shadow:0 1px 4px rgba(26,82,118,.06)}
+.opt:active{transform:scale(.985)}
+.opt.right{background:#e8f8f0;color:#1a7f37;border-color:#2ecc71;font-weight:bold;animation:pop .3s ease}
+.opt.wrong{background:#fdecea;color:#c62828;border-color:#e74c3c;animation:shake .3s ease}
+/* 填空题作答区 */
+#answerBox{display:none;flex-direction:column;gap:10px}
+#answerBox input{width:100%;border:1.5px solid #d6dde5;border-radius:12px;padding:14px;font-size:17px;font-family:inherit;background:#fffdf5;outline:none;transition:border-color .2s,box-shadow .2s}
+#answerBox input:focus{border-color:#2471a3;box-shadow:0 0 0 3px rgba(36,113,163,.14)}
+#answerBox input:disabled{background:#f4f6f7;color:#555}
+/* 反馈 */
+#fb{background:#fff;border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.75;display:none;box-shadow:0 2px 10px rgba(0,0,0,.06);animation:fadeSlide .3s ease;word-break:break-word}
+#fb .tag-ok{color:#1a7f37;font-weight:bold}
+#fb .tag-no{color:#c62828;font-weight:bold}
+#fb .k{color:#1a5276;font-weight:bold}
+/* 小提示 toast */
+#toast{position:fixed;left:50%;top:64px;transform:translateX(-50%) translateY(-12px);background:rgba(26,82,118,.94);color:#fff;font-size:13px;padding:9px 16px;border-radius:20px;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:120;max-width:86%;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* 底部操作栏 */
+footer{background:#fff;padding:9px;display:flex;gap:6px;box-shadow:0 -2px 8px rgba(0,0,0,.08)}
+footer button{flex:1;border:none;border-radius:10px;padding:12px 2px;font-size:12.5px;color:#fff;cursor:pointer;white-space:nowrap;transition:transform .12s,filter .2s}
+footer button:active{transform:scale(.95);filter:brightness(.92)}
+/* 弹窗 */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:99;animation:fadeIn .18s ease}
+.modal.show{display:flex}
+.mbox{background:#fff;border-radius:16px;width:86%;max-width:360px;padding:18px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.25);animation:zoomIn .25s ease}
+.mbox h3{font-size:16px;margin-bottom:8px}
+.mbox p{font-size:14px;line-height:1.7;color:#333;margin-bottom:14px;white-space:pre-wrap;text-align:left}
+.mbox .btns{display:flex;gap:10px;justify-content:center}
+.mbox button{border:none;border-radius:10px;padding:10px 22px;font-size:14px;color:#fff;cursor:pointer;transition:transform .12s,filter .2s}
+.mbox button:active{transform:scale(.95)}
+.chip{border:none;border-radius:20px;padding:7px 13px;margin:3px;background:linear-gradient(135deg,#c62828,#e74c3c);color:#fff;font-size:12px;cursor:pointer;transition:transform .12s,filter .2s;box-shadow:0 2px 6px rgba(198,40,40,.25)}
+.chip:active{transform:scale(.94)}
+/* 动画 */
+@keyframes fadeSlide{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes pop{0%{transform:scale(.9)}55%{transform:scale(1.05)}100%{transform:scale(1)}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes zoomIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+@keyframes staggerIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="title">📖 计算机专业英语词汇</div>
+    <div class="stat" id="stat">-</div>
+  </header>
+  <div class="tabs" id="tabs">
+    <button data-mode="顺序" class="active">顺序</button>
+    <button data-mode="错词">错词</button>
+    <button data-mode="考试">考试</button>
+  </div>
+  <div id="examBar"></div>
+  <div id="qnav"></div>
+  <main id="main">
+    <div class="head" id="head"></div>
+    <div class="wordcard" id="wordcard">
+      <div class="word" id="word"></div>
+      <div class="note" id="note"></div>
+    </div>
+    <div class="card" id="card" style="display:none"></div>
+    <div id="opts"></div>
+    <div id="answerBox">
+      <input id="answerInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="输入中文意思后点「确认答案」">
+    </div>
+    <div id="fb"></div>
+  </main>
+  <footer id="footer"></footer>
+</div>
+<div id="toast"></div>
+<div class="modal" id="modal"><div class="mbox" id="mbox"></div></div>
+
+<script>
+/*__BANK__*/
+/*__CONFIG__*/
+
+/* ============ 基础工具 ============ */
+function $(s){return document.querySelector(s)}
+function forEachNode(nodes, fn){ for(var i=0;i<nodes.length;i++) fn(nodes[i], i); }
+function toggleCls(el, cls, force){ if(force) el.classList.add(cls); else el.classList.remove(cls); }
+function pad2(n){ n=String(n); return n.length<2?"0"+n:n; }
+function fmt(sec){ return pad2(Math.floor(sec/60))+":"+pad2(sec%60); }
+function shuffle(a){ var r=a.slice(); for(var i=r.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=r[i];r[i]=r[j];r[j]=t;} return r; }
+/* 长文本折行：中文按 2 字符宽计（兼容旧机型） */
+function wrapCn(s, lim){ return String(s||""); }
+
+/* ============ 进度存储 ============ */
+var LS_KEY="enword_v1";
+function load(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||"{}"); }catch(e){ return {}; } }
+function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(progress)); }catch(e){} }
+var progress=load();
+function rec(id){ if(!progress[id]) progress[id]={ok:null,wrong_count:0}; var r=progress[id];
+  if(r.in_wrong===undefined){ r.in_wrong=(r.ok===false); r.life=r.in_wrong?1:0; } return r; }
+/* 只读访问：不存在返回空对象，不往进度里塞空记录 */
+function recGet(id){ var r=progress[id]; if(!r||typeof r!=="object") return {};
+  if(r.in_wrong===undefined){ r.in_wrong=(r.ok===false); r.life=r.in_wrong?1:0; } return r; }
+function migrateProgress(){ var ch=false;
+  for(var id in progress){ var r=progress[id];
+    if(!r||typeof r!=="object"||id.charAt(0)==="_") continue;
+    if(r.in_wrong===undefined){ r.in_wrong=(r.ok===false); r.life=r.in_wrong?1:0; ch=true; }
+    if(r.wrong_count===undefined){ r.wrong_count=0; ch=true; }
+    if(!r.in_wrong && r.life){ r.life=0; ch=true; }
+  }
+  if(ch) save(); }
+migrateProgress();
+/* ---------- 错词寿命机制 ----------
+   答错（任何模块）：累计次数+1，入错词本（寿命初始 1）；次数达 3/5/7/9 或 >10 时寿命+1。
+   只有「错词考试」答对才寿命 -1，归零后移除；顺序/普通考试答对不影响错词状态。 */
+function bumpWrong(r){ r.wrong_count=(r.wrong_count||0)+1; var wc=r.wrong_count;
+  if(!r.in_wrong){ r.in_wrong=true; r.life=1; }
+  if(wc===3||wc===5||wc===7||wc===9||wc>10) r.life=(r.life||1)+1; }
+function lifeDec(r){ if(!r.in_wrong) return false;
+  r.life=Math.max(0,(r.life||1)-1);
+  if(r.life<=0){ r.in_wrong=false; return true; }
+  return false; }
+/* ctx: seq=顺序/错词重做等非考试，exam=普通考试，wexam=错词考试 */
+function record(id, ok, ctx){ var r=rec(id); r.ok=ok;
+  var cleared=false;
+  if(!ok) bumpWrong(r); else if(ctx==="wexam") cleared=lifeDec(r);
+  save(); return cleared; }
+
+/* ============ 词库工具 ============ */
+function byId(id){ for(var i=0;i<BANK.length;i++){ if(BANK[i].id===id) return BANK[i]; } return null; }
+function isDone(it){ var r=progress[it.id]; return !!(r && r.ok!==null && r.ok!==undefined); }
+
+/* 记忆位置 = 「连续完成题目的最后一题」：
+   做了 1、2、3、4，跳过 5 又做了 6、7、8 → 下次打开就在第 4 题 */
+function resumeIndex(){
+  var last=-1;
+  for(var i=0;i<BANK.length;i++){ if(isDone(BANK[i])) last=i; else break; }
+  if(last>=0) return last;
+  return Math.min(progress._last||0, Math.max(0,BANK.length-1));
+}
+
+/* 中文释义等价判定
+   · 去空格、统一中英标点、忽略句末句号
+   · 省略号「…」/「...」/「什么」/「XX」互相等价（如「改变…的位置」）
+   · 释义含多个义项（以 ，；/ 分隔）时，答出任一义项即算对 */
+function normCn(s){
+  s=String(s==null?"":s).replace(/[\s\u3000]+/g,"");
+  s=s.replace(/[（(]/g,"(").replace(/[）)]/g,")");
+  s=s.replace(/[，,、]+/g,"，").replace(/[；;]+/g,"；").replace(/[：:]+/g,"：");
+  s=s.replace(/[。.]+$/,"");
+  s=s.replace(/…+/g,"\u00a7").replace(/\.{2,}/g,"\u00a7").replace(/。{2,}/g,"\u00a7");
+  s=s.replace(/[“”"'’‘]/g,"");
+  return s;
+}
+function sameOne(user, ref){
+  var c=normCn(ref), u=normCn(user);
+  if(u==="" ) return false;
+  if(u===c) return true;
+  if(c.indexOf("\u00a7")>=0){                 /* 参考释义里有省略号占位 */
+    u=u.replace(/什么/g,"\u00a7").replace(/[xXＸｘ]{2,}/g,"\u00a7")
+       .replace(/某(个|些)?/g,"\u00a7").replace(/省略(的)?(部分|内容)?/g,"\u00a7");
+    if(u===c) return true;
+  }
+  return false;
+}
+function senses(cn){ return String(cn||"").split(/[，,；;\/]/).filter(function(x){return x.trim();}); }
+function checkMeaning(user, it){
+  if(sameOne(user, it.cn)) return true;
+  var ss=senses(it.cn);
+  for(var i=0;i<ss.length;i++){ if(sameOne(user, ss[i])) return true; }
+  return false;
+}
+
+/* ============ 通用 UI ============ */
+var toastTimer=null;
+function toast(msg){
+  var t=$("#toast"); t.textContent=msg; t.classList.add("show");
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer=setTimeout(function(){ t.classList.remove("show"); }, 1400);
+}
+var modalCb=null;
+function msg(t,p){ $("#mbox").innerHTML="<h3>"+t+"</h3><p>"+(p||"")+"</p><div class='btns'><button style='background:#1a5276' onclick='closeModal()'>确定</button></div>"; $("#modal").classList.add("show"); }
+function confirm2(t,p,cb){ modalCb=cb; $("#mbox").innerHTML="<h3>"+t+"</h3><p>"+(p||"")+"</p><div class='btns'><button style='background:#c62828' onclick='closeModal()'>取消</button><button style='background:#1a5276' onclick='doConfirm()'>确定</button></div>"; $("#modal").classList.add("show"); }
+function doConfirm(){ closeModal(); if(modalCb){ var cb=modalCb; modalCb=null; cb(); } }
+function closeModal(){ $("#modal").classList.remove("show"); }
+function footerBtns(btns){
+  var f=$("#footer"); f.innerHTML="";
+  btns.forEach(function(b){
+    var el=document.createElement("button"); el.textContent=b[0]; el.style.background=b[1]; el.onclick=b[2];
+    f.appendChild(el);
+  });
+}
+function showFb(html){ var f=$("#fb"); f.style.display="block"; f.innerHTML=html; }
+function hideFb(){ $("#fb").style.display="none"; }
+function stat(){
+  var done=0, right=0, wrong=0;
+  for(var i=0;i<BANK.length;i++){
+    var r=progress[BANK[i].id];
+    if(r && r.ok!==null && r.ok!==undefined){ done++; if(r.ok===true) right++; else wrong++; }
+  }
+  var rate=done?Math.round(right/done*100):0;
+  var wq=BANK.filter(function(x){ return recGet(x.id).in_wrong; }).length;
+  $("#stat").textContent="已做 "+done+"/"+BANK.length+" · 正确率 "+rate+"% · 错词 "+wq;
+}
+
+/* ============ 模式切换 ============ */
+var mode="顺序", queue=[], idx=0, seqSavedIdx=null, answered=false;
+function setMode(m){
+  if(mode==="考试" && exam && exam.active && !exam.finished){ msg("考试中","考试进行中，不能切换到其他板块！\n请先交卷或退出考试。"); return; }
+  if(mode==="顺序" && m!=="顺序") seqSavedIdx=idx;
+  mode=m;
+  forEachNode(document.querySelectorAll("#tabs button"), function(b){ toggleCls(b,"active",b.dataset.mode===m); });
+  $("#examBar").style.display="none";
+  if(m==="考试"){ enterExamBoard(); return; }
+  examBarHide();
+  $("#qnav").style.display="none";
+  if(m==="顺序"){
+    queue=BANK.slice();
+    idx=(seqSavedIdx===null)?resumeIndex():seqSavedIdx;
+    idx=Math.max(0,Math.min(idx,Math.max(0,queue.length-1)));
+  }else{      /* 错词 */
+    queue=BANK.filter(function(x){ return recGet(x.id).in_wrong; });
+    if(!queue.length){ msg("错词本","太棒了，当前没有错词！\n\n（错词需在「错词考试」中答对、寿命归零后才会移除）"); mode="顺序"; queue=BANK.slice(); idx=0;
+      forEachNode(document.querySelectorAll("#tabs button"), function(b){ toggleCls(b,"active",b.dataset.mode==="顺序"); });
+    } else idx=0;
+  }
+  renderQ();
+}
+
+/* ============ 顺序 / 错词（选择题） ============ */
+function buildOptions(it){
+  /* 1 个正确答案 + 3 个随机干扰（来自其它词条释义），选项顺序随机；
+     干扰项优先选与正确答案长度相近的，选项更像人话；
+     并排除"与正确答案同义/互为子串"的干扰项，避免出现两个都算对的选项 */
+  var correct=it.cn, L=Math.max(1, correct.length);
+  var nc=normCn(correct);
+  var cap=Math.max(16, Math.round(L*1.6)), rcap=Math.max(24, Math.round(L*2.5));
+  var best=[], fallback=[], seen={};
+  seen[correct]=1;
+  function ambiguous(cn){
+    var n=normCn(cn);
+    if(n===nc) return true;                                  /* 规范化后完全相同 */
+    if(n.length>=2 && nc.length>=2 && (n.indexOf(nc)>=0 || nc.indexOf(n)>=0)) return true; /* 互为子串 */
+    return false;
+  }
+  var others=shuffle(BANK);
+  for(var i=0;i<others.length;i++){
+    var cn=others[i].cn;
+    if(!cn || seen[cn]) continue;
+    if(ambiguous(cn)) continue;
+    if(senses(cn)[0]===senses(correct)[0]) continue;         /* 首义项相同也跳过，避免近似重复 */
+    seen[cn]=1;
+    if(cn.length<=cap){ best.push(cn); if(best.length>=6) break; }
+    else if(cn.length<=rcap){ fallback.push(cn); }
+  }
+  var pool=best.slice(0,3);
+  for(var j=0;j<fallback.length && pool.length<3;j++) pool.push(fallback[j]);
+  if(pool.length<3){                                         /* 兜底：放宽长度限制再补 */
+    for(var k=0;k<others.length && pool.length<3;k++){
+      var c2=others[k].cn;
+      if(!c2 || seen[c2] || ambiguous(c2)) continue;
+      seen[c2]=1; pool.push(c2);
+    }
+  }
+  return shuffle(pool.concat([correct]));
+}
+function renderQ(){
+  var it=queue[idx];
+  hideFb(); $("#answerBox").style.display="none"; $("#card").style.display="none";
+  $("#wordcard").style.display="block";
+  if(!it){ $("#head").textContent="暂无单词"; $("#word").textContent=""; $("#note").textContent=""; $("#opts").innerHTML=""; return; }
+  $("#head").textContent="[第 "+(idx+1)+"/"+queue.length+" 个单词]"+((mode==="错词")?" · 错词重做":"");
+  $("#word").textContent=it.en;
+  $("#note").textContent=it.note?("全称：" + it.note):"";
+  $("#note").style.display=it.note?"block":"none";
+  answered=false;
+  var opts=buildOptions(it), o=$("#opts"); o.innerHTML="";
+  opts.forEach(function(cn,i){
+    var d=document.createElement("div"); d.className="opt"; d.textContent=cn;
+    d.setAttribute("data-cn", cn);
+    d.onclick=function(){ pickOption(d, cn, it); };
+    o.appendChild(d);
+    d.style.animation="staggerIn .3s ease "+(i*0.06)+"s both";
+  });
+  footerBtns((mode==="错词")
+    ? [["◀ 上一题","#1a5276",function(){nav(-1)}],
+       ["跳过 ▶","#7f8c8d",function(){nav(1)}],
+       ["📝 错词考试","#d35400",startWrongExam],
+       ["🔁 换一批","#8e44ad",renderQ],
+       ["🗑 重置","#c62828",resetProgress]]
+    : [["◀ 上一题","#1a5276",function(){nav(-1)}],
+       ["跳过 ▶","#7f8c8d",function(){nav(1)}],
+       ["🔁 换一批","#8e44ad",renderQ],
+       ["🗑 重置","#c62828",resetProgress]]);
+  if(mode==="错词"){
+    var rr=recGet(it.id);
+    if(rr.in_wrong) showFb("📕 错词寿命 "+rr.life+"（在「错词考试」中答对 -1，归零后移除）"+
+                           (rr.wrong_count?("\n🔁 累计答错 "+rr.wrong_count+" 次"):"")+
+                           "\n\n📚 错词共 "+BANK.filter(function(x){return recGet(x.id).in_wrong;}).length+" 个，点下方「📝 错词考试」抽题练习。");
+  }
+  progress._last=idx; save();
+  $("#main").scrollTop=0;
+  stat();
+}
+function pickOption(el, cn, it){
+  if(answered) return;
+  var right=(normCn(cn)===normCn(it.cn));
+  /* 同义项也算对（个别词条释义写法略有差异） */
+  if(!right && checkMeaning(cn, it)) right=true;
+  answered=true;
+  var nodes=document.querySelectorAll("#opts .opt");
+  forEachNode(nodes, function(n){
+    var isThis=(n===el);
+    if(normCn(n.getAttribute("data-cn"))===normCn(it.cn)) n.classList.add("right");
+    else if(isThis) n.classList.add("wrong");
+  });
+  var r=rec(it.id);
+  if(right){
+    record(it.id, true, mode==="错词"?"wrong":"seq");
+    stat();
+    var extra="";
+    if(r.wrong_count) extra="\n（该词累计答错 "+r.wrong_count+" 次）";
+    if(r.in_wrong) extra+="\n📕 仍在错词本：寿命 "+r.life+"（只有「错词考试」答对才 -1）";
+    showFb("<span class='tag-ok'>✅ 回答正确！</span>\n<span class='k'>"+it.en+"</span> —— "+it.cn+extra);
+    toast("✅ 正确");
+    setTimeout(function(){ if(answered && mode!=="错词") nav(1); }, 1100);
+  }else{
+    record(it.id, false, mode==="错词"?"wrong":"seq");
+    stat();
+    showFb("<span class='tag-no'>❌ 答错了，已加入错词本</span>\n<span class='k'>"+it.en+"</span> —— "+it.cn+
+           "\n你选的是："+cn+(r.wrong_count>1?("\n（该词累计答错 "+r.wrong_count+" 次）"):"")+
+           "\n📕 错词寿命 "+r.life+"（在「错词考试」中答对 -1，归零后移除）");
+    toast("❌ 已加入错词本");
+  }
+}
+function nav(d){
+  var ni=idx+d;
+  if(ni<0){ toast("已经是第一个单词"); return; }
+  if(ni>=queue.length){ toast("已经是最后一个单词"); return; }
+  idx=ni; renderQ();
+}
+
+/* ============ 考试（普通：20 题填空听写；错词考试：≤10 题选中文） ============ */
+var EXAM_NUM=20, EXAM_SCORE=5, WEXAM_NUM=10;
+var exam=null, examUsed=0, examTimer=null, examChecked=false;
+function examTitle(){ return (exam&&exam.kind==="wrong")?"错词考试":"模拟考试"; }
+
+function examIds(){ return BANK.map(function(x){ return x.id; }); }
+function pickPlanned(ids, orderKey, curKey, n){
+  var plan=(progress._exam_plan && typeof progress._exam_plan==="object")?progress._exam_plan:{};
+  var order=plan[orderKey];
+  if(!Array.isArray(order) || order.length!==ids.length ||
+     ids.some(function(id){ return order.indexOf(id)<0; })){
+    order=shuffle(ids); plan[curKey]=0;
+  }
+  var m=order.length, cur=plan[curKey]||0;
+  if(!(cur>=0) || cur>=m) cur=0;
+  var end=cur+n, picked;
+  if(end<=m) picked=order.slice(cur,end);
+  else picked=order.slice(cur).concat(order.slice(0,end-m));
+  plan[orderKey]=order; plan[curKey]=end%m;
+  progress._exam_plan=plan;
+  return picked;
+}
+function enterExamBoard(){
+  if(exam && exam.active){
+    if(exam.finished){ renderResult(); return; }
+    if(exam.paused){ showPaused(); return; }
+    startTicker(); renderExamQ(); return;
+  }
+  renderExamReady();
+}
+function examBarShow(btns){
+  $("#examBar").style.display="flex"; $("#examBar").innerHTML="";
+  btns.forEach(function(b){
+    var el=document.createElement("button"); el.textContent=b[0]; el.style.background=b[1]; el.onclick=b[2];
+    $("#examBar").appendChild(el);
+  });
+}
+function examBarHide(){ $("#examBar").style.display="none"; $("#examBar").innerHTML=""; }
+function renderExamReady(){
+  examBarHide(); $("#qnav").style.display="none";
+  $("#wordcard").style.display="none"; $("#opts").innerHTML=""; hideFb();
+  $("#answerBox").style.display="none"; $("#card").style.display="block";
+  var cnt=progress._exam_count||0;
+  $("#head").textContent="📝 模拟考试 · 第 "+(cnt+1)+" 次考试";
+  $("#card").textContent="考试说明：\n\n· 共 "+EXAM_NUM+" 题（随机抽词），每题 "+EXAM_SCORE+" 分，满分 "+(EXAM_NUM*EXAM_SCORE)+" 分\n"+
+    "· 填空听写式：给出英文单词，你输入中文意思\n"+
+    "· 点「确认答案」后立刻对照：释义一致即算对（多义项答出任一义项即可）\n"+
+    "· 「改变…的位置」这类带省略号的释义：输入「改变…的位置」「改变什么的位置」「改变...的位置」都算对\n"+
+    "· 答错的词自动进入「错词」板块\n"+
+    "· 错词清除规则：只有「错词考试」答对才减少寿命，寿命归零后移除\n"+
+    "· 抽词用环形算法：每场 20 题不重复，连续多场可覆盖全部 "+BANK.length+" 个单词\n"+
+    "· 考试中可暂停/退出，强制关闭也会自动保存，下次打开继续\n"+
+    "· 考试中不能切换板块\n\n当前第 "+(cnt+1)+" 次考试 · 已完成 "+cnt+" 次\n\n点击下方「开始考试」按钮开始。（错词考试在「错词」板块进入）";
+  footerBtns([["开始考试","#1a5276",function(){ startExam(); }]]);
+  stat();
+}
+function startExam(kind){
+  kind=kind||"normal";
+  var ids;
+  if(kind==="wrong"){
+    var wIds=BANK.filter(function(x){ return recGet(x.id).in_wrong; }).map(function(x){ return x.id; });
+    if(!wIds.length){ msg("错词考试","当前没有错词，先去刷词吧！"); return; }
+    ids=shuffle(wIds).slice(0,Math.min(WEXAM_NUM,wIds.length));
+  }else{
+    ids=pickPlanned(examIds(), "en_order", "en_cur", EXAM_NUM);
+  }
+  exam={active:true,finished:false,paused:false,kind:kind,ids:ids,idx:0,answers:{},order:{}};
+  examUsed=0; examChecked=false;
+  progress.exam=exam; save();
+  startTicker(); examBarShow([["⏸ 暂停","#b9770e",pauseExam],["📮 交卷","#27ae60",askFinish]]);
+  renderExamQ();
+}
+function startWrongExam(){
+  if(mode==="考试" && exam && exam.active && !exam.finished){ msg("考试中","考试进行中，不能开始新的考试！\n请先交卷或退出考试。"); return; }
+  var w=BANK.filter(function(x){ return recGet(x.id).in_wrong; });
+  if(!w.length){ msg("错词考试","当前没有错词，先去刷词吧！"); return; }
+  setMode("考试");
+  startExam("wrong");
+}
+function startTicker(){
+  if(examTimer) clearInterval(examTimer);
+  examTimer=setInterval(function(){
+    if(!exam || !exam.active || exam.finished || exam.paused) return;
+    examUsed++; exam.used=examUsed;
+    var h=$("#head");
+    if(h && mode==="考试") h.textContent="⏱ "+examTitle()+" · 已用 "+fmt(examUsed)+" · 第 "+((exam.idx||0)+1)+"/"+exam.ids.length+" 题";
+  }, 1000);
+}
+function stopTicker(){ if(examTimer){ clearInterval(examTimer); examTimer=null; } }
+function renderExamQ(){
+  var it=byId(exam.ids[exam.idx]);
+  if(!it){ renderResult(); return; }
+  var wrongKind=(exam.kind==="wrong");
+  $("#wordcard").style.display="block"; $("#card").style.display="none"; hideFb();
+  var qn=$("#qnav");
+  $("#head").textContent="⏱ "+examTitle()+" · 已用 "+fmt(examUsed)+" · 第 "+(exam.idx+1)+"/"+exam.ids.length+" 题";
+  $("#word").textContent=it.en;
+  if(wrongKind){
+    /* 错词考试：给英文选中文（4 选 1、选项随机），点选即判分，每题一次 */
+    $("#note").textContent=it.note?("全称：" + it.note):"";
+    $("#note").style.display=it.note?"block":"none";
+    $("#answerBox").style.display="none";
+    exam.order=exam.order||{};
+    var opts=exam.order[it.id];
+    if(!opts){ opts=buildOptions(it); exam.order[it.id]=opts; progress.exam=exam; save(); }
+    var a=exam.answers[it.id];
+    var o=$("#opts"); o.innerHTML="";
+    opts.forEach(function(cn,i){
+      var d=document.createElement("div"); d.className="opt"; d.textContent=cn;
+      if(a){
+        if(checkMeaning(cn, it)) d.classList.add("right");
+        else if(cn===a.ans) d.classList.add("wrong");
+      }else{
+        d.onclick=function(){ wrongExamPick(it, cn); };
+      }
+      o.appendChild(d);
+      if(!a) d.style.animation="staggerIn .3s ease "+(i*0.06)+"s both";
+    });
+    examChecked=!!a;
+    footerBtns([["◀ 上一题","#1a5276",function(){ examNav(-1) }],
+                ["下一题 ▶","#1a5276",function(){ examNext() }],
+                ["📮 交卷","#c62828",askFinish]]);
+    renderExamNav();
+    $("#main").scrollTop=0;
+    stat();
+    return;
+  }
+  $("#note").textContent=it.note?("全称：" + it.note):"";
+  $("#note").style.display=it.note?"block":"none";
+  $("#opts").innerHTML="";
+  var ab=$("#answerBox"); ab.style.display="flex";
+  var inp=$("#answerInput");
+  inp.disabled=false; inp.value=(exam.answers[it.id] && exam.answers[it.id].ans)||"";
+  $("#card").style.display="block";
+  $("#card").textContent="✍️ 填空：请写出这个单词的中文意思（输入后点「确认答案」，会立刻对照）";
+  examChecked=false;
+  inp.onkeydown=function(e){ if(e.key==="Enter"){ if(!examChecked) checkExamAnswer(); else examNext(); } };
+  footerBtns([["◀ 上一题","#1a5276",function(){ examNav(-1) }],
+              ["确认答案","#27ae60",checkExamAnswer],
+              ["下一题 ▶","#1a5276",examNext],
+              ["📮 交卷","#c62828",askFinish]]);
+  renderExamNav();
+  $("#main").scrollTop=0;
+  stat();
+}
+function renderExamNav(){
+  var q=$("#qnav"); q.innerHTML=""; q.style.display="flex";
+  exam.ids.forEach(function(id,i){
+    var a=exam.answers[id];
+    var b=document.createElement("button");
+    b.textContent=(i+1);
+    b.className=a?(a.ok?"ok":"no"):"un";
+    b.onclick=function(){ if(mode!=="考试") return; exam.idx=i; renderExamQ(); };
+    q.appendChild(b);
+  });
+}
+function wrongExamPick(it, cn){
+  if(!exam || !exam.active || exam.finished || exam.paused) return;
+  if(exam.answers[it.id]) return;                       /* 每题只判一次 */
+  var right=(normCn(cn)===normCn(it.cn));
+  if(!right && checkMeaning(cn, it)) right=true;
+  exam.answers[it.id]={ans:cn, correct:it.cn, ok:right};
+  var cleared=record(it.id, right, "wexam");            /* 错词考试：答对寿命-1 */
+  examChecked=true; progress.exam=exam; save();
+  renderExamQ(); renderExamNav();
+  showFb((right?"<span class='tag-ok'>✅ 回答正确！</span>":"<span class='tag-no'>❌ 回答错误</span>")+
+         "\n<span class='k'>"+it.en+"</span> —— 正确答案："+it.cn+
+         "\n你选的是："+cn+
+         (cleared?"\n🎉 错词寿命归零，已从错词本移除！":"\n📕 仍在错词本：寿命 "+recGet(it.id).life+""));
+  toast(right?"✅ 正确":"❌ 错误");
+}
+function checkExamAnswer(){
+  var it=byId(exam.ids[exam.idx]);
+  var inp=$("#answerInput");
+  var user=inp.value.trim();
+  if(!user){ toast("请先输入中文意思"); inp.focus(); return; }
+  var ok=checkMeaning(user, it);
+  exam.answers[it.id]={ans:user, correct:it.cn, ok:ok};
+  progress.exam=exam; save();
+  record(it.id, ok, "exam");
+  stat(); renderExamNav();
+  examChecked=true;
+  inp.disabled=true;
+  showFb((ok?"<span class='tag-ok'>✅ 回答正确！</span>":"<span class='tag-no'>❌ 回答错误（已加入错词本）</span>")+
+         "\n<span class='k'>"+it.en+"</span> —— 正确答案："+it.cn+
+         "\n你的答案："+user+
+         (ok?"":"\n📕 错词寿命 "+recGet(it.id).life+"（在「错词考试」中答对 -1）"));
+  toast(ok?"✅ 正确":"❌ 错误");
+}
+function examNext(){
+  if(!examChecked && !exam.answers[exam.ids[exam.idx]]){ toast("请先确认答案"); return; }
+  if(exam.idx>=exam.ids.length-1){ askFinish(); return; }
+  exam.idx++; progress.exam=exam; save(); renderExamQ();
+}
+function examNav(d){
+  var ni=exam.idx+d;
+  if(ni<0){ toast("已经是第一题"); return; }
+  if(ni>=exam.ids.length){ toast("已经是最后一题"); return; }
+  exam.idx=ni; progress.exam=exam; save(); renderExamQ();
+}
+function pauseExam(){
+  exam.paused=true; stopTicker(); progress.exam=exam; save(); showPaused();
+}
+function resumeExam(){
+  exam.paused=false; examChecked=!!exam.answers[exam.ids[exam.idx]];
+  progress.exam=exam; save(); startTicker();
+  examBarShow([["⏸ 暂停","#b9770e",pauseExam],["📮 交卷","#27ae60",askFinish]]);
+  renderExamQ();
+}
+function showPaused(){
+  stopTicker(); examBarHide();
+  $("#wordcard").style.display="none"; $("#opts").innerHTML=""; $("#answerBox").style.display="none";
+  $("#qnav").style.display="none";
+  $("#card").style.display="block";
+  $("#head").textContent="⏸ "+examTitle()+"已暂停";
+  $("#card").textContent="考试已暂停。\n\n已用时间："+fmt(examUsed)+"\n已作答 "+
+    (Object.keys(exam.answers||{}).length)+"/"+exam.ids.length+" 题\n\n点下面「继续考试」恢复答题（进度已自动保存，关掉页面也不会丢）。";
+  footerBtns([["▶ 继续考试","#1a5276",resumeExam],
+              ["📮 交卷","#27ae60",askFinish],
+              ["⬅ 返回顺序","#7f8c8d",function(){ setMode("顺序") }]]);
+}
+function askFinish(){
+  var un=exam.ids.length-Object.keys(exam.answers||{}).length;
+  confirm2("交卷","确定要交卷吗？"+(un?("\n还有 "+un+" 题未作答。"):""),finishExam);
+}
+function finishExam(){
+  stopTicker();
+  exam.finished=true; exam.paused=false; exam.left=0; exam.used=examUsed;
+  if(exam.kind==="wrong") progress._wexam_count=(progress._wexam_count||0)+1;
+  else progress._exam_count=(progress._exam_count||0)+1;
+  progress.exam=exam; save(); examBarHide(); renderResult();
+}
+function renderResult(){
+  stopTicker(); examBarHide(); $("#qnav").style.display="none";
+  $("#wordcard").style.display="none"; $("#opts").innerHTML=""; $("#answerBox").style.display="none";
+  var qs=exam.ids.map(byId), ans=exam.answers||{};
+  var correct=0, wrong=[], un=0;
+  qs.forEach(function(x){
+    var a=ans[x.id];
+    if(!a) un++;
+    else if(a.ok) correct++; else wrong.push(x);
+  });
+  var score=correct*EXAM_SCORE;
+  var wrongKind=(exam.kind==="wrong");
+  $("#card").style.display="block";
+  $("#head").textContent="🏁 "+examTitle()+"结束";
+  var tailTxt;
+  if(wrongKind){
+    var clearedN=qs.filter(function(x){ return ans[x.id] && ans[x.id].ok && !recGet(x.id).in_wrong; }).length;
+    var leftN=BANK.filter(function(x){ return recGet(x.id).in_wrong; }).length;
+    tailTxt="🎉 本次清除 "+clearedN+" 个错词（寿命归零）；答对寿命 -1，答错寿命不变。\n📕 剩余错词："+leftN+" 个";
+  }else{
+    tailTxt=((un===0 && wrong.length===0) ? "全部答对，太棒了！"
+      : (wrong.length ? "下滑查看错题号，点击可逐题回顾；错词已自动进入「错词」板块（需在错词考试中答对才能移除）。"
+                      : "本次没有答错的词，但还有题目未作答。"));
+  }
+  $("#card").textContent="🏆 "+examTitle()+"成绩："+score+" 分 / 满分 "+(qs.length*EXAM_SCORE)+" 分\n\n"+
+    "✅ 答对 "+correct+" 题 · ❌ 答错 "+wrong.length+" 题 · ⭕ 未答 "+un+" 题\n"+
+    "⏱ 用时 "+fmt(examUsed)+"\n\n"+tailTxt;
+  var o=$("#opts"); o.innerHTML="";
+  var d=document.createElement("div");
+  d.className="opt ok";
+  d.style.cssText="background:#e8f8f0;color:#1a7f37;border-color:#2ecc71;font-weight:bold;cursor:default";
+  d.textContent="🏆 成绩："+score+" 分（答对 "+correct+"/"+qs.length+"）";
+  o.appendChild(d);
+  if(wrong.length){
+    var t=document.createElement("div");
+    t.style.cssText="font-size:13px;color:#c62828;font-weight:bold;margin:6px 0";
+    t.textContent="📌 错题（点击回顾）："; o.appendChild(t);
+    var wrap=document.createElement("div");
+    wrong.forEach(function(x){
+      var b=document.createElement("button"); b.className="chip"; b.textContent=x.en;
+      b.onclick=function(){ reviewOne(x.id); };
+      wrap.appendChild(b);
+    });
+    o.appendChild(wrap);
+  }
+  var allWrap=document.createElement("div");
+  allWrap.style.cssText="margin-top:10px";
+  var tb=document.createElement("button"); tb.className="chip"; tb.style.background="linear-gradient(135deg,#1a5276,#2471a3)";
+  tb.textContent="📋 逐题回顾全部 "+qs.length+" 题";
+  tb.onclick=function(){ reviewOne(exam.ids[0]); };
+  allWrap.appendChild(tb); o.appendChild(allWrap);
+  footerBtns(wrongKind
+    ? [["🔄 再考一次错词","#b9770e",function(){ startExam("wrong"); }],
+       ["⬅ 返回错词列表","#1a5276",function(){ exam=null; delete progress.exam; save(); setMode("错词"); }],
+       ["🗑 重置","#c62828",resetProgress]]
+    : [["🔄 重新考试","#b9770e",renderExamReady],
+       ["⬅ 返回顺序","#1a5276",function(){ exam=null; delete progress.exam; save(); setMode("顺序"); }],
+       ["🗑 重置","#c62828",resetProgress]]);
+  stat();
+}
+var reviewIdx=0;
+function reviewOne(id){
+  reviewIdx=exam.ids.indexOf(id);
+  if(reviewIdx<0) reviewIdx=0;
+  renderReview();
+}
+function renderReview(){
+  var it=byId(exam.ids[reviewIdx]), a=exam.answers[it.id]||{};
+  $("#card").style.display="none"; $("#answerBox").style.display="none";
+  $("#wordcard").style.display="block"; $("#opts").innerHTML="";
+  $("#head").textContent="📋 回顾 · 第 "+(reviewIdx+1)+"/"+exam.ids.length+" 题"+(a.ok?" · ✅":" · ❌");
+  $("#word").textContent=it.en;
+  $("#note").textContent=it.note?("全称：" + it.note):"";
+  $("#note").style.display=it.note?"block":"none";
+  showFb((a.ans===undefined?"<span class='tag-no'>⭕ 未作答</span>":
+            (a.ok?"<span class='tag-ok'>✅ 你答对了</span>":"<span class='tag-no'>❌ 你答错了</span>"))+
+         "\n<span class='k'>正确答案：</span>"+it.cn+
+         (a.ans!==undefined?("\n<span class='k'>我的答案：</span>"+a.ans):""));
+  footerBtns([["◀ 上一题","#1a5276",function(){ if(reviewIdx>0){ reviewIdx--; renderReview(); } else toast("已经是第一题"); }],
+              ["下一题 ▶","#1a5276",function(){ if(reviewIdx<exam.ids.length-1){ reviewIdx++; renderReview(); } else toast("已经是最后一题"); }],
+              ["⬅ 返回成绩","#27ae60",renderResult]]);
+}
+
+/* ============ 重置 ============ */
+function resetProgress(){ resetStep(1); }
+function resetStep(n){
+  if(n===1) confirm2("重置进度（1/3）","确定要清除全部做题记录与错词本吗？\n此操作不可恢复！",function(){ resetStep(2); });
+  else if(n===2) confirm2("重置进度（2/3）","再次确认：将清空做题记录、错词次数和考试记录！",function(){ resetStep(3); });
+  else confirm2("重置进度（3/3）","最后一次确认：立即清空全部数据并重新开始！",function(){
+    progress={}; save(); stopTicker(); exam=null; examBarHide(); seqSavedIdx=null;
+    mode="顺序";
+    forEachNode(document.querySelectorAll("#tabs button"), function(b){ toggleCls(b,"active",b.dataset.mode==="顺序"); });
+    queue=BANK.slice(); idx=0; renderQ(); examBarHide();
+    msg("完成","🗑 已清除全部做题记录，重新开始！");
+  });
+}
+
+/* ============ 启动 ============ */
+forEachNode(document.querySelectorAll("#tabs button"), function(b){
+  b.addEventListener("click", function(){ setMode(b.dataset.mode); });
+});
+function showErrBox(msg, ln){
+  try{
+    var d=document.getElementById("__errbox");
+    if(!d){
+      d=document.createElement("div"); d.id="__errbox";
+      d.style.cssText="position:fixed;left:0;right:0;top:0;background:#c62828;color:#fff;font-size:12px;line-height:1.6;padding:8px 34px 8px 10px;z-index:999";
+      var x=document.createElement("span"); x.textContent="✕";
+      x.style.cssText="position:absolute;right:6px;top:5px;font-size:14px;cursor:pointer;padding:2px 8px";
+      x.onclick=function(){ if(d.parentNode) d.parentNode.removeChild(d); };
+      d.appendChild(x);
+      document.body.appendChild(d);
+      setTimeout(function(){ if(d.parentNode) d.parentNode.removeChild(d); }, 12000);
+    }
+    var s=document.createElement("div"); s.textContent=msg; d.appendChild(s);
+  }catch(e){}
+}
+window.addEventListener("error", function(e){
+  showErrBox("脚本错误："+(e.message||"")+" @ "+(e.lineno||"?"), e.lineno);
+});
+(function init(){
+  try{
+    exam=(progress.exam && typeof progress.exam==="object" && progress.exam.active)?progress.exam:null;
+    if(exam){
+      /* 恢复未完成的考试 */
+      exam.ids=(exam.ids||[]).filter(function(id){ return !!byId(id); });
+      if(!exam.ids.length){ exam=null; delete progress.exam; save(); }
+      else{
+        mode="考试";
+        forEachNode(document.querySelectorAll("#tabs button"), function(b){ toggleCls(b,"active",b.dataset.mode==="考试"); });
+        examUsed=exam.used||0;
+        exam.idx=Math.max(0,Math.min(exam.idx||0, exam.ids.length-1));
+        if(exam.finished){ renderResult(); }
+        else if(exam.paused){ showPaused(); }
+        else{
+          examBarShow([["⏸ 暂停","#b9770e",pauseExam],["📮 交卷","#27ae60",askFinish]]);
+          startTicker(); examChecked=!!(exam.answers&&exam.answers[exam.ids[exam.idx]]); renderExamQ();
+        }
+        window.__appReady=true;
+        return;
+      }
+    }
+    mode="顺序";
+    queue=BANK.slice();
+    idx=resumeIndex();
+    renderQ();
+    window.__appReady=true;
+  }catch(e){
+    try{ localStorage.removeItem(LS_KEY); }catch(_){}
+    progress={}; exam=null; mode="顺序"; queue=BANK.slice(); idx=0;
+    try{ renderQ(); }catch(_){}
+    showErrBox("初始化失败（已自动清除本地旧数据，请刷新页面重试）："+((e&&e.message)?e.message:e));
+  }
+})();
+/* 微信/QQ 环境提示 */
+if(navigator.userAgent.indexOf("MicroMessenger")>=0 || navigator.userAgent.indexOf("QQBrowser")>=0 || navigator.userAgent.indexOf("MQQBrowser")>=0){
+  try{
+    var tip=document.createElement("div");
+    tip.style.cssText="position:fixed;left:0;right:0;top:0;background:#fff8e1;color:#8a6d3b;font-size:12px;line-height:1.6;padding:7px 34px 7px 10px;z-index:998;text-align:center";
+    var tx=document.createElement("span"); tx.textContent="✕";
+    tx.style.cssText="position:absolute;right:6px;top:5px;font-size:14px;cursor:pointer;padding:2px 8px;color:#8a6d3b";
+    tx.onclick=function(){ if(tip.parentNode) tip.parentNode.removeChild(tip); };
+    tip.textContent="ℹ️ 微信/QQ 内可能显示不全：如按钮缺失或无法操作，请点右上角「…」→「用其他应用打开」→ 选浏览器打开";
+    tip.appendChild(tx); document.body.appendChild(tip);
+  }catch(e){}
+}
+</script>
+</body>
+</html>

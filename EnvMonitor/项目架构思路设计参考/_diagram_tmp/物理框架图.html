@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>物理框架图</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { background:#141414; }
+  body {
+    font-family:"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif;
+    color:#eee;
+  }
+  #root { width:1500px; padding:36px 40px 44px; background:#141414; }
+
+  .band { border-radius:14px; padding:24px 26px 26px; position:relative; }
+  .band + .band { margin-top:74px; }
+  .band1 { background:#dbe9f5; }
+  .band2 { background:#fae6d4; }
+  .band3 { background:#dcefe2; }
+
+  .bandtitle {
+    font-size:20px; font-weight:700; color:#1b2b38; letter-spacing:.5px;
+    margin-bottom:20px; text-align:center;
+  }
+  .bandtitle small { font-weight:400; color:#3d5568; font-size:15px; }
+
+  .box {
+    background:#2b2b2b; color:#f2f2f2; border-radius:8px;
+    display:flex; align-items:center; justify-content:center; text-align:center;
+    font-size:16px; line-height:1.35; padding:12px 14px;
+    border:1px solid #3d3d3d;
+  }
+  .box.sm { font-size:14px; padding:10px 12px; }
+  .box.core {
+    background:#1f3d33; border:2px solid #4f9d76; font-size:19px; font-weight:700;
+    padding:18px 20px;
+  }
+  .box.accent { background:#3a2f1e; border:1px solid #a8834a; }
+  .box h4 { font-size:16px; font-weight:700; margin-bottom:5px; }
+  .box .sub { font-size:12.5px; color:#b9c4cc; line-height:1.5; font-weight:400; }
+
+  .row { display:flex; gap:16px; align-items:stretch; }
+  .col { display:flex; flex-direction:column; }
+
+  /* 总线标签 */
+  .bus {
+    display:inline-flex; align-items:center; justify-content:center;
+    background:#7d8f9c; color:#fff; border-radius:5px;
+    font-size:13px; font-weight:700; padding:5px 12px; letter-spacing:.6px;
+  }
+  .bus.i2c { background:#2f7d55; }
+  .bus.adc { background:#a8632a; }
+  .bus.uart { background:#3b6ea8; }
+  .bus.spi { background:#8a4a8f; }
+
+  .vline { width:0; border-left:2px dashed #8fa3b0; margin:0 auto; }
+  .arrowdown {
+    width:0; height:0; margin:0 auto;
+    border-left:9px solid transparent; border-right:9px solid transparent;
+    border-top:13px solid #8fa3b0;
+  }
+  .arrowdown.dark { border-top-color:#7a8c99; }
+
+  .radio {
+    text-align:center; font-size:15px; color:#cfd8de; padding:12px 0 10px;
+    letter-spacing:1px;
+  }
+  .radio .dash {
+    display:block; width:0; border-left:2px dashed #7f929f;
+    height:26px; margin:0 auto 6px;
+  }
+
+  .threecol { display:flex; gap:14px; margin-top:4px; }
+  .threecol > div { flex:1; display:flex; flex-direction:column; }
+  .threecol .lbl {
+    text-align:center; font-size:12.5px; color:#3d5568; margin-top:8px; line-height:1.5;
+  }
+  .leaf {
+    background:#2b2b2b; color:#f2f2f2; border-radius:8px; text-align:center;
+    font-size:14px; padding:12px 8px; border:1px solid #3d3d3d; line-height:1.4;
+  }
+  .leaf b { display:block; font-size:15px; margin-bottom:3px; }
+  .leaf span { font-size:12px; color:#b9c4cc; }
+
+  .note {
+    margin-top:14px; font-size:12.5px; color:#3d5568; line-height:1.6;
+    border-left:4px solid #7f929f; padding-left:10px;
+  }
+  .tag {
+    display:inline-block; background:#1f3d33; color:#9fe0bd;
+    border-radius:4px; font-size:11.5px; padding:2px 7px; margin-left:6px;
+    vertical-align:middle; font-weight:400;
+  }
+</style>
+</head>
+<body>
+<div id="root">
+
+  <!-- ================= 第一层 ================= -->
+  <div class="band band1">
+    <div class="bandtitle">第一层：采集节点 <small>板1 · STM32F407ZET6 + FreeRTOS</small></div>
+
+    <div class="row" style="align-items:center;">
+      <!-- 传感器列 -->
+      <div class="col" style="flex:1.15; gap:11px;">
+        <div class="box sm accent"><span>板载 DHT11 温湿度（当前唯一在用的数据源）</span></div>
+        <div class="box sm"><span>SHT30 温湿度</span><span class="tag">I2C 0x44</span></div>
+        <div class="box sm"><span>BMP280 气压</span><span class="tag">I2C 0x76</span></div>
+        <div class="box sm"><span>BH1750 光照</span><span class="tag">I2C 0x23</span></div>
+        <div class="box sm"><span>CCS811 TVOC</span><span class="tag">I2C 0x5A</span></div>
+        <div class="box sm"><span>MQ-135 空气质量</span><span class="tag">ADC</span></div>
+      </div>
+
+      <!-- 总线竖条 -->
+      <div class="col" style="flex:0 0 120px; justify-content:center; gap:9px;">
+        <div class="bus i2c">I2C 总线</div>
+        <div class="bus adc">ADC</div>
+        <div style="font-size:11.5px;color:#3d5568;text-align:center;line-height:1.5;">
+          后五个是待补装器件<br>库里有 BMP280 / BH1750 / CCS811<br>驱动，SHT30 与 MQ-135 要自己写
+        </div>
+      </div>
+
+      <!-- MCU -->
+      <div class="col" style="flex:1.1; justify-content:center;">
+        <div class="box core">
+          <div>
+            STM32F407ZET6 + FreeRTOS
+            <div class="sub" style="margin-top:8px;">
+              4 个任务 / 2 个队列<br>
+              vTaskSensor 2 s 周期　vTaskMonitor 1 s<br>
+              （单轮采集 ≈ 235 ms，余量很足）
+            </div>
+          </div>
+        </div>
+        <div style="height:18px"></div>
+        <div class="box sm">USART3　9600　PB10 / PB11</div>
+        <div style="height:12px"></div>
+        <div class="arrowdown dark"></div>
+        <div style="height:12px"></div>
+        <div class="box accent">
+          <div>
+            LoRa E22-400T22S
+            <div class="sub">433 MHz · 必须先接天线再上电<br>M0/M1 不可悬空</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      传感器时间预算：SHT30 ≈15 ms ｜ BMP280 ≈10 ms ｜ BH1750 最大 180 ms ｜ CCS811 读结果 ≈10 ms（芯片内部 1 s 自主测量）｜ MQ-135 非阻塞
+      → 合计 ≈235 ms；当前只接了 DHT11（读一次要关中断约 8.4 ms），周期实装 <b>2 s</b>，六项都接上后余量仍够
+    </div>
+  </div>
+
+  <!-- ================= 无线 ================= -->
+  <div class="radio">
+    <span class="dash"></span>
+    无线射频通信（Sub-1 GHz）
+  </div>
+
+  <!-- ================= 第二层 ================= -->
+  <div class="band band2" style="margin-top:34px;">
+    <div class="bandtitle">第二层：边缘网关 <small>板2 · STM32F407ZGT6 + FreeRTOS</small></div>
+
+    <div class="row" style="justify-content:center; align-items:center; gap:0;">
+      <div class="box" style="flex:0 0 250px;">
+        LoRa E22-400T22S
+        <div class="sub" style="margin-left:8px;">433 MHz</div>
+      </div>
+    </div>
+
+    <div style="height:14px"></div>
+    <div style="text-align:center;">
+      <span class="bus uart">USART6　PC6 / PC7　9600</span>
+    </div>
+    <div style="height:14px"></div>
+    <div class="arrowdown dark"></div>
+    <div style="height:14px"></div>
+
+    <div class="row" style="justify-content:center;">
+      <div class="box core" style="flex:0 0 720px;">
+        <div>
+          STM32F407ZGT6 + FreeRTOS
+          <div class="sub" style="margin-top:8px;">
+            5 个任务 / 1 个队列 + 1 把发送互斥锁<br>
+            收帧：vTaskLoraRx 每 20 ms 轮询，E22 靠字节间隔切帧<br>
+            断网缓存：W25Q128 专用 64 KB 区 ＝ 2048 条（按 2 s 一帧 ≈ 68 分钟）
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:16px"></div>
+    <div style="border-top:2px dashed #b08a63; margin:0 60px;"></div>
+    <div style="height:16px"></div>
+
+    <div class="threecol">
+      <div>
+        <span class="bus uart" style="align-self:center;">USART2</span>
+        <div style="height:10px"></div>
+        <div class="leaf">
+          <b>P6 跳线 → SP3232</b>
+          <span>RS232 → USB-TTL → PC（Qt 上位机 115200）</span>
+        </div>
+        <div class="lbl">逐字节透传<br>经校验的干净帧；CH340C 在 USART1 只打日志</div>
+      </div>
+      <div>
+        <span class="bus uart" style="align-self:center;">USART3</span>
+        <div style="height:10px"></div>
+        <div class="leaf">
+          <b>ESP8266 WiFi</b>
+          <span>AT 指令 → MQTT 上云</span>
+        </div>
+        <div class="lbl">发射瞬时 300~500 mA<br>需 470 µF + 100 nF 去耦</div>
+      </div>
+      <div>
+        <span class="bus spi" style="align-self:center;">SPI</span>
+        <div style="height:10px"></div>
+        <div class="leaf">
+          <b>W25Q128 SPI Flash</b>
+          <span>断网缓存：vTaskForward 写、vTaskReplay 补传</span>
+        </div>
+        <div class="lbl">槽 32 B ＝ 序号 4 ＋ 时间戳 4 ＋ 长度 2 ＋ CRC16 2 ＋ 数据 20<br>共 2048 条，擦写寿命 10 万次</div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>另有 USART1（PA9/PA10）＝ 调试日志</b>，板载 CH340C 就挂这一路，只打日志、不参与业务。
+      本板<b>没有以太网 PHY</b>：原理图上那个"以太网模块接口"实为 NRF24L01 无线模块座（原作者遗留误标），
+      所以网关到上位机只能是串口，不是网口。
+    </div>
+  </div>
+
+  <!-- ================= 第三层 ================= -->
+  <div class="band band3" style="margin-top:34px;">
+    <div class="bandtitle" style="color:#1d3a28;">第三层：应用层</div>
+
+    <div class="row" style="justify-content:center;">
+      <div class="box" style="flex:0 0 640px; text-align:left; padding:16px 22px;">
+        <div style="width:100%;">
+          <div style="font-size:18px;font-weight:700;margin-bottom:10px;text-align:center;">PC 端 Qt 上位机</div>
+          <div class="sub" style="line-height:1.9;">
+            · 6 项数值 + <b>6 条曲线</b>（QCustomPlot，关闭抗锯齿 + 50 ms 批量刷新）<br>
+            · 环形缓冲 + 状态机解帧（<b>校验失败丢 1 字节重找帧头</b>，不是整包丢弃）<br>
+            · <b>CSV 记录 / 导出</b>（UTF-8 BOM，10 列，末列"数据来源"区分实时 / 补传）<br>
+            · <b>双阈值迟滞告警</b> + 告警记录表（进入/退出阈值分开，避免抖动刷屏）<br>
+            · <b>历史数据补传</b>按钮：下发 <span class="code">0x16</span>，进度看 <span class="code">0x96</span><br>
+            · <b>协议一致性自检</b>（11 项回放用例 + 命令层 22 项，含补传启停与历史帧入库）
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:16px"></div>
+    <div style="text-align:center;">
+      <span class="bus uart">MQTT（AT 指令，TCP 9501）</span>
+    </div>
+    <div style="height:14px"></div>
+    <div class="arrowdown dark"></div>
+    <div style="height:14px"></div>
+
+    <div class="row" style="justify-content:center;">
+      <div class="box accent" style="flex:0 0 520px;">
+        <div>
+          巴法云　bemfa.com
+          <div class="sub" style="margin-top:7px;">
+            上报 <b># 分隔文本</b>（不是 JSON）<br>
+            <code style="color:#ffd79a;">#25.30#48.55#1013.2#500#50#1234#01</code><br>
+            目前只跑通开机自检，周期性上报（30 s 一次）还没做
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:14px"></div>
+    <div class="arrowdown dark"></div>
+    <div style="height:14px"></div>
+
+    <div class="row" style="justify-content:center;">
+      <div class="box" style="flex:0 0 520px;">数据推送 → 微信 / 小程序 / 语音助手</div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

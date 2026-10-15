@@ -1,6 +1,13 @@
 # ============================================================
 #  Second_Project_Demo 忽略规则
 # ============================================================
+#
+#  口径（2026-10-15 重整）：
+#    入库 = 人写的东西（源码 / 脚本 / 文档）+ 数据与基线 + 已打包好的 exe 与 Qt DLL + 手机 APK
+#           —— 目的是换台电脑 clone 下来就能用（桌面程序双击即开，运行时不装 Qt）。
+#    不入库 = 可再生的中间产物（.o / moc / Makefile / 构建目录）、本机状态（*.ini）、
+#             备份、IDE 与 AI 工具的状态目录。
+#  ============================================================
 
 # ---- Keil 编译产物（可重新生成，不入库）----
 Objects/
@@ -19,7 +26,7 @@ Listings/
 JLinkSettings.ini
 build_verify.log
 
-# ---- Qt 构建产物 ----
+# ---- Qt 构建产物（注意：全局 build/ 只针对工程内；本地工具那两套有例外，见文末）----
 build/
 .qtcreator/
 *.pro.user*
@@ -28,17 +35,13 @@ build/
 检查报告.md
 
 # ---- 临时参考夹（库更新对比用，用完即删，不入库）----
-S_N_sys/Project_2_数据通信端/Project/0001_标准模板库/
+EnvMonitor/Project_2_数据通信端/Project/0001_标准模板库/
 
 # ---- 大文件：芯片参考手册（本地保留，不入库）----
 1-STM32F4xx中文参考手册1.pdf
 
 # ---- Qt 工程内旧仓库的备份元数据（改名为 .git_bak 保留在本地）----
-S_N_sys/QT_project/SerialMonitor/.git_bak/
-
-# ---- 本地工具收纳区（整体不入库）----
-# 注：仓库巡检脚本（project_check.ps1 / .bat）、速查工具等都在这里，随目录一起忽略
-本地工具/
+EnvMonitor/QT_project/SerialMonitor/.git_bak/
 
 # ---- 本地工具脚本（若曾放在根目录，历史规则保留，不入库）----
 project_check.ps1
@@ -56,10 +59,10 @@ check_std_lib_data.py
 /main.c
 
 # ---- Qt 上位机：本次新建的构建/自检产物（2026-10-10）----
-S_N_sys/QT_project/SerialMonitor/build_verify/
-S_N_sys/QT_project/SerialMonitor/data/
+EnvMonitor/QT_project/SerialMonitor/build_verify/
+EnvMonitor/QT_project/SerialMonitor/data/
 自检报告.txt
-S_N_sys/QT_project/SerialMonitor/build_*
+EnvMonitor/QT_project/SerialMonitor/build_*
 窗口尺寸诊断.txt
 
 # ---- Qt 上位机：运行期生成的配置与报告（2026-10-10 量程/阈值落盘 + 下行控制）----
@@ -67,10 +70,100 @@ S_N_sys/QT_project/SerialMonitor/build_*
 量程校验自检.txt
 下发控制自检.txt
 
-# ---- 上传面收口：仓库只保留 S_N_sys 目录的内容（2026-10-10）----
-# 根目录的脚本、编辑器配置（.vscode/）、虚拟环境（.venv/）与工具收纳区都不入库；
-# 设计文档、报告与板卡资料都已移进 S_N_sys/ 内。以后若确实要在根目录放东西上传，
-# 先在这里补一条放行规则。
-/*
-!/.gitignore
-!/S_N_sys/
+# ---- 上传面：工程文件夹入库，本机个人配置不入库（2026-10-14 改名 EnvMonitor 后）----
+# 约定：工程文件夹直接放在仓库根下（当前为 EnvMonitor/），后续新工程同样放在根下、随仓库入库；
+# 下面这些属于本机内容，不入库。
+/_参考实现备份/
+/.venv/
+/.vscode/
+
+# ---- Linux-32：Linux 与 STM32 结合的自学试验场（2026-10-14 新建）----
+# 现状：整套工程从 EnvMonitor 复制而来，尚未改写；含大量 Keil 编译产物，
+# 且最终形态（交叉编译 / 网关换 Linux / 仅做开发环境迁移）还没定。
+# 处理：整个目录先整体不入库，等改写定型后再按需放开需要的源码路径。
+/Linux-32/
+
+# 下面几条为全仓库兜底：若将来放开 Linux-32/ 的源码入库，
+# 这些本机配置与交叉编译产物也不应跟着上传。
+.vscode/
+.cache/
+*.gcda
+*.gcno
+*.elf
+*.bin
+*.su
+*.idb
+*.pdb
+*.orig
+*.rej
+compile_commands.json
+
+# ---- AI / IDE 工具状态目录（不是项目内容，不入库）----
+.trae/
+.workbuddy-ai/
+
+# ============================================================
+#  本地工具：入库（源码 / 文档 / 数据 / 已打包的 exe 与 DLL / APK）
+# ============================================================
+# 先整体放行，然后把"可再生的中间产物 + 本机状态 + 备份"逐条排除。
+!本地工具/
+
+# 备份与归档（本地回退用，不入库）
+本地工具/归档/
+本地工具/*/_参考实现备份/
+
+# 本机状态（窗口几何 / 收藏 / 账户档），换机器各人生成
+本地工具/*/_*.ini
+本地工具/*/*/_*.ini
+本地工具/*/*/*/_*.ini
+
+# Python / 编辑器 / 编译器中间产物
+本地工具/**/__pycache__/
+本地工具/**/*.pyc
+本地工具/**/.qtcreator/
+本地工具/**/*.pro.user*
+本地工具/**/*.o
+本地工具/**/*.obj
+本地工具/**/*.pdb
+本地工具/**/moc_*
+本地工具/**/Makefile*
+本地工具/**/object_script.*
+本地工具/**/.qmake.stash
+本地工具/**/debug/
+本地工具/**/build_verify/
+本地工具/**/_cmp_*.json
+
+# 检查工具的产物（自行再生）
+本地工具/工具箱/检查/*/产物/
+本地工具/工具箱/检查/*/*报告.md
+
+# Android 构建产物与本机 sdk 配置（源码与工程配置入库）
+本地工具/标准库速查手机版/android/.gradle/
+本地工具/标准库速查手机版/android/build/
+本地工具/标准库速查手机版/android/app/build/
+本地工具/标准库速查手机版/android/local.properties
+本地工具/标准库速查手机版/android/.idea/
+本地工具/标准库速查手机版/android/captures/
+
+# 但两个"已打包好、双击即开"的桌面程序要入库：exe + Qt DLL + 插件目录。
+# （父目录前面已被全局 build/ 排除，这里按"后写的规则优先"放行。）
+!/本地工具/工具箱/程序/嵌入式工具箱/build/
+!/本地工具/工具箱/程序/嵌入式工具箱/build/release/
+!/本地工具/Git上传/build/
+!/本地工具/Git上传/build/release/
+# 放行目录之后再排掉里面的中间产物（父目录已放行，才能在这里按文件排除）
+本地工具/**/build/*.o
+本地工具/**/build/*.cpp
+本地工具/**/build/Makefile*
+本地工具/**/build/.qmake.stash
+本地工具/**/build/object_script.*
+本地工具/**/build/release/*.o
+本地工具/**/build/release/*.cpp
+本地工具/**/build/release/moc_*
+本地工具/**/build/release/object_script.*
+本地工具/**/build/release/*.a
+
+# --- 由「Git 上传」工具的 .gitignore 助手补充 ---
+*.hex
+*.map
+*.lst

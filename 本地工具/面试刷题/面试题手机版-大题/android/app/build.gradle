@@ -1,0 +1,33 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.cquiz.app'
+    compileSdk 35
+
+    defaultConfig {
+        // 独立包名：与客观题（com.cquiz.app）/ 主观题（com.cquiz.subj）区分，三个应用可同时安装
+        applicationId "com.cquiz.bigq"
+        // minSdk 24 = Android 7.0: WebView fully supports the modern JS syntax used by the app
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+}

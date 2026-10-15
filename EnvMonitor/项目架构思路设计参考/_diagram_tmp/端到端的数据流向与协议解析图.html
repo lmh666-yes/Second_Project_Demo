@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>端到端的数据流向与协议解析图</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { background:#141414; }
+  body { font-family:"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif; color:#eee; }
+  #root { width:1780px; padding:34px 38px 40px; background:#141414; }
+
+  .heads { display:flex; }
+  .head {
+    background:#2b2b2b; border:1px solid #454545; border-radius:8px;
+    text-align:center; padding:12px 6px; font-size:16.5px; font-weight:700; color:#f0f0f0;
+  }
+  .head span { display:block; font-size:12px; font-weight:400; color:#a8b6c0; margin-top:2px; }
+
+  .body { position:relative; margin-top:14px; }
+  .lane { position:absolute; top:0; bottom:0; width:2px; background:#383838; }
+  .lane.dot { background:none; border-left:2px dashed #3a3a3a; width:0; }
+
+  .m {
+    position:absolute; font-size:14.5px; line-height:1.45;
+    background:#232323; border:1px solid #3d3d3d; border-radius:7px;
+    padding:10px 14px; color:#e8e8e8; z-index:3;
+  }
+  .m b { color:#9fe0bd; font-weight:700; }
+  .m .code { font-family:Consolas,"Courier New",monospace; color:#ffd79a; font-size:13.5px; }
+  .m .note2 { display:block; color:#c2ccd3; font-size:13px; margin-top:4px; }
+  .m.hl   { background:#1f3d33; border-color:#4f9d76; }
+  .m.warn { background:#3d2a1c; border-color:#b06a2a; }
+  .m.mqtt { background:#2a3350; border-color:#5f79c0; }
+  .m.dim  { background:#1e1e1e; border-color:#383838; color:#c2ccd3; }
+  .m .t { font-weight:700; color:#fff; }
+
+  .ar { position:absolute; height:2px; background:#6f8492; z-index:2; }
+  .ar.right::after {
+    content:''; position:absolute; right:-1px; top:-5px;
+    border-top:6px solid transparent; border-bottom:6px solid transparent;
+    border-left:11px solid #6f8492;
+  }
+  .ar.down { width:2px; }
+  .ar.down::after {
+    content:''; position:absolute; bottom:-1px; left:-5px;
+    border-left:6px solid transparent; border-right:6px solid transparent;
+    border-top:11px solid #6f8492;
+  }
+  .ar.self {
+    background:none; border:2px solid #6f8492; border-left:none;
+    border-radius:0 10px 10px 0;
+  }
+  .ar.self::after {
+    content:''; position:absolute; left:-9px; bottom:-1px;
+    border-left:6px solid transparent; border-right:6px solid transparent;
+    border-top:11px solid #6f8492;
+  }
+
+  .proto { position:absolute; border:2px solid #4f9d76; border-radius:12px; background:rgba(31,61,51,.16); z-index:1; }
+  .protolabel {
+    position:absolute; font-size:13.5px; color:#9fe0bd; font-weight:700;
+    background:#141414; padding:3px 10px; z-index:4; white-space:nowrap;
+  }
+
+  .legend { margin-top:26px; display:flex; gap:28px; align-items:center; font-size:13.5px; color:#a8b6c0; flex-wrap:wrap; }
+  .legend i { display:inline-block; vertical-align:middle; }
+</style>
+</head>
+<body>
+<div id="root">
+
+  <div class="heads">
+    <div class="head" style="flex:0 0 150px;">传感器</div>
+    <div class="head" style="flex:0 0 430px; margin-left:14px;">板子1（节点）<span>STM32F407ZET6 + FreeRTOS</span></div>
+    <div class="head" style="flex:0 0 430px; margin-left:14px;">板子2（网关）<span>STM32F407ZGT6 + FreeRTOS</span></div>
+    <div class="head" style="flex:0 0 430px; margin-left:14px;">Qt 上位机</div>
+    <div class="head" style="flex:1; margin-left:14px;">巴法云</div>
+  </div>
+
+  <div class="body" style="height:1700px;">
+
+    <!-- 泳道中心线 -->
+    <div class="lane" style="left:75px;"></div>
+    <div class="lane" style="left:302px;"></div>
+    <div class="lane" style="left:681px;"></div>
+    <div class="lane" style="left:1077px;"></div>
+    <div class="lane" style="left:1580px;"></div>
+
+    <!-- ===== 第 1 行：采集 ===== -->
+    <div class="ar right" style="left:75px; top:60px; width:212px;"></div>
+    <div class="m hl" style="left:82px; top:38px; width:400px;">
+      <span class="t">已接</span>：DHT11 单总线读温湿度（当前唯一实测项）
+      <span class="note2">计划补装：BMP280 / BH1750 / CCS811（I2C）、MQ-135（ADC）<br>驱动都在库里，接上后要把读数填进 <span class="code">SensorMsg_t</span> 与组帧调用</span>
+    </div>
+
+    <!-- ===== 第 2 行：SensorTask ===== -->
+    <div class="m" style="left:82px; top:132px; width:400px;">
+      <span class="t">vTaskSensor</span>　2 s 周期　<span class="code">vTaskDelayUntil()</span>
+      <span class="note2">读失败按 2200 ms 重试，最多 3 次</span>
+    </div>
+    <div class="ar self" style="left:309px; top:138px; width:32px; height:36px;"></div>
+
+    <!-- ===== 第 3 行：滤波 + 迟滞 ===== -->
+    <div class="m dim" style="left:82px; top:216px; width:400px;">
+      板1 <b style="color:#e0b48a;">不做</b>滤波与告警判定，读到的原值直接进帧
+      <span class="note2">迟滞告警在上位机 <span class="code">alarmmanager.cpp</span> 判定：上限进入 27.0 / 退出 26.5，<br>下限进入 18.0 / 退出 18.5（避免临界值反复触发）</span>
+    </div>
+
+    <!-- ===== 协议作用域 ===== -->
+    <div class="proto" style="left:530px; top:340px; width:310px; height:1120px;"></div>
+    <div class="protolabel" style="left:542px; top:328px;">自定义二进制协议（板1 ↔ 板2 逐字节一致）</div>
+
+    <!-- ===== 第 4 行：ProcessTask 组帧 ===== -->
+    <div class="m hl" style="left:82px; top:360px; width:400px;">
+      <span class="t">vTaskProcess</span>　组帧 <b>20 字节</b>
+      <span class="note2">
+        <span class="code">AA 55</span> ＋ 命令 ＋ 长度 <span class="code">0x0C</span><br>
+        ＋ 温度 ＋ 湿度 ＋ 气压 ＋ 光照 ＋ TVOC ＋ MQ135<br>
+        （气压 / 光照 / TVOC / MQ135 目前恒填 0）<br>
+        ＋ <span class="code">CRC16</span>（低字节在前）＋ <span class="code">55 AA</span>
+      </span>
+    </div>
+
+    <!-- ===== 第 5 行：CommTask 发送 ===== -->
+    <div class="m" style="left:82px; top:540px; width:400px;">
+      <span class="t">vTaskComm</span>　LoRa 发送数据帧
+      <span class="note2">USART3　9600　PB10 / PB11　E22-400T22S　433 MHz</span>
+    </div>
+    <div class="ar right" style="left:302px; top:588px; width:379px;"></div>
+
+    <!-- ===== 第 6 行：USART6 接收 ===== -->
+    <div class="m" style="left:692px; top:660px; width:400px;">
+      <span class="t">vTaskLoraRx</span>　每 20 ms 轮询一次 LoRa
+      <span class="note2">USART6（PC6 / PC7　9600）· 这个串口不开 DMA 与空闲中断<br>E22 透传模式没有包边界，靠 DWT 量字节间停顿切帧</span>
+    </div>
+    <div class="ar self" style="left:1099px; top:666px; width:32px; height:36px;"></div>
+
+    <!-- ===== 第 7 行：IDLE 中断 ===== -->
+    <div class="m dim" style="left:692px; top:764px; width:400px;">
+      <span class="t">LORA_E22_Recv()</span> 把环形缓冲里的字节截成一帧
+      <span class="note2">收字节 → 记时刻 → 缓冲空了且距上一字节超过 <span class="code">SYS_LORA_FRAME_GAP_MS</span> 就交出一帧<br>装不下则标记整帧作废（<span class="code">LORA_E22_ERR_OVERFLOW</span>），状态自动复位</span>
+    </div>
+
+    <!-- ===== 第 8 行：CommRxTask 解帧 ===== -->
+    <div class="m warn" style="left:692px; top:920px; width:400px;">
+      <span class="t">frame_parse()</span>　六项校验一次做完
+      <span class="note2">
+        长度 <span class="code">= 20</span> → 帧头 <span class="code">AA 55</span> → 帧尾 <span class="code">55 AA</span> → 命令 <span class="code">0x01</span> → 长度字段 <span class="code">0x0C</span><br>
+        → <span class="code">CRC16</span> 覆盖 <span class="code">[2..17]</span> 重算必须为 0<br>
+        <b style="color:#e0b48a;">任一不符就地整帧丢弃并计数</b>（<span class="code">s_rx_bad</span>），不做逐字节重找帧头<br>
+        CRC 那条顺带挡掉 <span class="code">…55 AA AA 55…</span> 错位拼接：错位后 CRC 必不为 0
+      </span>
+    </div>
+
+    <!-- ===== 第 9 行：Queue3 分流 ===== -->
+    <div class="m dim" style="left:692px; top:1120px; width:250px;">
+      → <span class="code">s_q_frame</span>（深度 4、每项 20 字节）分流
+      <span class="note2">发送方用 <span class="code">xQueueSend(..., 0)</span>：队列满就丢这一帧，不阻塞接收</span>
+    </div>
+
+    <!-- ===== 第 10 行：ForwardTask → Qt ===== -->
+    <div class="ar right" style="left:1077px; top:1210px; width:440px;"></div>
+    <div class="m hl" style="left:1104px; top:1174px; width:440px;">
+      <span class="t">vTaskForward</span>：经校验的干净帧逐字节透传（发失败不重试）
+      <span class="note2">USART2　115200　→　P6 跳线选 SP3232（RS232）→ USB-TTL → PC<br>板载 CH340C 在 USART1（调试口）；P6 也能选 SP3485</span>
+    </div>
+
+    <!-- ===== 第 11 行：Qt 解析显示 ===== -->
+    <div class="m" style="left:1104px; top:1300px; width:440px;">
+      环形缓冲 + 状态机解帧　→　6 项数值 + <b>6 条曲线</b>
+      <span class="note2">QCustomPlot · CSV 记录 / 导出（UTF-8 BOM，10 列，末列“数据来源”：实时 / 补传）<br>双阈值迟滞告警表 · 历史补传按钮（下发 <span class="code">0x16</span>，进度看 <span class="code">0x96</span>）</span>
+    </div>
+
+    <!-- ===== 第 12 行：CloudTask → 云 ===== -->
+    <div class="ar right" style="left:1077px; top:1480px; width:440px;"></div>
+    <div class="m mqtt" style="left:1104px; top:1444px; width:440px;">
+      <span class="t">MQTT 上报</span>：USART3 → ESP8266 AT
+      <span class="note2">目前只跑到开机自检：连上巴法云、订阅 <span class="code">cmd/f407-001</span>、3 s 内发 6 次 <span class="code">data/f407-002</span>，之后不主动断开<br>周期性上报（30 s 一次、<b># 分隔文本</b>）尚未实现</span>
+    </div>
+    <div class="ar right" style="left:1580px; top:1492px; width:130px;"></div>
+
+    <!-- ===== 断网缓存（可靠性支线） ===== -->
+    <div class="m warn" style="left:1170px; top:180px; width:574px;">
+      <span class="t" style="color:#e0b48a;">vTaskForward：缓存开关打开时把整帧写 W25Q128</span>
+      <span class="note2">
+        专用 64 KB ＝ 16 个扇区 × 128 槽；槽 32 B ＝ 序号 4 ＋ 时间戳 4 ＋ 长度 2 ＋ CRC16 2 ＋ 数据 20，共 2048 条<br>
+        时间戳是时分秒（HHMMSS）不是绝对时间；写满一圈时整扇区擦除会丢最老几十条，用 <span class="code">QA_LOST</span> 上报<br>
+        补传由上位机下发 <span class="code">0x16</span> 触发：板2 从最老一条起，<b>每 50 ms</b> 发一条 <span class="code">0x15</span> 历史帧（带原始时间戳），<br>
+        进度用 <span class="code">0x96</span> 回报（状态 / 已补传条数 / 剩余条数），整段发完后清空缓存
+      </span>
+    </div>
+    <div class="ar down" style="left:1300px; top:320px; height:1090px;"></div>
+
+  </div>
+
+  <div class="legend">
+    <span><i style="width:26px;height:0;border-top:2px solid #6f8492;"></i> 数据流 / 消息传递</span>
+    <span><i style="width:14px;height:14px;background:#1f3d33;border:1px solid #4f9d76;"></i> 关键路径</span>
+    <span><i style="width:14px;height:14px;background:#3d2a1c;border:1px solid #b06a2a;"></i> 异常 / 可靠性处理</span>
+    <span><i style="width:14px;height:14px;background:#2a3350;border:1px solid #5f79c0;"></i> 云端上报</span>
+    <span><i style="width:14px;height:14px;background:#232323;border:1px solid #3d3d3d;"></i> 任务 / 处理步骤</span>
+  </div>
+
+</div>
+</body>
+</html>

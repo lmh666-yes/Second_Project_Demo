@@ -1,0 +1,19 @@
+﻿扫描根目录: D:\GitHub_Project\S_N_sys
+文件数: 311
+
+===== 特征合计（按命中数降序）=====
+     6  标点 连续破折号
+     2  修辞 一句话
+     2  标点 全角感叹号
+     1  说教 记住
+
+命中总数: 11
+
+===== 命中最多的文件（前 15）=====
+     3  Project_1_检测端\Project\README.md
+     3  Project_2_数据通信端\Project\README.md
+     1  Project_1_检测端\Project\ETH\port\stm32f4x7_eth_conf.h
+     1  Project_1_检测端\Project\FreeRTOS\README.md
+     1  Project_2_数据通信端\Project\FreeRTOS\README.md
+     1  Project_2_数据通信端\Project\ETH\port\stm32f4x7_eth_conf.h
+     1  QT_project\SerialMonitor\devctl.cpp

@@ -1,0 +1,31 @@
+# 搜索基线：由 tools/export_json.js --oracle 用**网页引擎**跑出来的标准答案。
+# 桌面版 --selftest 会逐行重算并比对（含前五顺序）。改了数据或引擎后请重新生成：
+#   node 工具箱/速查数据/tools/export_json.js --baseline    （按本文件现有用例重跑并回写）
+[ref] 打开DMA中断 | 19 | DMA_GetITStatus | DMA_GetITStatus / DMA_ClearITPendingBit / DMA_ClearFlag / DMA2D_GetITStatus / DMA2D_ClearITPendingBit
+[ref] 配置串口中断 | 13 | USART_ITConfig | USART_ITConfig / USART_InitTypeDef / USART_GetITStatus / 结构体成员速查表（SPL Init 结构体逐字段） / USART_ClearITPendingBit
+[ref] 卡尔曼滤波 | 8 | 卡尔曼滤波一维实现流程（从抖动读数到可信值） | 卡尔曼滤波一维实现流程（从抖动读数到可信值） / CAN_FilterInit / I2C_AnalogFilterCmd / I2C_DigitalFilterConfig / RTC_SmoothCalibConfig
+[ref] 看门狗喂狗 | 17 | 看门狗配置表（IWDG / WWDG 超时，含常用值） | 看门狗配置表（IWDG / WWDG 超时，含常用值） / WWDG_SetCounter / WWDG_EnableIT / IWDG_ReloadCounter / WWDG_SetWindowValue
+[ref] 空闲中断 | 92 | NVIC_Init | NVIC_Init / EXTI_Init / USART_ITConfig / SPI_I2S_ITConfig / ADC_ITConfig
+[ref] DS18B20 | 3 | 测距与温度传感器速查（HC-SR04 / VL53L0X / DS18B20 / DHT11） | 测距与温度传感器速查（HC-SR04 / VL53L0X / DS18B20 / DHT11） / PID 闭环控制流程（位置式 / 增量式） / 两板外设驱动一览表
+[ref] 中断向量表 | 7 | 中断向量表（IRQn ↔ 处理函数名） | 中断向量表（IRQn ↔ 处理函数名） / NVIC_SetVectorTable / NVIC_Init / NVIC_EnableIRQ / NVIC_InitTypeDef
+[ref] DMA映射表 | 21 | DMA 请求映射表（常用外设） | DMA 请求映射表（常用外设） / DMA_Init / DMA_Cmd / DMA_ITConfig / DMA_GetFlagStatus
+[ref] 时钟树 | 68 | 时钟树与常用频率配置表（F407） | 时钟树与常用频率配置表（F407） / RCC_MCO1Config / RCC_AHB1PeriphClockCmd / RCC_AHB2PeriphClockCmd / RCC_AHB3PeriphClockCmd
+[ref] 复用功能 | 7 | 复用功能表（GPIO_AF 编号） | 复用功能表（GPIO_AF 编号） / SYS_TIM_OcInit / GPIO_PinAFConfig / 结构体成员速查表（SPL Init 结构体逐字段） / GPIO_InitTypeDef
+[ref] GPIO模式 | 13 | GPIO_Init | GPIO_Init / GPIO_InitTypeDef / GPIO_PinAFConfig / SYS_TIM_OcInit / 结构体成员速查表（SPL Init 结构体逐字段）
+[ref] 结构体 | 175 | 结构体成员速查表（SPL Init 结构体逐字段） | 结构体成员速查表（SPL Init 结构体逐字段） / GPIO_StructInit / USART_StructInit / TIM_TimeBaseStructInit / TIM_OCStructInit
+[ref] typedef | 149 | GPIO_InitTypeDef | GPIO_InitTypeDef / NVIC_InitTypeDef / EXTI_InitTypeDef / USART_InitTypeDef / I2C_InitTypeDef
+[ref] 时钟使能 | 139 | 时钟使能表（RCC 外设对应） | 时钟使能表（RCC 外设对应） / 时钟树与常用频率配置表（F407） / RTC 唤醒时钟分频表（WakeUp Timer） / RCC_AHB3PeriphClockLPModeCmd / RCC_AHB1PeriphClockCmd
+[ref] 定时器 PWM | 24 | 定时器通道映射表（TIM 通道 ↔ 引脚） | 定时器通道映射表（TIM 通道 ↔ 引脚） / TIM_CtrlPWMOutputs / TIM_PWMIConfig / TIM_TimeBaseInit / TIM_OC1PreloadConfig
+[ref] ADC 采集 | 63 | MQ-135 空气质量传感器（模拟输出 · ADC 采集） | MQ-135 空气质量传感器（模拟输出 · ADC 采集） / 光敏电阻 + ADC 光照（与 BH1750 对照） / ADC_DMACmd / ADC_Init / ADC_CommonInit
+[ref] 串口 波特率 | 36 | USART_Init | USART_Init / USART_StructInit / 外设常用计算公式表（频率 / 时间 / 波特率） / USART_InitTypeDef / USART 常用波特率配置表（BRR 值与误差）
+[ref] 低功耗 待机 | 15 | PWR_WakeUpPinCmd | PWR_WakeUpPinCmd / PWR_EnterSTOPMode / PWR_GetFlagStatus / PWR_ClearFlag / PWR_BackupAccessCmd
+[ref] 看门狗 复位 | 29 | 看门狗配置表（IWDG / WWDG 超时，含常用值） | 看门狗配置表（IWDG / WWDG 超时，含常用值） / WWDG_DeInit / WWDG_EnableIT / IWDG_SetReload / WWDG_SetCounter
+[guide] 串口 | 41 | 🧭 串口 DMA + 空闲中断接收引导（不定长帧收包） | 🧭 串口 DMA + 空闲中断接收引导（不定长帧收包） / 🧭 ㉒ sys_frame 自定义帧协议引导（从「串口只能收字节」到一条能自检的帧） / ① 串口 USART + DMA + 空闲中断接收（不定长帧） / ② 串口发送 + printf 重定向（调试必备） / 🧭 FreeRTOS 任务框架引导（本项目采集→处理→通信→喂狗）
+[guide] LoRa | 20 | 🧭 ⑲ LoRa E22-400T22S 点对点链路引导（从接线到两板互通） | 🧭 ⑲ LoRa E22-400T22S 点对点链路引导（从接线到两板互通） / 🧭 ㉚ OTA 在线升级引导（板1 经 LoRa、板2 经 ESP8266/MQTT 下发固件） / ⑩ LoRa E22-400T22S 模块收发（AT 配置 + 透传） / ⑲ LoRa E22-400T22S 点对点无线通信（板1 采集 → 板2 网关） / ㉖ FreeRTOS 双板闭环联调总览（检测端采集 → LoRa → 网关端 → MQTT 云端 / 断网落盘）
+[guide] 看门狗 | 13 | 🧭 独立看门狗 IWDG 引导（心跳喂狗防卡死） | 🧭 独立看门狗 IWDG 引导（心跳喂狗防卡死） / 🧭 窗口看门狗 WWDG 引导（喂早也复位，比 IWDG 更严） / ⑫ 独立看门狗 IWDG + 心跳喂狗（防任务卡死） / 🧭 FreeRTOS 任务框架引导（本项目采集→处理→通信→喂狗） / 🧭 RTC 闹钟与周期唤醒引导（让 CPU 真正能去睡觉）
+[guide] 定时器 | 20 | 🧭 定时器 PWM 输出引导（调光 / 调速 / 蜂鸣器） | 🧭 定时器 PWM 输出引导（调光 / 调速 / 蜂鸣器） / 🧭 定时器输入捕获引导（测脉宽 / 频率 / 占空比） / 🧭 定时器输出比较 OC 引导（PWM ≠ 输出比较，别混） / ⑤ 定时器输出 PWM（调光 / 调速 / 蜂鸣器） / ⑥ 定时器输入捕获（测脉宽 / 频率 / 红外解码）
+[guide] 中断优先级 | 6 | 🧭 EXTI 外部中断引导（按键 / 报警脚 / 唤醒） | 🧭 EXTI 外部中断引导（按键 / 报警脚 / 唤醒） / 🧭 FreeRTOS 任务框架引导（本项目采集→处理→通信→喂狗） / 🧭 定时器输入捕获引导（测脉宽 / 频率 / 占空比） / 🧭 ㉖ FreeRTOS 双板闭环联调向导（从「编译过了」到「两板真的通」） / ⑦ EXTI 外部中断（按键 / 传感器报警脚 / 唤醒）
+[guide] DMA | 22 | 🧭 串口 DMA + 空闲中断接收引导（不定长帧收包） | 🧭 串口 DMA + 空闲中断接收引导（不定长帧收包） / 🧭 ADC + DMA 循环采集引导（MQ-135 等模拟量） / ① 串口 USART + DMA + 空闲中断接收（不定长帧） / ④ ADC + DMA 循环采集（MQ-135 等模拟量，后台自动刷新） / 🧭 数据帧组包 + CRC16-MODBUS 校验引导（已定案协议）
+[guide] Flash | 24 | 🧭 板载 FLASH 扇区配置与参数保存引导（ZE 512KB / ZG 1MB） | 🧭 板载 FLASH 扇区配置与参数保存引导（ZE 512KB / ZG 1MB） / 🧭 SPI 主机引导（接 W25QXX Flash / NRF24L01 / 触摸屏） / 🧭 ⑱ SPI Flash 断网缓存日志引导（先存本地，上线再补传） / ⑬ SPI 主机通信（W25QXX Flash / NRF24L01 / XPT2046 触摸） / ⑱ SPI Flash 断网缓存日志（掉线先存本地，上线再补传）
+[guide] 断网缓存 | 13 | 🧭 ⑱ SPI Flash 断网缓存日志引导（先存本地，上线再补传） | 🧭 ⑱ SPI Flash 断网缓存日志引导（先存本地，上线再补传） / ⑱ SPI Flash 断网缓存日志（掉线先存本地，上线再补传） / 🧭 SPI 主机引导（接 W25QXX Flash / NRF24L01 / 触摸屏） / 🧭 板载 FLASH 扇区配置与参数保存引导（ZE 512KB / ZG 1MB） / 🧭 ⑳ ESP8266 AT 联网 + MQTT 上报云端引导（从一条 AT 到一条 MQTT 报文）
+[guide] ADC | 14 | 🧭 ADC + DMA 循环采集引导（MQ-135 等模拟量） | 🧭 ADC + DMA 循环采集引导（MQ-135 等模拟量） / ④ ADC + DMA 循环采集（MQ-135 等模拟量，后台自动刷新） / 🧭 I2C 接传感器引导（多个传感器挂一条总线） / 🧭 独立看门狗 IWDG 引导（心跳喂狗防卡死） / 🧭 数据帧组包 + CRC16-MODBUS 校验引导（已定案协议）

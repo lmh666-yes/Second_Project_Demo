@@ -1,0 +1,3672 @@
+[
+ {
+  "en": "Absolute",
+  "note": "",
+  "cn": "绝对"
+ },
+ {
+  "en": "Access",
+  "note": "",
+  "cn": "存取"
+ },
+ {
+  "en": "Access time",
+  "note": "",
+  "cn": "存取时间"
+ },
+ {
+  "en": "Accompanying",
+  "note": "",
+  "cn": "陪同，伴随"
+ },
+ {
+  "en": "According to",
+  "note": "",
+  "cn": "根据"
+ },
+ {
+  "en": "Accuracy",
+  "note": "",
+  "cn": "准确性"
+ },
+ {
+  "en": "Acquire",
+  "note": "",
+  "cn": "获得"
+ },
+ {
+  "en": "Active-matrix",
+  "note": "",
+  "cn": "主动矩阵"
+ },
+ {
+  "en": "Adapter cards",
+  "note": "",
+  "cn": "适配卡"
+ },
+ {
+  "en": "Add-ons",
+  "note": "",
+  "cn": "插件"
+ },
+ {
+  "en": "Address",
+  "note": "",
+  "cn": "地址"
+ },
+ {
+  "en": "Ad network cookies",
+  "note": "",
+  "cn": "广告网络信息记录软件"
+ },
+ {
+  "en": "Advanced application",
+  "note": "",
+  "cn": "高级应用"
+ },
+ {
+  "en": "Agents",
+  "note": "",
+  "cn": "代理"
+ },
+ {
+  "en": "Allocated",
+  "note": "",
+  "cn": "分配"
+ },
+ {
+  "en": "Analog signals",
+  "note": "",
+  "cn": "模拟信号"
+ },
+ {
+  "en": "Analytical graph",
+  "note": "",
+  "cn": "分析图表"
+ },
+ {
+  "en": "Analyze",
+  "note": "",
+  "cn": "分析"
+ },
+ {
+  "en": "Animations",
+  "note": "",
+  "cn": "动画"
+ },
+ {
+  "en": "Append",
+  "note": "",
+  "cn": "追加，添加"
+ },
+ {
+  "en": "Applets",
+  "note": "",
+  "cn": "程序"
+ },
+ {
+  "en": "Application software",
+  "note": "",
+  "cn": "应用软件"
+ },
+ {
+  "en": "Appropriate",
+  "note": "",
+  "cn": "适当的"
+ },
+ {
+  "en": "Architectures",
+  "note": "",
+  "cn": "布局，格局"
+ },
+ {
+  "en": "Argument",
+  "note": "",
+  "cn": "论据，参数"
+ },
+ {
+  "en": "Arithmetic operations",
+  "note": "",
+  "cn": "算术运算"
+ },
+ {
+  "en": "Arranges",
+  "note": "",
+  "cn": "安排"
+ },
+ {
+  "en": "Assembler",
+  "note": "",
+  "cn": "汇编语言，装配器"
+ },
+ {
+  "en": "Assign",
+  "note": "",
+  "cn": "分配"
+ },
+ {
+  "en": "Associate with",
+  "note": "",
+  "cn": "联合"
+ },
+ {
+  "en": "Asynchronous communications port",
+  "note": "",
+  "cn": "异步通信端口"
+ },
+ {
+  "en": "At least",
+  "note": "",
+  "cn": "至少"
+ },
+ {
+  "en": "Attach",
+  "note": "",
+  "cn": "系上，贴上"
+ },
+ {
+  "en": "Attachment",
+  "note": "",
+  "cn": "附件"
+ },
+ {
+  "en": "Attempt",
+  "note": "",
+  "cn": "尝试"
+ },
+ {
+  "en": "Attribute",
+  "note": "",
+  "cn": "属性"
+ },
+ {
+  "en": "Audio-output device",
+  "note": "",
+  "cn": "音频输出设备"
+ },
+ {
+  "en": "Automatically",
+  "note": "",
+  "cn": "自动地"
+ },
+ {
+  "en": "Available",
+  "note": "",
+  "cn": "有用的"
+ },
+ {
+  "en": "Backup tape cartridge units",
+  "note": "",
+  "cn": "备份磁带盒单元"
+ },
+ {
+  "en": "Bandwidth",
+  "note": "",
+  "cn": "带宽"
+ },
+ {
+  "en": "Bar code",
+  "note": "",
+  "cn": "条形码"
+ },
+ {
+  "en": "Bar code reader",
+  "note": "",
+  "cn": "条形码读卡器"
+ },
+ {
+  "en": "Basic application",
+  "note": "",
+  "cn": "基础程序"
+ },
+ {
+  "en": "Behavior",
+  "note": "",
+  "cn": "行为"
+ },
+ {
+  "en": "Below",
+  "note": "",
+  "cn": "在…下面"
+ },
+ {
+  "en": "Binary",
+  "note": "",
+  "cn": "二进制"
+ },
+ {
+  "en": "Binary coding schemes",
+  "note": "",
+  "cn": "二进制译码方案"
+ },
+ {
+  "en": "Binary system",
+  "note": "",
+  "cn": "二进制系统"
+ },
+ {
+  "en": "Bind",
+  "note": "",
+  "cn": "绑定"
+ },
+ {
+  "en": "Bit",
+  "note": "",
+  "cn": "比特"
+ },
+ {
+  "en": "Blocked",
+  "note": "",
+  "cn": "堵塞的"
+ },
+ {
+  "en": "Bluetooth",
+  "note": "",
+  "cn": "蓝牙"
+ },
+ {
+  "en": "Broadband",
+  "note": "",
+  "cn": "宽带"
+ },
+ {
+  "en": "Browser",
+  "note": "",
+  "cn": "浏览器"
+ },
+ {
+  "en": "Bus line",
+  "note": "",
+  "cn": "总线"
+ },
+ {
+  "en": "Business-to-business",
+  "note": "",
+  "cn": "企业对企业电子商务"
+ },
+ {
+  "en": "Business-to-consumer",
+  "note": "",
+  "cn": "企业对消费者"
+ },
+ {
+  "en": "Byte",
+  "note": "",
+  "cn": "字节"
+ },
+ {
+  "en": "Cables",
+  "note": "",
+  "cn": "连线"
+ },
+ {
+  "en": "Cable modems",
+  "note": "",
+  "cn": "有线调制解调器"
+ },
+ {
+  "en": "Cache",
+  "note": "",
+  "cn": "隐藏，缓存"
+ },
+ {
+  "en": "Carpal tunnel syndrome",
+  "note": "",
+  "cn": "腕骨神经综合症"
+ },
+ {
+  "en": "Cause",
+  "note": "",
+  "cn": "引起"
+ },
+ {
+  "en": "CD-ROM",
+  "note": "",
+  "cn": "可记录光盘"
+ },
+ {
+  "en": "CD-RW",
+  "note": "",
+  "cn": "可重写光盘"
+ },
+ {
+  "en": "CD-R",
+  "note": "",
+  "cn": "可记录压缩光盘"
+ },
+ {
+  "en": "Cell",
+  "note": "",
+  "cn": "单元箱"
+ },
+ {
+  "en": "Chain printer",
+  "note": "",
+  "cn": "链式打印机"
+ },
+ {
+  "en": "Channel",
+  "note": "",
+  "cn": "信道"
+ },
+ {
+  "en": "Character and recognition device",
+  "note": "",
+  "cn": "字符标识识别设备"
+ },
+ {
+  "en": "Characteristics",
+  "note": "",
+  "cn": "特性"
+ },
+ {
+  "en": "Chart",
+  "note": "",
+  "cn": "图表"
+ },
+ {
+  "en": "Chassis",
+  "note": "",
+  "cn": "支架"
+ },
+ {
+  "en": "Chat group",
+  "note": "",
+  "cn": "谈话群组"
+ },
+ {
+  "en": "Check",
+  "note": "",
+  "cn": "检查"
+ },
+ {
+  "en": "Chip",
+  "note": "",
+  "cn": "芯片"
+ },
+ {
+  "en": "Chlorofluorocarbons",
+  "note": "CFCs",
+  "cn": "氯氟甲烷"
+ },
+ {
+  "en": "Clarity",
+  "note": "",
+  "cn": "清晰度"
+ },
+ {
+  "en": "Client",
+  "note": "",
+  "cn": "客户端"
+ },
+ {
+  "en": "Closed architecture",
+  "note": "",
+  "cn": "封闭式体系结构"
+ },
+ {
+  "en": "Coaxial cable",
+  "note": "",
+  "cn": "同轴电缆"
+ },
+ {
+  "en": "Cold site",
+  "note": "",
+  "cn": "冷网站"
+ },
+ {
+  "en": "Column",
+  "note": "",
+  "cn": "列"
+ },
+ {
+  "en": "Combination",
+  "note": "",
+  "cn": "结合，联合"
+ },
+ {
+  "en": "Combination key",
+  "note": "",
+  "cn": "结合键"
+ },
+ {
+  "en": "Command",
+  "note": "",
+  "cn": "命令"
+ },
+ {
+  "en": "Commerce servers",
+  "note": "",
+  "cn": "商业服务器"
+ },
+ {
+  "en": "Communication channel",
+  "note": "",
+  "cn": "信道"
+ },
+ {
+  "en": "Communication systems",
+  "note": "",
+  "cn": "信息系统"
+ },
+ {
+  "en": "Compact disc",
+  "note": "",
+  "cn": "光盘"
+ },
+ {
+  "en": "Completed",
+  "note": "",
+  "cn": "完整的"
+ },
+ {
+  "en": "Computer abuse amendments act of 1994",
+  "note": "",
+  "cn": "计算机滥用法案"
+ },
+ {
+  "en": "Computer competency",
+  "note": "",
+  "cn": "计算机能力"
+ },
+ {
+  "en": "Computer crime",
+  "note": "",
+  "cn": "计算机犯罪"
+ },
+ {
+  "en": "Computer ethics",
+  "note": "",
+  "cn": "计算机道德"
+ },
+ {
+  "en": "Computer fraud and abuse act of 1986",
+  "note": "",
+  "cn": "计算机欺诈和滥用法案"
+ },
+ {
+  "en": "Computer matching and privacy protection act of 1988",
+  "note": "",
+  "cn": "计算机查找和隐私保护法案"
+ },
+ {
+  "en": "Computer network",
+  "note": "",
+  "cn": "计算机网络"
+ },
+ {
+  "en": "Computer support specialist",
+  "note": "",
+  "cn": "计算机支持专家"
+ },
+ {
+  "en": "Computer technician",
+  "note": "",
+  "cn": "计算机技术人员"
+ },
+ {
+  "en": "Computer trainer",
+  "note": "",
+  "cn": "计算机教师"
+ },
+ {
+  "en": "Computing",
+  "note": "",
+  "cn": "计算，使用计算机"
+ },
+ {
+  "en": "Condition",
+  "note": "",
+  "cn": "条件，环境"
+ },
+ {
+  "en": "Config",
+  "note": "",
+  "cn": "配置"
+ },
+ {
+  "en": "Connect",
+  "note": "",
+  "cn": "连接"
+ },
+ {
+  "en": "Connectivity",
+  "note": "",
+  "cn": "连接，结点"
+ },
+ {
+  "en": "Connection device",
+  "note": "",
+  "cn": "连接设备"
+ },
+ {
+  "en": "Considered",
+  "note": "",
+  "cn": "考虑过的"
+ },
+ {
+  "en": "Consist",
+  "note": "",
+  "cn": "组成"
+ },
+ {
+  "en": "Consumer-to-consumer",
+  "note": "",
+  "cn": "个人对个人"
+ },
+ {
+  "en": "Contain",
+  "note": "",
+  "cn": "包含"
+ },
+ {
+  "en": "Continuous-speech recognition system",
+  "note": "",
+  "cn": "连续语言识别系统"
+ },
+ {
+  "en": "Control",
+  "note": "",
+  "cn": "控制"
+ },
+ {
+  "en": "Control unit",
+  "note": "",
+  "cn": "操纵单元"
+ },
+ {
+  "en": "Converts",
+  "note": "",
+  "cn": "转换"
+ },
+ {
+  "en": "Cookies-cutter programs",
+  "note": "",
+  "cn": "信息记录截取程序"
+ },
+ {
+  "en": "Cookies",
+  "note": "",
+  "cn": "信息记录程序"
+ },
+ {
+  "en": "Cordless or wireless mouse",
+  "note": "",
+  "cn": "无线鼠标"
+ },
+ {
+  "en": "Corresponding",
+  "note": "",
+  "cn": "符合的，对应的"
+ },
+ {
+  "en": "Cracker",
+  "note": "",
+  "cn": "解密高手"
+ },
+ {
+  "en": "Cumulative trauma disorder",
+  "note": "",
+  "cn": "积累性损伤错乱"
+ },
+ {
+  "en": "Current",
+  "note": "",
+  "cn": "当前的"
+ },
+ {
+  "en": "Cybercash",
+  "note": "",
+  "cn": "电子现金"
+ },
+ {
+  "en": "Cyberspace",
+  "note": "",
+  "cn": "计算机空间"
+ },
+ {
+  "en": "Cynic",
+  "note": "",
+  "cn": "愤世嫉俗者"
+ },
+ {
+  "en": "Database",
+  "note": "",
+  "cn": "数据库"
+ },
+ {
+  "en": "Database files",
+  "note": "",
+  "cn": "数据库文件"
+ },
+ {
+  "en": "Database manager",
+  "note": "",
+  "cn": "数据库管理"
+ },
+ {
+  "en": "Data bus",
+  "note": "",
+  "cn": "数据总线"
+ },
+ {
+  "en": "Datagrams",
+  "note": "",
+  "cn": "数据报"
+ },
+ {
+  "en": "Data projector",
+  "note": "",
+  "cn": "数码放映机"
+ },
+ {
+  "en": "Date",
+  "note": "",
+  "cn": "日期"
+ },
+ {
+  "en": "Decrement",
+  "note": "",
+  "cn": "减少量"
+ },
+ {
+  "en": "Define",
+  "note": "",
+  "cn": "定义，详细说明"
+ },
+ {
+  "en": "Delivered",
+  "note": "",
+  "cn": "传递"
+ },
+ {
+  "en": "Dependency",
+  "note": "",
+  "cn": "依靠，附属地"
+ },
+ {
+  "en": "Detaches",
+  "note": "",
+  "cn": "分离"
+ },
+ {
+  "en": "Directive",
+  "note": "",
+  "cn": "指挥的，管理的"
+ },
+ {
+  "en": "Describe",
+  "note": "",
+  "cn": "描述"
+ },
+ {
+  "en": "Descriptor",
+  "note": "",
+  "cn": "描述符"
+ },
+ {
+  "en": "Desktop system unit",
+  "note": "",
+  "cn": "台式电脑系统单元"
+ },
+ {
+  "en": "Destination file",
+  "note": "",
+  "cn": "目标文件"
+ },
+ {
+  "en": "Device-dependent",
+  "note": "",
+  "cn": "独立设备"
+ },
+ {
+  "en": "Details",
+  "note": "",
+  "cn": "细节"
+ },
+ {
+  "en": "Determined",
+  "note": "",
+  "cn": "决定的"
+ },
+ {
+  "en": "Digital cameras",
+  "note": "",
+  "cn": "数码照相机"
+ },
+ {
+  "en": "Digital notebooks",
+  "note": "",
+  "cn": "数字笔记本"
+ },
+ {
+  "en": "Digital bideo camera",
+  "note": "",
+  "cn": "数码摄影机"
+ },
+ {
+  "en": "Disallowed",
+  "note": "",
+  "cn": "不允许"
+ },
+ {
+  "en": "Discrete-speech recognition system",
+  "note": "",
+  "cn": "不连续语言识别系统"
+ },
+ {
+  "en": "Distinct",
+  "note": "",
+  "cn": "清楚的，明显的"
+ },
+ {
+  "en": "Document",
+  "note": "",
+  "cn": "文档"
+ },
+ {
+  "en": "Document files",
+  "note": "",
+  "cn": "文档文件"
+ },
+ {
+  "en": "Domain",
+  "note": "",
+  "cn": "范围"
+ },
+ {
+  "en": "Dot-matrix printer",
+  "note": "",
+  "cn": "点矩阵式打印机"
+ },
+ {
+  "en": "Dual-scan monitor",
+  "note": "",
+  "cn": "双向扫描显示器"
+ },
+ {
+  "en": "Dumb terminal",
+  "note": "",
+  "cn": "非智能终端"
+ },
+ {
+  "en": "Duplicating",
+  "note": "",
+  "cn": "副本，复制"
+ },
+ {
+  "en": "During",
+  "note": "",
+  "cn": "在…期间"
+ },
+ {
+  "en": "Data security",
+  "note": "",
+  "cn": "数据安全"
+ },
+ {
+  "en": "Data transmission specifications",
+  "note": "",
+  "cn": "数据传输说明"
+ },
+ {
+  "en": "Database administrator",
+  "note": "",
+  "cn": "数据库管理员"
+ },
+ {
+  "en": "Datagram",
+  "note": "",
+  "cn": "数据电报"
+ },
+ {
+  "en": "Dataplay",
+  "note": "",
+  "cn": "数字播放器"
+ },
+ {
+  "en": "Demodulation",
+  "note": "",
+  "cn": "解调"
+ },
+ {
+  "en": "Denial of service attack",
+  "note": "",
+  "cn": "拒绝服务攻击"
+ },
+ {
+  "en": "Dial-up service",
+  "note": "",
+  "cn": "拨号服务"
+ },
+ {
+  "en": "Digital cash",
+  "note": "",
+  "cn": "数字现金"
+ },
+ {
+  "en": "Digital signals",
+  "note": "",
+  "cn": "数字信号"
+ },
+ {
+  "en": "Digital subscriber line",
+  "note": "",
+  "cn": "数字用户线路"
+ },
+ {
+  "en": "Digital versatile disc",
+  "note": "",
+  "cn": "数字化通用磁盘"
+ },
+ {
+  "en": "Digital video disc",
+  "note": "",
+  "cn": "数字化视频光盘"
+ },
+ {
+  "en": "Direct access",
+  "note": "",
+  "cn": "直接存取"
+ },
+ {
+  "en": "Directory",
+  "note": "",
+  "cn": "目录"
+ },
+ {
+  "en": "Directory search",
+  "note": "",
+  "cn": "目录搜索"
+ },
+ {
+  "en": "Disaster recovery plan",
+  "note": "",
+  "cn": "灾难恢复计划"
+ },
+ {
+  "en": "Disk caching",
+  "note": "",
+  "cn": "磁盘驱动器高速缓存"
+ },
+ {
+  "en": "Diskette",
+  "note": "",
+  "cn": "磁盘"
+ },
+ {
+  "en": "Disk",
+  "note": "",
+  "cn": "磁碟"
+ },
+ {
+  "en": "Distributed data processing system",
+  "note": "",
+  "cn": "分部数据处理系统"
+ },
+ {
+  "en": "Distributed processing",
+  "note": "",
+  "cn": "分布处理"
+ },
+ {
+  "en": "Domain code",
+  "note": "",
+  "cn": "域代码"
+ },
+ {
+  "en": "Downloading",
+  "note": "",
+  "cn": "下载"
+ },
+ {
+  "en": "Dynamic",
+  "note": "",
+  "cn": "动态的"
+ },
+ {
+  "en": "DVD",
+  "note": "digital bersatile",
+  "cn": "数字化通用磁盘；数字化通用光盘"
+ },
+ {
+  "en": "DVD-R",
+  "note": "",
+  "cn": "可写DVD"
+ },
+ {
+  "en": "DVD-RAM DVD",
+  "note": "",
+  "cn": "随机存取器"
+ },
+ {
+  "en": "DVD-ROM",
+  "note": "",
+  "cn": "只读DVD"
+ },
+ {
+  "en": "E-book",
+  "note": "",
+  "cn": "电子阅读器"
+ },
+ {
+  "en": "Expansion cards",
+  "note": "",
+  "cn": "扩展卡"
+ },
+ {
+  "en": "End user",
+  "note": "",
+  "cn": "终端用户"
+ },
+ {
+  "en": "E-cash",
+  "note": "",
+  "cn": "电子现金"
+ },
+ {
+  "en": "E-commerce",
+  "note": "",
+  "cn": "电子商务"
+ },
+ {
+  "en": "Effect",
+  "note": "",
+  "cn": "效果，影响"
+ },
+ {
+  "en": "Effective",
+  "note": "",
+  "cn": "有效的"
+ },
+ {
+  "en": "Elapsed",
+  "note": "",
+  "cn": "过去，消逝"
+ },
+ {
+  "en": "Electronic cash",
+  "note": "",
+  "cn": "电子现金"
+ },
+ {
+  "en": "Electronic commerce",
+  "note": "",
+  "cn": "电子商务"
+ },
+ {
+  "en": "Electronic communications privacy act of 1986",
+  "note": "",
+  "cn": "电子通信隐私法案"
+ },
+ {
+  "en": "Element",
+  "note": "",
+  "cn": "成分，要素"
+ },
+ {
+  "en": "Encrypting",
+  "note": "",
+  "cn": "加密术"
+ },
+ {
+  "en": "Endpoint",
+  "note": "",
+  "cn": "端点"
+ },
+ {
+  "en": "Energy star",
+  "note": "",
+  "cn": "能源之星"
+ },
+ {
+  "en": "Entry",
+  "note": "",
+  "cn": "进入"
+ },
+ {
+  "en": "Enterprise computing",
+  "note": "",
+  "cn": "企业计算化"
+ },
+ {
+  "en": "Environment",
+  "note": "",
+  "cn": "环境"
+ },
+ {
+  "en": "Equivalent",
+  "note": "",
+  "cn": "等价物"
+ },
+ {
+  "en": "Erasable optical disks",
+  "note": "",
+  "cn": "可擦除式光盘"
+ },
+ {
+  "en": "Ergonomics",
+  "note": "",
+  "cn": "人类工程学"
+ },
+ {
+  "en": "Error",
+  "note": "",
+  "cn": "错误"
+ },
+ {
+  "en": "Ethics",
+  "note": "",
+  "cn": "道德规范"
+ },
+ {
+  "en": "Exact",
+  "note": "",
+  "cn": "准确的"
+ },
+ {
+  "en": "Execute",
+  "note": "",
+  "cn": "执行"
+ },
+ {
+  "en": "Existing",
+  "note": "",
+  "cn": "现存的"
+ },
+ {
+  "en": "Expires",
+  "note": "",
+  "cn": "期满，断气"
+ },
+ {
+  "en": "External modem",
+  "note": "",
+  "cn": "外置调制解调器"
+ },
+ {
+  "en": "Extra",
+  "note": "",
+  "cn": "额外的"
+ },
+ {
+  "en": "Extract",
+  "note": "",
+  "cn": "吸取"
+ },
+ {
+  "en": "Extranet",
+  "note": "",
+  "cn": "企业外部网"
+ },
+ {
+  "en": "Extended",
+  "note": "",
+  "cn": "扩展的"
+ },
+ {
+  "en": "Fax machine",
+  "note": "",
+  "cn": "传真机"
+ },
+ {
+  "en": "Fetch",
+  "note": "",
+  "cn": "拿来"
+ },
+ {
+  "en": "Field",
+  "note": "",
+  "cn": "域"
+ },
+ {
+  "en": "File",
+  "note": "",
+  "cn": "文件"
+ },
+ {
+  "en": "Filename",
+  "note": "",
+  "cn": "文件名"
+ },
+ {
+  "en": "Find",
+  "note": "",
+  "cn": "搜索"
+ },
+ {
+  "en": "Fire Wire port",
+  "note": "",
+  "cn": "火线端口"
+ },
+ {
+  "en": "Firmware",
+  "note": "",
+  "cn": "固件"
+ },
+ {
+  "en": "Flag",
+  "note": "",
+  "cn": "旗帜，标志"
+ },
+ {
+  "en": "Flash RAM",
+  "note": "",
+  "cn": "闪存"
+ },
+ {
+  "en": "Flatbed scanner",
+  "note": "",
+  "cn": "台式扫描器"
+ },
+ {
+  "en": "Flat-panel monitor",
+  "note": "",
+  "cn": "纯平显示器"
+ },
+ {
+  "en": "Floppy disk",
+  "note": "",
+  "cn": "软盘"
+ },
+ {
+  "en": "Formatting toolbar",
+  "note": "",
+  "cn": "格式化工具条"
+ },
+ {
+  "en": "Formula",
+  "note": "",
+  "cn": "公式"
+ },
+ {
+  "en": "Function",
+  "note": "",
+  "cn": "函数"
+ },
+ {
+  "en": "Fair credit reporting act of 1970",
+  "note": "",
+  "cn": "公平信用报告法案"
+ },
+ {
+  "en": "Fiber-optic cable",
+  "note": "",
+  "cn": "光纤电缆"
+ },
+ {
+  "en": "File compression",
+  "note": "",
+  "cn": "文件压缩"
+ },
+ {
+  "en": "File decompression",
+  "note": "",
+  "cn": "文件解压缩"
+ },
+ {
+  "en": "Filter",
+  "note": "",
+  "cn": "过滤"
+ },
+ {
+  "en": "Firewall",
+  "note": "",
+  "cn": "防火墙"
+ },
+ {
+  "en": "Fixed disk",
+  "note": "",
+  "cn": "固定硬盘"
+ },
+ {
+  "en": "Flash memory",
+  "note": "",
+  "cn": "闪存"
+ },
+ {
+  "en": "Flexible disk",
+  "note": "",
+  "cn": "可折叠磁盘"
+ },
+ {
+  "en": "Floppies",
+  "note": "",
+  "cn": "磁盘"
+ },
+ {
+  "en": "Floppy-disk cartridge",
+  "note": "",
+  "cn": "磁盘盒"
+ },
+ {
+  "en": "Format",
+  "note": "",
+  "cn": "格式"
+ },
+ {
+  "en": "Formatting",
+  "note": "",
+  "cn": "格式化"
+ },
+ {
+  "en": "Foundation",
+  "note": "",
+  "cn": "基础，根据，建立"
+ },
+ {
+  "en": "Free",
+  "note": "",
+  "cn": "自由的，免费的"
+ },
+ {
+  "en": "Freedom of information act of 1970",
+  "note": "",
+  "cn": "信息自由法案"
+ },
+ {
+  "en": "Frequency",
+  "note": "",
+  "cn": "频率"
+ },
+ {
+  "en": "Frustrated",
+  "note": "",
+  "cn": "受挫折"
+ },
+ {
+  "en": "Full-duplex communication",
+  "note": "",
+  "cn": "全双通通信"
+ },
+ {
+  "en": "General-purpose application",
+  "note": "",
+  "cn": "通用运用程序"
+ },
+ {
+  "en": "Generate",
+  "note": "",
+  "cn": "产生，导致"
+ },
+ {
+  "en": "Gigahertz",
+  "note": "",
+  "cn": "千兆赫"
+ },
+ {
+  "en": "Graphic tablet",
+  "note": "",
+  "cn": "绘图板"
+ },
+ {
+  "en": "Grants",
+  "note": "",
+  "cn": "授予"
+ },
+ {
+  "en": "Green pc",
+  "note": "",
+  "cn": "绿色个人计算机"
+ },
+ {
+  "en": "Group",
+  "note": "",
+  "cn": "组"
+ },
+ {
+  "en": "Handle",
+  "note": "",
+  "cn": "把柄，把手，记号"
+ },
+ {
+  "en": "Handheld computer",
+  "note": "",
+  "cn": "手提电脑"
+ },
+ {
+  "en": "Hard copy",
+  "note": "",
+  "cn": "硬拷贝"
+ },
+ {
+  "en": "Hard disk",
+  "note": "",
+  "cn": "硬盘"
+ },
+ {
+  "en": "Hardware",
+  "note": "",
+  "cn": "硬件"
+ },
+ {
+  "en": "Help",
+  "note": "",
+  "cn": "帮助"
+ },
+ {
+  "en": "Host computer",
+  "note": "",
+  "cn": "主机"
+ },
+ {
+  "en": "Home page",
+  "note": "",
+  "cn": "主页"
+ },
+ {
+  "en": "Hyperlink",
+  "note": "",
+  "cn": "超链接"
+ },
+ {
+  "en": "Hacker",
+  "note": "",
+  "cn": "黑客"
+ },
+ {
+  "en": "Half-duplex communication",
+  "note": "",
+  "cn": "半双通通信"
+ },
+ {
+  "en": "Hard-disk cartridge",
+  "note": "",
+  "cn": "硬盘盒"
+ },
+ {
+  "en": "Hard-disk pack",
+  "note": "",
+  "cn": "硬盘组"
+ },
+ {
+  "en": "Head crash",
+  "note": "",
+  "cn": "磁头碰撞"
+ },
+ {
+  "en": "Header",
+  "note": "",
+  "cn": "标题"
+ },
+ {
+  "en": "Help desk specialist",
+  "note": "",
+  "cn": "帮助办公专家"
+ },
+ {
+  "en": "Helper applications",
+  "note": "",
+  "cn": "帮助软件"
+ },
+ {
+  "en": "Hierarchical network",
+  "note": "",
+  "cn": "层次型网络"
+ },
+ {
+  "en": "Historically",
+  "note": "",
+  "cn": "从历史角度"
+ },
+ {
+  "en": "History file",
+  "note": "",
+  "cn": "历史文件"
+ },
+ {
+  "en": "Hits",
+  "note": "",
+  "cn": "匹配记录"
+ },
+ {
+  "en": "Horizontal portal",
+  "note": "",
+  "cn": "横向用户"
+ },
+ {
+  "en": "Host",
+  "note": "",
+  "cn": "主机"
+ },
+ {
+  "en": "Hot site",
+  "note": "",
+  "cn": "热网站"
+ },
+ {
+  "en": "Hybrid network",
+  "note": "",
+  "cn": "混合网络"
+ },
+ {
+  "en": "Identify",
+  "note": "",
+  "cn": "识别"
+ },
+ {
+  "en": "Identifier",
+  "note": "",
+  "cn": "识别符"
+ },
+ {
+  "en": "Identity",
+  "note": "",
+  "cn": "统一性，一致"
+ },
+ {
+  "en": "Identical",
+  "note": "",
+  "cn": "完全相似的"
+ },
+ {
+  "en": "Ignored",
+  "note": "",
+  "cn": "忽略的，不理会的"
+ },
+ {
+  "en": "Image capturing device",
+  "note": "",
+  "cn": "图像获取设备"
+ },
+ {
+  "en": "Immediately",
+  "note": "",
+  "cn": "立即"
+ },
+ {
+  "en": "Implement",
+  "note": "",
+  "cn": "实现，工具"
+ },
+ {
+  "en": "Implementation",
+  "note": "",
+  "cn": "成就"
+ },
+ {
+  "en": "Include",
+  "note": "",
+  "cn": "包含"
+ },
+ {
+  "en": "Increment",
+  "note": "",
+  "cn": "增加"
+ },
+ {
+  "en": "Indicated",
+  "note": "",
+  "cn": "指出"
+ },
+ {
+  "en": "Individual",
+  "note": "",
+  "cn": "个别的，独特的"
+ },
+ {
+  "en": "Information technology",
+  "note": "",
+  "cn": "信息技术"
+ },
+ {
+  "en": "Inherited",
+  "note": "",
+  "cn": "遗传的"
+ },
+ {
+  "en": "Initialization",
+  "note": "",
+  "cn": "初始化"
+ },
+ {
+  "en": "Ink-jet printer",
+  "note": "",
+  "cn": "墨水喷射印刷机"
+ },
+ {
+  "en": "Integrated package",
+  "note": "",
+  "cn": "综合性组件"
+ },
+ {
+  "en": "Intelligent terminal",
+  "note": "",
+  "cn": "智能终端设备"
+ },
+ {
+  "en": "Intergrated circuit",
+  "note": "",
+  "cn": "集成电路"
+ },
+ {
+  "en": "Intended",
+  "note": "",
+  "cn": "故意的"
+ },
+ {
+  "en": "Internet",
+  "note": "",
+  "cn": "网络"
+ },
+ {
+  "en": "Interface",
+  "note": "",
+  "cn": "接口"
+ },
+ {
+  "en": "Interface cards",
+  "note": "",
+  "cn": "接口卡"
+ },
+ {
+  "en": "Internal modem",
+  "note": "",
+  "cn": "内部调制解调器"
+ },
+ {
+  "en": "Interpret",
+  "note": "",
+  "cn": "解释，说明"
+ },
+ {
+  "en": "Interprocess",
+  "note": "",
+  "cn": "进程间的"
+ },
+ {
+  "en": "Interrupted",
+  "note": "",
+  "cn": "中断的，不对称的"
+ },
+ {
+  "en": "Interval",
+  "note": "",
+  "cn": "间隔，距离"
+ },
+ {
+  "en": "line",
+  "note": "",
+  "cn": "行列"
+ },
+ {
+  "en": "Internet telephony",
+  "note": "",
+  "cn": "网络电话"
+ },
+ {
+  "en": "Internet terminal",
+  "note": "",
+  "cn": "互联网终端"
+ },
+ {
+  "en": "Invalid",
+  "note": "",
+  "cn": "无效的"
+ },
+ {
+  "en": "Invocation",
+  "note": "",
+  "cn": "祈祷"
+ },
+ {
+  "en": "Invoke",
+  "note": "",
+  "cn": "实行，要求"
+ },
+ {
+  "en": "Involved",
+  "note": "",
+  "cn": "复杂的，有关的"
+ },
+ {
+  "en": "Identification",
+  "note": "",
+  "cn": "识别"
+ },
+ {
+  "en": "I-drive",
+  "note": "",
+  "cn": "网络硬盘驱动器"
+ },
+ {
+  "en": "Illusion of anonymity",
+  "note": "",
+  "cn": "匿名幻想"
+ },
+ {
+  "en": "Index search",
+  "note": "",
+  "cn": "索引搜索"
+ },
+ {
+  "en": "Information pushers",
+  "note": "",
+  "cn": "信息推送器"
+ },
+ {
+  "en": "Initializing",
+  "note": "",
+  "cn": "初始化"
+ },
+ {
+  "en": "Instant messaging",
+  "note": "",
+  "cn": "计时信息"
+ },
+ {
+  "en": "Internal hard disk",
+  "note": "",
+  "cn": "内置硬盘"
+ },
+ {
+  "en": "Internet hard drive",
+  "note": "",
+  "cn": "网络硬盘驱动器"
+ },
+ {
+  "en": "Intranet",
+  "note": "",
+  "cn": "企业内部网"
+ },
+ {
+  "en": "Issued",
+  "note": "",
+  "cn": "发行，放出"
+ },
+ {
+  "en": "Joystick",
+  "note": "",
+  "cn": "操纵杆"
+ },
+ {
+  "en": "Kernel",
+  "note": "",
+  "cn": "内核，种子"
+ },
+ {
+  "en": "Keyword search",
+  "note": "",
+  "cn": "关键字搜索"
+ },
+ {
+  "en": "Language",
+  "note": "",
+  "cn": "语言"
+ },
+ {
+  "en": "Laser printer",
+  "note": "",
+  "cn": "激光打印机"
+ },
+ {
+  "en": "Layout files",
+  "note": "",
+  "cn": "版式文件"
+ },
+ {
+  "en": "Lazy",
+  "note": "",
+  "cn": "懒惰的"
+ },
+ {
+  "en": "Library",
+  "note": "",
+  "cn": "图书馆，集合"
+ },
+ {
+  "en": "Light pen",
+  "note": "",
+  "cn": "光笔"
+ },
+ {
+  "en": "Link",
+  "note": "",
+  "cn": "联系，连接"
+ },
+ {
+  "en": "Loader",
+  "note": "",
+  "cn": "装货机，加载者"
+ },
+ {
+  "en": "Locale",
+  "note": "",
+  "cn": "现场"
+ },
+ {
+  "en": "Locate",
+  "note": "",
+  "cn": "定位"
+ },
+ {
+  "en": "Logical operations",
+  "note": "",
+  "cn": "逻辑运算"
+ },
+ {
+  "en": "Lands",
+  "note": "",
+  "cn": "凸面"
+ },
+ {
+  "en": "Line of sight communication",
+  "note": "",
+  "cn": "视影通信"
+ },
+ {
+  "en": "Low bandwidth",
+  "note": "",
+  "cn": "低带宽"
+ },
+ {
+  "en": "Lurking",
+  "note": "",
+  "cn": "潜伏"
+ },
+ {
+  "en": "Main board",
+  "note": "",
+  "cn": "主板"
+ },
+ {
+  "en": "Manual",
+  "note": "",
+  "cn": "手册，手动的"
+ },
+ {
+  "en": "Manipulation",
+  "note": "",
+  "cn": "操作，处理"
+ },
+ {
+  "en": "Mapping",
+  "note": "",
+  "cn": "映射"
+ },
+ {
+  "en": "Mark",
+  "note": "",
+  "cn": "标记"
+ },
+ {
+  "en": "Mark sensing",
+  "note": "",
+  "cn": "标志检测"
+ },
+ {
+  "en": "Mask",
+  "note": "",
+  "cn": "伪装，屏蔽"
+ },
+ {
+  "en": "Mechanical mouse",
+  "note": "",
+  "cn": "机械鼠标"
+ },
+ {
+  "en": "Memory",
+  "note": "",
+  "cn": "内存"
+ },
+ {
+  "en": "Menu",
+  "note": "",
+  "cn": "菜单"
+ },
+ {
+  "en": "Menu bar",
+  "note": "",
+  "cn": "菜单条"
+ },
+ {
+  "en": "Message",
+  "note": "",
+  "cn": "消息"
+ },
+ {
+  "en": "Microprocessor",
+  "note": "",
+  "cn": "微处理器"
+ },
+ {
+  "en": "Microseconds",
+  "note": "",
+  "cn": "微秒"
+ },
+ {
+  "en": "Mode",
+  "note": "",
+  "cn": "模式"
+ },
+ {
+  "en": "Modem card",
+  "note": "",
+  "cn": "调制解调器"
+ },
+ {
+  "en": "Modification",
+  "note": "",
+  "cn": "修改，缓和"
+ },
+ {
+  "en": "Modify",
+  "note": "",
+  "cn": "修改"
+ },
+ {
+  "en": "Monitor",
+  "note": "",
+  "cn": "显示器"
+ },
+ {
+  "en": "Motherboard",
+  "note": "",
+  "cn": "主板"
+ },
+ {
+  "en": "Mouse",
+  "note": "",
+  "cn": "鼠标"
+ },
+ {
+  "en": "Multifunctional device",
+  "note": "",
+  "cn": "多功能设备"
+ },
+ {
+  "en": "Magnetic tape reels",
+  "note": "",
+  "cn": "磁带卷"
+ },
+ {
+  "en": "Magnetic tape streamers",
+  "note": "",
+  "cn": "磁带条"
+ },
+ {
+  "en": "Mailing list",
+  "note": "",
+  "cn": "邮件列表"
+ },
+ {
+  "en": "Medium band",
+  "note": "",
+  "cn": "媒质带宽"
+ },
+ {
+  "en": "Metasearch engine",
+  "note": "",
+  "cn": "整合搜索引擎"
+ },
+ {
+  "en": "Microwave",
+  "note": "",
+  "cn": "微波"
+ },
+ {
+  "en": "Modem",
+  "note": "",
+  "cn": "解调器"
+ },
+ {
+  "en": "Modulation",
+  "note": "",
+  "cn": "解调"
+ },
+ {
+  "en": "Necessary",
+  "note": "",
+  "cn": "必要的"
+ },
+ {
+  "en": "Net PC",
+  "note": "",
+  "cn": "网络计算机"
+ },
+ {
+  "en": "Network",
+  "note": "",
+  "cn": "网络"
+ },
+ {
+  "en": "Network adapter card",
+  "note": "",
+  "cn": "网卡"
+ },
+ {
+  "en": "Network personal computer",
+  "note": "",
+  "cn": "网络个人电脑"
+ },
+ {
+  "en": "Network terminal",
+  "note": "",
+  "cn": "网络终端"
+ },
+ {
+  "en": "Notation",
+  "note": "",
+  "cn": "标记法"
+ },
+ {
+  "en": "Notebook computer",
+  "note": "",
+  "cn": "笔记本电脑"
+ },
+ {
+  "en": "Notebook system unit",
+  "note": "",
+  "cn": "笔记本系统单元"
+ },
+ {
+  "en": "Numeric entry",
+  "note": "",
+  "cn": "数字输入"
+ },
+ {
+  "en": "National information infrastructure protection act of 1996",
+  "note": "",
+  "cn": "国际信息保护法案"
+ },
+ {
+  "en": "National service provider",
+  "note": "",
+  "cn": "全国性服务供应商"
+ },
+ {
+  "en": "Network architecture",
+  "note": "",
+  "cn": "网络体系结构"
+ },
+ {
+  "en": "Network bridge",
+  "note": "",
+  "cn": "网桥"
+ },
+ {
+  "en": "Network gateway",
+  "note": "",
+  "cn": "网关"
+ },
+ {
+  "en": "Network manager",
+  "note": "",
+  "cn": "网络管理员"
+ },
+ {
+  "en": "Newsgroup",
+  "note": "",
+  "cn": "新闻组"
+ },
+ {
+  "en": "No electronic theft act of 1997",
+  "note": "",
+  "cn": "无电子盗窃法"
+ },
+ {
+  "en": "Node",
+  "note": "",
+  "cn": "节点"
+ },
+ {
+  "en": "Nonnegative",
+  "note": "",
+  "cn": "禁止转让的，不可谈判的"
+ },
+ {
+  "en": "Nonvolatile storage",
+  "note": "",
+  "cn": "非易失性存储"
+ },
+ {
+  "en": "Normally",
+  "note": "",
+  "cn": "正规地"
+ },
+ {
+  "en": "Object embedding",
+  "note": "",
+  "cn": "对象嵌入"
+ },
+ {
+  "en": "Object linking",
+  "note": "",
+  "cn": "目标链接"
+ },
+ {
+  "en": "Obtain",
+  "note": "",
+  "cn": "获得"
+ },
+ {
+  "en": "Occur",
+  "note": "",
+  "cn": "发生"
+ },
+ {
+  "en": "Offset",
+  "note": "",
+  "cn": "抵销，支派"
+ },
+ {
+  "en": "Often",
+  "note": "",
+  "cn": "经常"
+ },
+ {
+  "en": "Open architecture",
+  "note": "",
+  "cn": "开放式体系结构"
+ },
+ {
+  "en": "Operation",
+  "note": "",
+  "cn": "操作"
+ },
+ {
+  "en": "Operating System",
+  "note": "",
+  "cn": "操作系统"
+ },
+ {
+  "en": "Optical disk",
+  "note": "",
+  "cn": "光盘"
+ },
+ {
+  "en": "Optical mouse",
+  "note": "",
+  "cn": "光电鼠标"
+ },
+ {
+  "en": "Optical scanner",
+  "note": "",
+  "cn": "光电扫描仪"
+ },
+ {
+  "en": "Optional",
+  "note": "",
+  "cn": "可选择的"
+ },
+ {
+  "en": "Order",
+  "note": "",
+  "cn": "次序"
+ },
+ {
+  "en": "Oriented",
+  "note": "",
+  "cn": "以…为方向的，以…为目的的"
+ },
+ {
+  "en": "Original",
+  "note": "",
+  "cn": "最初的，原始的"
+ },
+ {
+  "en": "Otherwise",
+  "note": "",
+  "cn": "否则"
+ },
+ {
+  "en": "Outline",
+  "note": "",
+  "cn": "大纲"
+ },
+ {
+  "en": "Output",
+  "note": "",
+  "cn": "输出"
+ },
+ {
+  "en": "Overwritten",
+  "note": "",
+  "cn": "覆盖"
+ },
+ {
+  "en": "Off-line browsers",
+  "note": "",
+  "cn": "离线浏览器"
+ },
+ {
+  "en": "Online storage",
+  "note": "",
+  "cn": "联机存储"
+ },
+ {
+  "en": "Pack",
+  "note": "",
+  "cn": "包裹，背包"
+ },
+ {
+  "en": "Palmtop computer",
+  "note": "",
+  "cn": "掌上电脑"
+ },
+ {
+  "en": "Parallel ports",
+  "note": "",
+  "cn": "并行端口"
+ },
+ {
+  "en": "Parent",
+  "note": "",
+  "cn": "父亲"
+ },
+ {
+  "en": "Parentheses",
+  "note": "",
+  "cn": "括弧"
+ },
+ {
+  "en": "Particular",
+  "note": "",
+  "cn": "特别的"
+ },
+ {
+  "en": "Passive",
+  "note": "",
+  "cn": "消极的，被动的"
+ },
+ {
+  "en": "Passive-matrix",
+  "note": "",
+  "cn": "被动矩阵"
+ },
+ {
+  "en": "Path",
+  "note": "",
+  "cn": "路径"
+ },
+ {
+  "en": "PC card",
+  "note": "",
+  "cn": "个人计算机卡"
+ },
+ {
+  "en": "Pedantic",
+  "note": "",
+  "cn": "卖弄学问的，迂腐的"
+ },
+ {
+  "en": "Pending",
+  "note": "",
+  "cn": "迫近的，悬而未决的"
+ },
+ {
+  "en": "Perform",
+  "note": "",
+  "cn": "执行，表演"
+ },
+ {
+  "en": "Personal laser printer",
+  "note": "",
+  "cn": "个人激光打印机"
+ },
+ {
+  "en": "Personal video recorder card",
+  "note": "",
+  "cn": "个人视频记录卡"
+ },
+ {
+  "en": "Photo printer",
+  "note": "",
+  "cn": "照片打印机"
+ },
+ {
+  "en": "Pixel",
+  "note": "",
+  "cn": "像素"
+ },
+ {
+  "en": "Pipe",
+  "note": "",
+  "cn": "管道"
+ },
+ {
+  "en": "Platform scanner",
+  "note": "",
+  "cn": "平版式扫描仪"
+ },
+ {
+  "en": "Plotter",
+  "note": "",
+  "cn": "绘图仪"
+ },
+ {
+  "en": "Plug and play",
+  "note": "",
+  "cn": "即插即用"
+ },
+ {
+  "en": "Plug-in boards",
+  "note": "",
+  "cn": "插件卡"
+ },
+ {
+  "en": "Plus",
+  "note": "",
+  "cn": "正号，加号"
+ },
+ {
+  "en": "Pointer",
+  "note": "",
+  "cn": "指示器"
+ },
+ {
+  "en": "Pointing stick",
+  "note": "",
+  "cn": "指示棍"
+ },
+ {
+  "en": "Poison",
+  "note": "",
+  "cn": "毒药，毒害"
+ },
+ {
+  "en": "Port",
+  "note": "",
+  "cn": "端口"
+ },
+ {
+  "en": "Portable",
+  "note": "",
+  "cn": "可携带的，可移动的"
+ },
+ {
+  "en": "Portable scanner",
+  "note": "",
+  "cn": "便携式扫描仪"
+ },
+ {
+  "en": "Possibly",
+  "note": "",
+  "cn": "可能地，或者"
+ },
+ {
+  "en": "Presence",
+  "note": "",
+  "cn": "出席"
+ },
+ {
+  "en": "Presentation files",
+  "note": "",
+  "cn": "演示文稿"
+ },
+ {
+  "en": "Presentation graphics",
+  "note": "",
+  "cn": "电子文稿程序"
+ },
+ {
+  "en": "Previous",
+  "note": "",
+  "cn": "早先的"
+ },
+ {
+  "en": "Primary storage",
+  "note": "",
+  "cn": "主存"
+ },
+ {
+  "en": "Procedures",
+  "note": "",
+  "cn": "规程"
+ },
+ {
+  "en": "Processor",
+  "note": "",
+  "cn": "处理机"
+ },
+ {
+  "en": "Produce",
+  "note": "",
+  "cn": "生产，产生"
+ },
+ {
+  "en": "Programming control lanugage",
+  "note": "",
+  "cn": "程序控制语言"
+ },
+ {
+  "en": "Protocol",
+  "note": "",
+  "cn": "协议"
+ },
+ {
+  "en": "Packets",
+  "note": "",
+  "cn": "数据包"
+ },
+ {
+  "en": "Parallel data transmission",
+  "note": "",
+  "cn": "平行数据传输"
+ },
+ {
+  "en": "Peer-to-peer network system",
+  "note": "",
+  "cn": "点对点网络系统"
+ },
+ {
+  "en": "Person-person auction site",
+  "note": "",
+  "cn": "个人对个人拍卖站点"
+ },
+ {
+  "en": "Physical security",
+  "note": "",
+  "cn": "物理安全"
+ },
+ {
+  "en": "Pits",
+  "note": "",
+  "cn": "凹面"
+ },
+ {
+  "en": "Plug-in",
+  "note": "",
+  "cn": "插件程序"
+ },
+ {
+  "en": "Polling",
+  "note": "",
+  "cn": "轮询"
+ },
+ {
+  "en": "Privacy",
+  "note": "",
+  "cn": "隐私权"
+ },
+ {
+  "en": "Precisely",
+  "note": "",
+  "cn": "精确的"
+ },
+ {
+  "en": "Proactive",
+  "note": "",
+  "cn": "主动地"
+ },
+ {
+  "en": "Process",
+  "note": "",
+  "cn": "进程"
+ },
+ {
+  "en": "Programmer",
+  "note": "",
+  "cn": "程序员"
+ },
+ {
+  "en": "Protection",
+  "note": "",
+  "cn": "保护"
+ },
+ {
+  "en": "Protocols",
+  "note": "",
+  "cn": "协议"
+ },
+ {
+  "en": "Provider",
+  "note": "",
+  "cn": "供应商"
+ },
+ {
+  "en": "Proxy server",
+  "note": "",
+  "cn": "代理服务"
+ },
+ {
+  "en": "Pull products",
+  "note": "",
+  "cn": "推取程序"
+ },
+ {
+  "en": "Push products",
+  "note": "",
+  "cn": "推送程序"
+ },
+ {
+  "en": "Queue",
+  "note": "",
+  "cn": "队列"
+ },
+ {
+  "en": "RAM cache",
+  "note": "",
+  "cn": "随机高速缓冲器"
+ },
+ {
+  "en": "Range",
+  "note": "",
+  "cn": "范围"
+ },
+ {
+  "en": "React",
+  "note": "",
+  "cn": "起反应，反抗"
+ },
+ {
+  "en": "Real",
+  "note": "",
+  "cn": "真实的"
+ },
+ {
+  "en": "Receipt",
+  "note": "",
+  "cn": "收到，接到"
+ },
+ {
+  "en": "Receptions",
+  "note": "",
+  "cn": "接待，欢迎"
+ },
+ {
+  "en": "Recipient",
+  "note": "",
+  "cn": "接受者"
+ },
+ {
+  "en": "Recognized",
+  "note": "",
+  "cn": "公认的"
+ },
+ {
+  "en": "Record",
+  "note": "",
+  "cn": "记录"
+ },
+ {
+  "en": "Regular",
+  "note": "",
+  "cn": "规则的"
+ },
+ {
+  "en": "Reference",
+  "note": "",
+  "cn": "涉及"
+ },
+ {
+  "en": "Refuse",
+  "note": "",
+  "cn": "拒绝"
+ },
+ {
+  "en": "Related",
+  "note": "",
+  "cn": "有关的，相关的"
+ },
+ {
+  "en": "Relational database",
+  "note": "",
+  "cn": "关系数据库"
+ },
+ {
+  "en": "Release",
+  "note": "",
+  "cn": "释放"
+ },
+ {
+  "en": "Reliable",
+  "note": "",
+  "cn": "可靠的"
+ },
+ {
+  "en": "Remaining",
+  "note": "",
+  "cn": "剩余"
+ },
+ {
+  "en": "Replace",
+  "note": "",
+  "cn": "替换"
+ },
+ {
+  "en": "Represent",
+  "note": "",
+  "cn": "表现，展示"
+ },
+ {
+  "en": "Reposition",
+  "note": "",
+  "cn": "改变…的位置"
+ },
+ {
+  "en": "Required",
+  "note": "",
+  "cn": "必须的"
+ },
+ {
+  "en": "Resolution",
+  "note": "",
+  "cn": "分辨率"
+ },
+ {
+  "en": "Resolve",
+  "note": "",
+  "cn": "解决，决心"
+ },
+ {
+  "en": "Respectively",
+  "note": "",
+  "cn": "分别地，各自地"
+ },
+ {
+  "en": "Resume",
+  "note": "",
+  "cn": "继续，恢复"
+ },
+ {
+  "en": "Row",
+  "note": "",
+  "cn": "行"
+ },
+ {
+  "en": "Readable",
+  "note": "",
+  "cn": "易读的，清晰的"
+ },
+ {
+  "en": "Read-only",
+  "note": "",
+  "cn": "只读"
+ },
+ {
+  "en": "Reformatting",
+  "note": "",
+  "cn": "重组"
+ },
+ {
+  "en": "Regional service provider",
+  "note": "",
+  "cn": "区域性服务供应商"
+ },
+ {
+  "en": "Repetitive motion injury",
+  "note": "",
+  "cn": "反复性动作损伤"
+ },
+ {
+  "en": "Retransmission",
+  "note": "",
+  "cn": "重新翻译"
+ },
+ {
+  "en": "Reverse directory",
+  "note": "",
+  "cn": "反向目录"
+ },
+ {
+  "en": "Right to financial privacy act of 1979",
+  "note": "",
+  "cn": "财产隐私法案"
+ },
+ {
+  "en": "Ring network",
+  "note": "",
+  "cn": "环形网"
+ },
+ {
+  "en": "Routine",
+  "note": "",
+  "cn": "例行的，一般的常规"
+ },
+ {
+  "en": "Scanner",
+  "note": "",
+  "cn": "扫描器"
+ },
+ {
+  "en": "Scheduled.",
+  "note": "",
+  "cn": "预定的"
+ },
+ {
+  "en": "Search",
+  "note": "",
+  "cn": "查找"
+ },
+ {
+  "en": "Second",
+  "note": "",
+  "cn": "秒"
+ },
+ {
+  "en": "Secondary storage device",
+  "note": "",
+  "cn": "辅助存储设备"
+ },
+ {
+  "en": "Segment",
+  "note": "",
+  "cn": "部分，线段"
+ },
+ {
+  "en": "Select",
+  "note": "",
+  "cn": "选择"
+ },
+ {
+  "en": "Semantics",
+  "note": "",
+  "cn": "语义学"
+ },
+ {
+  "en": "Semiconductor",
+  "note": "",
+  "cn": "半导体"
+ },
+ {
+  "en": "Semaphore",
+  "note": "",
+  "cn": "信号"
+ },
+ {
+  "en": "Sequence",
+  "note": "",
+  "cn": "序列，顺序"
+ },
+ {
+  "en": "Serial ports",
+  "note": "",
+  "cn": "串行端口"
+ },
+ {
+  "en": "Server",
+  "note": "",
+  "cn": "服务器"
+ },
+ {
+  "en": "Share",
+  "note": "",
+  "cn": "均分，一份"
+ },
+ {
+  "en": "Shared laser printer",
+  "note": "",
+  "cn": "共享激光打印机"
+ },
+ {
+  "en": "Sheet",
+  "note": "",
+  "cn": "表格"
+ },
+ {
+  "en": "Shut down",
+  "note": "",
+  "cn": "关机"
+ },
+ {
+  "en": "Significant",
+  "note": "",
+  "cn": "重要的"
+ },
+ {
+  "en": "Silicon chip",
+  "note": "",
+  "cn": "硅片"
+ },
+ {
+  "en": "Slots",
+  "note": "",
+  "cn": "插槽"
+ },
+ {
+  "en": "Smart card",
+  "note": "",
+  "cn": "智能卡"
+ },
+ {
+  "en": "Soft copy",
+  "note": "",
+  "cn": "软拷贝"
+ },
+ {
+  "en": "Software",
+  "note": "",
+  "cn": "软件"
+ },
+ {
+  "en": "Software suite",
+  "note": "",
+  "cn": "软件协议"
+ },
+ {
+  "en": "Sorting",
+  "note": "",
+  "cn": "排序"
+ },
+ {
+  "en": "Source file",
+  "note": "",
+  "cn": "源文件"
+ },
+ {
+  "en": "Special-purpose application",
+  "note": "",
+  "cn": "专用文件"
+ },
+ {
+  "en": "Specify",
+  "note": "",
+  "cn": "明确说明"
+ },
+ {
+  "en": "Spreadsheet",
+  "note": "",
+  "cn": "电子数据表"
+ },
+ {
+  "en": "Standard toolbar",
+  "note": "",
+  "cn": "标准工具栏"
+ },
+ {
+  "en": "Status",
+  "note": "",
+  "cn": "状态"
+ },
+ {
+  "en": "Stream",
+  "note": "",
+  "cn": "流"
+ },
+ {
+  "en": "Subsequent",
+  "note": "",
+  "cn": "后来的，并发的"
+ },
+ {
+  "en": "Success",
+  "note": "",
+  "cn": "成功，胜利"
+ },
+ {
+  "en": "Suitable",
+  "note": "",
+  "cn": "合适的"
+ },
+ {
+  "en": "Supercomputer",
+  "note": "",
+  "cn": "巨型机"
+ },
+ {
+  "en": "Support",
+  "note": "",
+  "cn": "支持"
+ },
+ {
+  "en": "Suspends",
+  "note": "",
+  "cn": "中止"
+ },
+ {
+  "en": "Symbol",
+  "note": "",
+  "cn": "符号，象征"
+ },
+ {
+  "en": "Synchronization",
+  "note": "",
+  "cn": "同步"
+ },
+ {
+  "en": "System cabine",
+  "note": "",
+  "cn": "系统箱"
+ },
+ {
+  "en": "System clock",
+  "note": "",
+  "cn": "时钟"
+ },
+ {
+  "en": "System software",
+  "note": "",
+  "cn": "系统软件"
+ },
+ {
+  "en": "Satellite",
+  "note": "",
+  "cn": "卫星无线连接服务"
+ },
+ {
+  "en": "Search engines",
+  "note": "",
+  "cn": "搜索引擎"
+ },
+ {
+  "en": "Search providers",
+  "note": "",
+  "cn": "搜索供应者"
+ },
+ {
+  "en": "Search services",
+  "note": "",
+  "cn": "搜索服务器"
+ },
+ {
+  "en": "Sectors",
+  "note": "",
+  "cn": "扇区"
+ },
+ {
+  "en": "Security",
+  "note": "",
+  "cn": "安全"
+ },
+ {
+  "en": "Sending and receiving devices",
+  "note": "",
+  "cn": "发送接收设备"
+ },
+ {
+  "en": "Sequential access",
+  "note": "",
+  "cn": "顺序存取"
+ },
+ {
+  "en": "Serial data transmission",
+  "note": "",
+  "cn": "单向通信"
+ },
+ {
+  "en": "Signature line",
+  "note": "",
+  "cn": "签名档"
+ },
+ {
+  "en": "Snoopware",
+  "note": "",
+  "cn": "监控软件"
+ },
+ {
+  "en": "Software copyright act of 1980",
+  "note": "",
+  "cn": "软件版权法案"
+ },
+ {
+  "en": "Software piracy",
+  "note": "",
+  "cn": "软件盗版"
+ },
+ {
+  "en": "Solid-state storage",
+  "note": "",
+  "cn": "固态存储器"
+ },
+ {
+  "en": "Specialized search engine",
+  "note": "",
+  "cn": "专用搜索引擎"
+ },
+ {
+  "en": "Spiders",
+  "note": "",
+  "cn": "网页爬虫"
+ },
+ {
+  "en": "Spike",
+  "note": "",
+  "cn": "尖峰电压"
+ },
+ {
+  "en": "Standard",
+  "note": "",
+  "cn": "标准的"
+ },
+ {
+  "en": "Star network",
+  "note": "",
+  "cn": "星型网"
+ },
+ {
+  "en": "State",
+  "note": "",
+  "cn": "说明，规定，状态"
+ },
+ {
+  "en": "Static",
+  "note": "",
+  "cn": "静态的，静止的"
+ },
+ {
+  "en": "Store",
+  "note": "",
+  "cn": "存储"
+ },
+ {
+  "en": "Strategy",
+  "note": "",
+  "cn": "方案"
+ },
+ {
+  "en": "Subject",
+  "note": "",
+  "cn": "主题"
+ },
+ {
+  "en": "Subscription address",
+  "note": "",
+  "cn": "预定地址"
+ },
+ {
+  "en": "Superdisk",
+  "note": "",
+  "cn": "超级磁盘"
+ },
+ {
+  "en": "Surfing",
+  "note": "",
+  "cn": "网上冲浪"
+ },
+ {
+  "en": "Surge protector",
+  "note": "",
+  "cn": "浪涌保护器"
+ },
+ {
+  "en": "Systems analyst",
+  "note": "",
+  "cn": "系统分析师"
+ },
+ {
+  "en": "Table",
+  "note": "",
+  "cn": "二维表"
+ },
+ {
+  "en": "Telephony",
+  "note": "",
+  "cn": "电话学"
+ },
+ {
+  "en": "Television boards",
+  "note": "",
+  "cn": "电视扩展卡"
+ },
+ {
+  "en": "Terminal",
+  "note": "",
+  "cn": "终端"
+ },
+ {
+  "en": "Template",
+  "note": "",
+  "cn": "模板"
+ },
+ {
+  "en": "Temporarily",
+  "note": "",
+  "cn": "临时地，暂时地"
+ },
+ {
+  "en": "Text entry",
+  "note": "",
+  "cn": "文本输入"
+ },
+ {
+  "en": "Thermal printer",
+  "note": "",
+  "cn": "热印刷"
+ },
+ {
+  "en": "Thin client",
+  "note": "",
+  "cn": "瘦客"
+ },
+ {
+  "en": "Thread",
+  "note": "",
+  "cn": "线程"
+ },
+ {
+  "en": "Toggle key",
+  "note": "",
+  "cn": "触发键"
+ },
+ {
+  "en": "Toolbar",
+  "note": "",
+  "cn": "工具栏"
+ },
+ {
+  "en": "Touch screen",
+  "note": "",
+  "cn": "触摸屏"
+ },
+ {
+  "en": "Trackball",
+  "note": "",
+  "cn": "追踪球"
+ },
+ {
+  "en": "Traditionally",
+  "note": "",
+  "cn": "习惯上"
+ },
+ {
+  "en": "Transmit",
+  "note": "",
+  "cn": "传输"
+ },
+ {
+  "en": "TV tuner card",
+  "note": "",
+  "cn": "电视调谐卡"
+ },
+ {
+  "en": "Two-state system",
+  "note": "",
+  "cn": "双状态系统"
+ },
+ {
+  "en": "Technical writer",
+  "note": "",
+  "cn": "技术协作者"
+ },
+ {
+  "en": "Technostress",
+  "note": "",
+  "cn": "重压技术"
+ },
+ {
+  "en": "Telnet",
+  "note": "",
+  "cn": "远程登录"
+ },
+ {
+  "en": "Temporary",
+  "note": "",
+  "cn": "临时的"
+ },
+ {
+  "en": "Time-sharing system",
+  "note": "",
+  "cn": "分时系统"
+ },
+ {
+  "en": "Topology",
+  "note": "",
+  "cn": "拓扑结构"
+ },
+ {
+  "en": "Tracks",
+  "note": "",
+  "cn": "磁道"
+ },
+ {
+  "en": "Truncated",
+  "note": "",
+  "cn": "截取"
+ },
+ {
+  "en": "Traditional cookies",
+  "note": "",
+  "cn": "传统的信息记录程序"
+ },
+ {
+  "en": "Twisted pair",
+  "note": "",
+  "cn": "双绞"
+ },
+ {
+  "en": "Unaffected.",
+  "note": "",
+  "cn": "自然的"
+ },
+ {
+  "en": "Unicode",
+  "note": "",
+  "cn": "统一字符标准"
+ },
+ {
+  "en": "Unidirectional",
+  "note": "",
+  "cn": "单向的"
+ },
+ {
+  "en": "Unique",
+  "note": "",
+  "cn": "独特的"
+ },
+ {
+  "en": "Uploading",
+  "note": "",
+  "cn": "上传"
+ },
+ {
+  "en": "Usenet",
+  "note": "",
+  "cn": "世界性新闻组网络"
+ },
+ {
+  "en": "Valid",
+  "note": "",
+  "cn": "有效的"
+ },
+ {
+  "en": "Variable",
+  "note": "",
+  "cn": "可变的，变数"
+ },
+ {
+  "en": "Version",
+  "note": "",
+  "cn": "版本"
+ },
+ {
+  "en": "Virtual memory",
+  "note": "",
+  "cn": "虚拟内存"
+ },
+ {
+  "en": "Video display screen",
+  "note": "",
+  "cn": "视频显示屏"
+ },
+ {
+  "en": "Voice recognition system",
+  "note": "",
+  "cn": "声音识别系统"
+ },
+ {
+  "en": "Vertical portal",
+  "note": "",
+  "cn": "纵向门户"
+ },
+ {
+  "en": "Video privacy protection act of 1988",
+  "note": "",
+  "cn": "视频隐私权保护法案"
+ },
+ {
+  "en": "Virus checker",
+  "note": "",
+  "cn": "病毒检测程序"
+ },
+ {
+  "en": "Virus",
+  "note": "",
+  "cn": "病毒"
+ },
+ {
+  "en": "Voiceband",
+  "note": "",
+  "cn": "音频带宽"
+ },
+ {
+  "en": "Volatile storage",
+  "note": "",
+  "cn": "易失性存储"
+ },
+ {
+  "en": "Voltage surge",
+  "note": "",
+  "cn": "电涌"
+ },
+ {
+  "en": "wait",
+  "note": "",
+  "cn": "等待"
+ },
+ {
+  "en": "Wand reader",
+  "note": "",
+  "cn": "条形码读入"
+ },
+ {
+  "en": "Wall",
+  "note": "",
+  "cn": "警告"
+ },
+ {
+  "en": "Web",
+  "note": "",
+  "cn": "网络；万维网"
+ },
+ {
+  "en": "Web appliance",
+  "note": "",
+  "cn": "环球网设备"
+ },
+ {
+  "en": "Web page",
+  "note": "",
+  "cn": "网页"
+ },
+ {
+  "en": "Web site address",
+  "note": "",
+  "cn": "网络地址"
+ },
+ {
+  "en": "Web terminal",
+  "note": "",
+  "cn": "环球网终端"
+ },
+ {
+  "en": "Webcam",
+  "note": "",
+  "cn": "摄像头"
+ },
+ {
+  "en": "What-if analysis",
+  "note": "",
+  "cn": "假定分析"
+ },
+ {
+  "en": "Wireless revolution",
+  "note": "",
+  "cn": "无线革命"
+ },
+ {
+  "en": "Word",
+  "note": "",
+  "cn": "字长"
+ },
+ {
+  "en": "Word processing",
+  "note": "",
+  "cn": "文字处理"
+ },
+ {
+  "en": "Word wrap",
+  "note": "",
+  "cn": "自动换行"
+ },
+ {
+  "en": "Worksheet file",
+  "note": "",
+  "cn": "工作文件"
+ },
+ {
+  "en": "Web auctions",
+  "note": "",
+  "cn": "网上拍卖"
+ },
+ {
+  "en": "Web broadcasters",
+  "note": "",
+  "cn": "网络广播"
+ },
+ {
+  "en": "Web portals",
+  "note": "",
+  "cn": "门户网站"
+ },
+ {
+  "en": "Web sites",
+  "note": "",
+  "cn": "网站"
+ },
+ {
+  "en": "Web storefront creation packages",
+  "note": "",
+  "cn": "网上商店创建包"
+ },
+ {
+  "en": "Web storefronts",
+  "note": "",
+  "cn": "网上商店"
+ },
+ {
+  "en": "Web utilities",
+  "note": "",
+  "cn": "网上应用程序"
+ },
+ {
+  "en": "Web-downloading utilities",
+  "note": "",
+  "cn": "网页下载应用程序"
+ },
+ {
+  "en": "Webmaster web",
+  "note": "",
+  "cn": "站点管理员"
+ },
+ {
+  "en": "Wireless modems",
+  "note": "",
+  "cn": "无线调制解调器"
+ },
+ {
+  "en": "Wireless service provider",
+  "note": "",
+  "cn": "无线服务供应商"
+ },
+ {
+  "en": "World wide web",
+  "note": "",
+  "cn": "万维网"
+ },
+ {
+  "en": "Worm",
+  "note": "",
+  "cn": "蠕虫病毒"
+ },
+ {
+  "en": "Write-protect notch",
+  "note": "",
+  "cn": "写保护口"
+ },
+ {
+  "en": "IT",
+  "note": "information technology",
+  "cn": "信息技术"
+ },
+ {
+  "en": "CD",
+  "note": "compact disc",
+  "cn": "压缩盘"
+ },
+ {
+  "en": "PDA",
+  "note": "personal digital assistant",
+  "cn": "个人数字助理"
+ },
+ {
+  "en": "RAM",
+  "note": "random access memory",
+  "cn": "随机存储器"
+ },
+ {
+  "en": "WWW",
+  "note": "World Wide Web",
+  "cn": "万维网"
+ },
+ {
+  "en": "DBMS",
+  "note": "database management system",
+  "cn": "数据库管理系统"
+ },
+ {
+  "en": "HTML",
+  "note": "Hypertext Markup Language",
+  "cn": "超文本标示语言"
+ },
+ {
+  "en": "OLE",
+  "note": "object linking and embedding",
+  "cn": "对象链接入"
+ },
+ {
+  "en": "SQL",
+  "note": "structured query language",
+  "cn": "结构化查询语言"
+ },
+ {
+  "en": "URL",
+  "note": "uniform resouice locator",
+  "cn": "统一资源定位器"
+ },
+ {
+  "en": "AGP",
+  "note": "accelerated graphics port",
+  "cn": "加速图形接口"
+ },
+ {
+  "en": "ALU",
+  "note": "arithmetic-logic unit",
+  "cn": "算术逻辑单元"
+ },
+ {
+  "en": "CPU",
+  "note": "central processing unit",
+  "cn": "中央处理器"
+ },
+ {
+  "en": "CMOS",
+  "note": "complementary metal-oxide semiconductor",
+  "cn": "互补金属氧化物半导体"
+ },
+ {
+  "en": "CISC",
+  "note": "complex instruction set computer",
+  "cn": "复杂指令集计算机"
+ },
+ {
+  "en": "HPSB",
+  "note": "high performance serial bus",
+  "cn": "高性能串行总线"
+ },
+ {
+  "en": "ISA",
+  "note": "industry standard architecture",
+  "cn": "工业标准结构体系"
+ },
+ {
+  "en": "PCI",
+  "note": "peripheral component interconnect",
+  "cn": "外部设备互连总线"
+ },
+ {
+  "en": "PCMCIA",
+  "note": "Personal Memory Card International Association",
+  "cn": "个人计算机存储卡国际协会"
+ },
+ {
+  "en": "ROM",
+  "note": "read-only memory",
+  "cn": "只读存储器"
+ },
+ {
+  "en": "USB",
+  "note": "universal serial bus",
+  "cn": "通用串行总线"
+ },
+ {
+  "en": "CRT",
+  "note": "cathode-ray tube",
+  "cn": "阴极射线管"
+ },
+ {
+  "en": "HDTV",
+  "note": "high-definition television",
+  "cn": "高清晰度电视"
+ },
+ {
+  "en": "LCD",
+  "note": "liquid crystal display monitor",
+  "cn": "液晶显示器"
+ },
+ {
+  "en": "MICR magnetic-ink character recognition",
+  "note": "",
+  "cn": "磁墨水字符识别器"
+ },
+ {
+  "en": "OCR",
+  "note": "optical-character recognition",
+  "cn": "光电字符识别器"
+ },
+ {
+  "en": "OMR",
+  "note": "optical-mark recognition",
+  "cn": "光标阅读器"
+ },
+ {
+  "en": "TFT",
+  "note": "thin film transistor monitor",
+  "cn": "薄膜晶体管显示器"
+ },
+ {
+  "en": "Zip disk",
+  "note": "",
+  "cn": "压缩磁盘"
+ },
+ {
+  "en": "Domain name system",
+  "note": "DNS",
+  "cn": "域名服务器"
+ },
+ {
+  "en": "File transfer protocol",
+  "note": "FTP",
+  "cn": "文件传送协议"
+ },
+ {
+  "en": "Hypertext markup language",
+  "note": "HTML",
+  "cn": "超文本链接标识语言"
+ },
+ {
+  "en": "Local area network",
+  "note": "LAN",
+  "cn": "局域网"
+ },
+ {
+  "en": "Internet relay chat",
+  "note": "IRC",
+  "cn": "互联网多线交谈"
+ },
+ {
+  "en": "Metropolitan area network",
+  "note": "MAN",
+  "cn": "城域网"
+ },
+ {
+  "en": "Network operation system",
+  "note": "NOS",
+  "cn": "网络操作系统"
+ },
+ {
+  "en": "Uniform resource locator",
+  "note": "URL",
+  "cn": "统一资源定位器"
+ },
+ {
+  "en": "Wide area network",
+  "note": "WAN",
+  "cn": "广域网"
+ },
+ {
+  "en": "Web server",
+  "note": "",
+  "cn": "服务器"
+ },
+ {
+  "en": "well-connected",
+  "note": "",
+  "cn": "连接良好"
+ },
+ {
+  "en": "well-known services",
+  "note": "",
+  "cn": "公认的服务"
+ },
+ {
+  "en": "wide area network, WAN",
+  "note": "",
+  "cn": "广域网"
+ },
+ {
+  "en": "wildcard character",
+  "note": "",
+  "cn": "通配符"
+ },
+ {
+  "en": "wildcarding",
+  "note": "",
+  "cn": "通配符方式"
+ },
+ {
+  "en": "window menu",
+  "note": "",
+  "cn": "窗口菜单"
+ },
+ {
+  "en": "Windows 2000 Task Manager",
+  "note": "",
+  "cn": "任务管理器"
+ },
+ {
+  "en": "Windows Internet Name Service, WINS",
+  "note": "",
+  "cn": "命名服务"
+ },
+ {
+  "en": "Windows Management Instrumentation, WMI",
+  "note": "",
+  "cn": "管理规范"
+ },
+ {
+  "en": "Windows Media Services",
+  "note": "",
+  "cn": "服务"
+ },
+ {
+  "en": "WINS, Windows Internet Name Service",
+  "note": "",
+  "cn": "命名服务"
+ },
+ {
+  "en": "WINS proxy",
+  "note": "",
+  "cn": "代理"
+ },
+ {
+  "en": "WINS resource",
+  "note": "",
+  "cn": "资源"
+ },
+ {
+  "en": "wireless communication",
+  "note": "",
+  "cn": "无线通讯"
+ },
+ {
+  "en": "WMI, Windows Management Instrumentation",
+  "note": "",
+  "cn": "管理规范"
+ },
+ {
+  "en": "workgroup",
+  "note": "",
+  "cn": "工作组"
+ },
+ {
+  "en": "X.509v3 certificate",
+  "note": "",
+  "cn": "证书"
+ },
+ {
+  "en": "XOR, exclusive OR",
+  "note": "",
+  "cn": "异或"
+ },
+ {
+  "en": "zone",
+  "note": "",
+  "cn": "区域"
+ },
+ {
+  "en": "zone list",
+  "note": "",
+  "cn": "区域列表"
+ },
+ {
+  "en": "zone transfer",
+  "note": "",
+  "cn": "区域传送"
+ },
+ {
+  "en": "TCP",
+  "note": "Transmission Control Protocol",
+  "cn": "传输控制协议，基于连接的服务"
+ },
+ {
+  "en": "UDP",
+  "note": "User Datagram Protocol",
+  "cn": "用户数据报协议，无连接的服务"
+ },
+ {
+  "en": "IP",
+  "note": "Internet Protocol",
+  "cn": "Internet协议，信息传递机制"
+ }
+]

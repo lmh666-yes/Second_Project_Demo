@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>计算机专业英语词汇 · 刷词（手机版）</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;font-family:"Microsoft YaHei","PingFang SC",sans-serif;background:linear-gradient(165deg,#e8f0fa 0%,#f6f8fc 45%,#eaf6ef 100%)}
+#app{display:flex;flex-direction:column;height:100%;max-width:520px;margin:0 auto}
+/* 顶部 */
+header{background:linear-gradient(135deg,#14486e 0%,#1a5276 55%,#2980b9 100%);color:#fff;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;box-shadow:0 3px 12px rgba(26,82,118,.28)}
+header .title{font-size:16px;font-weight:bold;letter-spacing:.5px}
+header .stat{font-size:11px;opacity:.95;background:rgba(255,255,255,.16);padding:3px 9px;border-radius:20px}
+/* 模式栏 */
+.tabs{display:flex;background:#2c3e50}
+.tabs button{flex:1;padding:11px 0;border:none;background:transparent;color:#bdc3c7;font-size:14px;cursor:pointer;transition:color .25s,background .25s}
+.tabs button.active{background:#1a5276;color:#fff;font-weight:bold;box-shadow:inset 0 -3px 0 #58d68d}
+/* 考试栏 + 题号导航 */
+#examBar{display:none;background:#34495e;padding:6px 8px;gap:6px}
+#examBar button{flex:1;border:none;border-radius:8px;padding:8px;color:#fff;font-size:13px;cursor:pointer;transition:transform .12s,filter .2s}
+#examBar button:active{transform:scale(.96)}
+#qnav{display:none;flex-wrap:wrap;gap:5px;padding:8px 10px;background:#fff;border-radius:12px;margin:0 12px;box-shadow:0 1px 5px rgba(0,0,0,.06);max-height:130px;overflow-y:auto}
+#qnav button{width:32px;height:32px;border:none;border-radius:9px;font-size:12px;cursor:pointer;transition:transform .12s,filter .2s}
+#qnav button:active{transform:scale(.92)}
+#qnav button.un{background:#f1f3f5;color:#555}
+#qnav button.ok{background:#27ae60;color:#fff}
+#qnav button.no{background:#c62828;color:#fff}
+/* 主体 */
+main{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+.head{color:#1a5276;font-size:13px;font-weight:bold}
+/* 单词卡片 */
+.wordcard{background:#fff;border-radius:14px;padding:16px 16px 14px;box-shadow:0 2px 12px rgba(0,0,0,.07);animation:fadeSlide .3s ease}
+.word{font-size:26px;font-weight:bold;color:#14486e;line-height:1.35;word-break:break-word}
+.note{font-size:12px;color:#7f8c8d;margin-top:6px;line-height:1.5}
+/* 提示/说明卡（考试说明、成绩页） */
+.card{background:#fff;border-radius:14px;padding:14px 16px;font-size:14px;line-height:1.75;white-space:pre-wrap;word-break:break-word;box-shadow:0 2px 12px rgba(0,0,0,.07);animation:fadeSlide .3s ease}
+/* 选项 */
+#opts{display:flex;flex-direction:column;gap:9px}
+.opt{background:#fff;border:1.5px solid #e3e8ee;border-radius:12px;padding:13px 14px;font-size:15px;word-break:break-word;overflow-wrap:break-word;cursor:pointer;transition:transform .12s,border-color .2s,background .2s,box-shadow .2s;box-shadow:0 1px 4px rgba(26,82,118,.06)}
+.opt:active{transform:scale(.985)}
+.opt.right{background:#e8f8f0;color:#1a7f37;border-color:#2ecc71;font-weight:bold;animation:pop .3s ease}
+.opt.wrong{background:#fdecea;color:#c62828;border-color:#e74c3c;animation:shake .3s ease}
+/* 填空题作答区 */
+#answerBox{display:none;flex-direction:column;gap:10px}
+#answerBox input{width:100%;border:1.5px solid #d6dde5;border-radius:12px;padding:14px;font-size:17px;font-family:inherit;background:#fffdf5;outline:none;transition:border-color .2s,box-shadow .2s}
+#answerBox input:focus{border-color:#2471a3;box-shadow:0 0 0 3px rgba(36,113,163,.14)}
+#answerBox input:disabled{background:#f4f6f7;color:#555}
+/* 反馈 */
+#fb{background:#fff;border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.75;display:none;box-shadow:0 2px 10px rgba(0,0,0,.06);animation:fadeSlide .3s ease;word-break:break-word}
+#fb .tag-ok{color:#1a7f37;font-weight:bold}
+#fb .tag-no{color:#c62828;font-weight:bold}
+#fb .k{color:#1a5276;font-weight:bold}
+/* 小提示 toast */
+#toast{position:fixed;left:50%;top:64px;transform:translateX(-50%) translateY(-12px);background:rgba(26,82,118,.94);color:#fff;font-size:13px;padding:9px 16px;border-radius:20px;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:120;max-width:86%;text-align:center}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* 底部操作栏 */
+footer{background:#fff;padding:9px;display:flex;gap:6px;box-shadow:0 -2px 8px rgba(0,0,0,.08)}
+footer button{flex:1;border:none;border-radius:10px;padding:12px 2px;font-size:12.5px;color:#fff;cursor:pointer;white-space:nowrap;transition:transform .12s,filter .2s}
+footer button:active{transform:scale(.95);filter:brightness(.92)}
+/* 弹窗 */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:99;animation:fadeIn .18s ease}
+.modal.show{display:flex}
+.mbox{background:#fff;border-radius:16px;width:86%;max-width:360px;padding:18px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,.25);animation:zoomIn .25s ease}
+.mbox h3{font-size:16px;margin-bottom:8px}
+.mbox p{font-size:14px;line-height:1.7;color:#333;margin-bottom:14px;white-space:pre-wrap;text-align:left}
+.mbox .btns{display:flex;gap:10px;justify-content:center}
+.mbox button{border:none;border-radius:10px;padding:10px 22px;font-size:14px;color:#fff;cursor:pointer;transition:transform .12s,filter .2s}
+.mbox button:active{transform:scale(.95)}
+.chip{border:none;border-radius:20px;padding:7px 13px;margin:3px;background:linear-gradient(135deg,#c62828,#e74c3c);color:#fff;font-size:12px;cursor:pointer;transition:transform .12s,filter .2s;box-shadow:0 2px 6px rgba(198,40,40,.25)}
+.chip:active{transform:scale(.94)}
+/* 动画 */
+@keyframes fadeSlide{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes pop{0%{transform:scale(.9)}55%{transform:scale(1.05)}100%{transform:scale(1)}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes zoomIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+@keyframes staggerIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="title">📖 计算机专业英语词汇</div>
+    <div class="stat" id="stat">-</div>
+  </header>
+  <div class="tabs" id="tabs">
+    <button data-mode="顺序" class="active">顺序</button>
+    <button data-mode="错词">错词</button>
+    <button data-mode="考试">考试</button>
+  </div>
+  <div id="examBar"></div>
+  <div id="qnav"></div>
+  <main id="main">
+    <div class="head" id="head"></div>
+    <div class="wordcard" id="wordcard">
+      <div class="word" id="word"></div>
+      <div class="note" id="note"></div>
+    </div>
+    <div class="card" id="card" style="display:none"></div>
+    <div id="opts"></div>
+    <div id="answerBox">
+      <input id="answerInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="输入中文意思后点「确认答案」">
+    </div>
+    <div id="fb"></div>
+  </main>
+  <footer id="footer"></footer>
+</div>
+<div id="toast"></div>
+<div class="modal" id="modal"><div class="mbox" id="mbox"></div></div>
+
+<script>
+const BANK=[{"id": "w0001", "en": "Absolute", "note": "", "cn": "绝对"}, {"id": "w0002", "en": "Access", "note": "", "cn": "存取"}, {"id": "w0003", "en": "Access time", "note": "", "cn": "存取时间"}, {"id": "w0004", "en": "Accompanying", "note": "", "cn": "陪同，伴随"}, {"id": "w0005", "en": "According to", "note": "", "cn": "根据"}, {"id": "w0006", "en": "Accuracy", "note": "", "cn": "准确性"}, {"id": "w0007", "en": "Acquire", "note": "", "cn": "获得"}, {"id": "w0008", "en": "Active-matrix", "note": "", "cn": "主动矩阵"}, {"id": "w0009", "en": "Adapter cards", "note": "", "cn": "适配卡"}, {"id": "w0010", "en": "Add-ons", "note": "", "cn": "插件"}, {"id": "w0011", "en": "Address", "note": "", "cn": "地址"}, {"id": "w0012", "en": "Ad network cookies", "note": "", "cn": "广告网络信息记录软件"}, {"id": "w0013", "en": "Advanced application", "note": "", "cn": "高级应用"}, {"id": "w0014", "en": "Agents", "note": "", "cn": "代理"}, {"id": "w0015", "en": "Allocated", "note": "", "cn": "分配"}, {"id": "w0016", "en": "Analog signals", "note": "", "cn": "模拟信号"}, {"id": "w0017", "en": "Analytical graph", "note": "", "cn": "分析图表"}, {"id": "w0018", "en": "Analyze", "note": "", "cn": "分析"}, {"id": "w0019", "en": "Animations", "note": "", "cn": "动画"}, {"id": "w0020", "en": "Append", "note": "", "cn": "追加，添加"}, {"id": "w0021", "en": "Applets", "note": "", "cn": "程序"}, {"id": "w0022", "en": "Application software", "note": "", "cn": "应用软件"}, {"id": "w0023", "en": "Appropriate", "note": "", "cn": "适当的"}, {"id": "w0024", "en": "Architectures", "note": "", "cn": "布局，格局"}, {"id": "w0025", "en": "Argument", "note": "", "cn": "论据，参数"}, {"id": "w0026", "en": "Arithmetic operations", "note": "", "cn": "算术运算"}, {"id": "w0027", "en": "Arranges", "note": "", "cn": "安排"}, {"id": "w0028", "en": "Assembler", "note": "", "cn": "汇编语言，装配器"}, {"id": "w0029", "en": "Assign", "note": "", "cn": "分配"}, {"id": "w0030", "en": "Associate with", "note": "", "cn": "联合"}, {"id": "w0031", "en": "Asynchronous communications port", "note": "", "cn": "异步通信端口"}, {"id": "w0032", "en": "At least", "note": "", "cn": "至少"}, {"id": "w0033", "en": "Attach", "note": "", "cn": "系上，贴上"}, {"id": "w0034", "en": "Attachment", "note": "", "cn": "附件"}, {"id": "w0035", "en": "Attempt", "note": "", "cn": "尝试"}, {"id": "w0036", "en": "Attribute", "note": "", "cn": "属性"}, {"id": "w0037", "en": "Audio-output device", "note": "", "cn": "音频输出设备"}, {"id": "w0038", "en": "Automatically", "note": "", "cn": "自动地"}, {"id": "w0039", "en": "Available", "note": "", "cn": "有用的"}, {"id": "w0040", "en": "Backup tape cartridge units", "note": "", "cn": "备份磁带盒单元"}, {"id": "w0041", "en": "Bandwidth", "note": "", "cn": "带宽"}, {"id": "w0042", "en": "Bar code", "note": "", "cn": "条形码"}, {"id": "w0043", "en": "Bar code reader", "note": "", "cn": "条形码读卡器"}, {"id": "w0044", "en": "Basic application", "note": "", "cn": "基础程序"}, {"id": "w0045", "en": "Behavior", "note": "", "cn": "行为"}, {"id": "w0046", "en": "Below", "note": "", "cn": "在…下面"}, {"id": "w0047", "en": "Binary", "note": "", "cn": "二进制"}, {"id": "w0048", "en": "Binary coding schemes", "note": "", "cn": "二进制译码方案"}, {"id": "w0049", "en": "Binary system", "note": "", "cn": "二进制系统"}, {"id": "w0050", "en": "Bind", "note": "", "cn": "绑定"}, {"id": "w0051", "en": "Bit", "note": "", "cn": "比特"}, {"id": "w0052", "en": "Blocked", "note": "", "cn": "堵塞的"}, {"id": "w0053", "en": "Bluetooth", "note": "", "cn": "蓝牙"}, {"id": "w0054", "en": "Broadband", "note": "", "cn": "宽带"}, {"id": "w0055", "en": "Browser", "note": "", "cn": "浏览器"}, {"id": "w0056", "en": "Bus line", "note": "", "cn": "总线"}, {"id": "w0057", "en": "Business-to-business", "note": "", "cn": "企业对企业电子商务"}, {"id": "w0058", "en": "Business-to-consumer", "note": "", "cn": "企业对消费者"}, {"id": "w0059", "en": "Byte", "note": "", "cn": "字节"}, {"id": "w0060", "en": "Cables", "note": "", "cn": "连线"}, {"id": "w0061", "en": "Cable modems", "note": "", "cn": "有线调制解调器"}, {"id": "w0062", "en": "Cache", "note": "", "cn": "隐藏，缓存"}, {"id": "w0063", "en": "Carpal tunnel syndrome", "note": "", "cn": "腕骨神经综合症"}, {"id": "w0064", "en": "Cause", "note": "", "cn": "引起"}, {"id": "w0065", "en": "CD-ROM", "note": "", "cn": "可记录光盘"}, {"id": "w0066", "en": "CD-RW", "note": "", "cn": "可重写光盘"}, {"id": "w0067", "en": "CD-R", "note": "", "cn": "可记录压缩光盘"}, {"id": "w0068", "en": "Cell", "note": "", "cn": "单元箱"}, {"id": "w0069", "en": "Chain printer", "note": "", "cn": "链式打印机"}, {"id": "w0070", "en": "Channel", "note": "", "cn": "信道"}, {"id": "w0071", "en": "Character and recognition device", "note": "", "cn": "字符标识识别设备"}, {"id": "w0072", "en": "Characteristics", "note": "", "cn": "特性"}, {"id": "w0073", "en": "Chart", "note": "", "cn": "图表"}, {"id": "w0074", "en": "Chassis", "note": "", "cn": "支架"}, {"id": "w0075", "en": "Chat group", "note": "", "cn": "谈话群组"}, {"id": "w0076", "en": "Check", "note": "", "cn": "检查"}, {"id": "w0077", "en": "Chip", "note": "", "cn": "芯片"}, {"id": "w0078", "en": "Chlorofluorocarbons", "note": "CFCs", "cn": "氯氟甲烷"}, {"id": "w0079", "en": "Clarity", "note": "", "cn": "清晰度"}, {"id": "w0080", "en": "Client", "note": "", "cn": "客户端"}, {"id": "w0081", "en": "Closed architecture", "note": "", "cn": "封闭式体系结构"}, {"id": "w0082", "en": "Coaxial cable", "note": "", "cn": "同轴电缆"}, {"id": "w0083", "en": "Cold site", "note": "", "cn": "冷网站"}, {"id": "w0084", "en": "Column", "note": "", "cn": "列"}, {"id": "w0085", "en": "Combination", "note": "", "cn": "结合，联合"}, {"id": "w0086", "en": "Combination key", "note": "", "cn": "结合键"}, {"id": "w0087", "en": "Command", "note": "", "cn": "命令"}, {"id": "w0088", "en": "Commerce servers", "note": "", "cn": "商业服务器"}, {"id": "w0089", "en": "Communication channel", "note": "", "cn": "信道"}, {"id": "w0090", "en": "Communication systems", "note": "", "cn": "信息系统"}, {"id": "w0091", "en": "Compact disc", "note": "", "cn": "光盘"}, {"id": "w0092", "en": "Completed", "note": "", "cn": "完整的"}, {"id": "w0093", "en": "Computer abuse amendments act of 1994", "note": "", "cn": "计算机滥用法案"}, {"id": "w0094", "en": "Computer competency", "note": "", "cn": "计算机能力"}, {"id": "w0095", "en": "Computer crime", "note": "", "cn": "计算机犯罪"}, {"id": "w0096", "en": "Computer ethics", "note": "", "cn": "计算机道德"}, {"id": "w0097", "en": "Computer fraud and abuse act of 1986", "note": "", "cn": "计算机欺诈和滥用法案"}, {"id": "w0098", "en": "Computer matching and privacy protection act of 1988", "note": "", "cn": "计算机查找和隐私保护法案"}, {"id": "w0099", "en": "Computer network", "note": "", "cn": "计算机网络"}, {"id": "w0100", "en": "Computer support specialist", "note": "", "cn": "计算机支持专家"}, {"id": "w0101", "en": "Computer technician", "note": "", "cn": "计算机技术人员"}, {"id": "w0102", "en": "Computer trainer", "note": "", "cn": "计算机教师"}, {"id": "w0103", "en": "Computing", "note": "", "cn": "计算，使用计算机"}, {"id": "w0104", "en": "Condition", "note": "", "cn": "条件，环境"}, {"id": "w0105", "en": "Config", "note": "", "cn": "配置"}, {"id": "w0106", "en": "Connect", "note": "", "cn": "连接"}, {"id": "w0107", "en": "Connectivity", "note": "", "cn": "连接，结点"}, {"id": "w0108", "en": "Connection device", "note": "", "cn": "连接设备"}, {"id": "w0109", "en": "Considered", "note": "", "cn": "考虑过的"}, {"id": "w0110", "en": "Consist", "note": "", "cn": "组成"}, {"id": "w0111", "en": "Consumer-to-consumer", "note": "", "cn": "个人对个人"}, {"id": "w0112", "en": "Contain", "note": "", "cn": "包含"}, {"id": "w0113", "en": "Continuous-speech recognition system", "note": "", "cn": "连续语言识别系统"}, {"id": "w0114", "en": "Control", "note": "", "cn": "控制"}, {"id": "w0115", "en": "Control unit", "note": "", "cn": "操纵单元"}, {"id": "w0116", "en": "Converts", "note": "", "cn": "转换"}, {"id": "w0117", "en": "Cookies-cutter programs", "note": "", "cn": "信息记录截取程序"}, {"id": "w0118", "en": "Cookies", "note": "", "cn": "信息记录程序"}, {"id": "w0119", "en": "Cordless or wireless mouse", "note": "", "cn": "无线鼠标"}, {"id": "w0120", "en": "Corresponding", "note": "", "cn": "符合的，对应的"}, {"id": "w0121", "en": "Cracker", "note": "", "cn": "解密高手"}, {"id": "w0122", "en": "Cumulative trauma disorder", "note": "", "cn": "积累性损伤错乱"}, {"id": "w0123", "en": "Current", "note": "", "cn": "当前的"}, {"id": "w0124", "en": "Cybercash", "note": "", "cn": "电子现金"}, {"id": "w0125", "en": "Cyberspace", "note": "", "cn": "计算机空间"}, {"id": "w0126", "en": "Cynic", "note": "", "cn": "愤世嫉俗者"}, {"id": "w0127", "en": "Database", "note": "", "cn": "数据库"}, {"id": "w0128", "en": "Database files", "note": "", "cn": "数据库文件"}, {"id": "w0129", "en": "Database manager", "note": "", "cn": "数据库管理"}, {"id": "w0130", "en": "Data bus", "note": "", "cn": "数据总线"}, {"id": "w0131", "en": "Datagrams", "note": "", "cn": "数据报"}, {"id": "w0132", "en": "Data projector", "note": "", "cn": "数码放映机"}, {"id": "w0133", "en": "Date", "note": "", "cn": "日期"}, {"id": "w0134", "en": "Decrement", "note": "", "cn": "减少量"}, {"id": "w0135", "en": "Define", "note": "", "cn": "定义，详细说明"}, {"id": "w0136", "en": "Delivered", "note": "", "cn": "传递"}, {"id": "w0137", "en": "Dependency", "note": "", "cn": "依靠，附属地"}, {"id": "w0138", "en": "Detaches", "note": "", "cn": "分离"}, {"id": "w0139", "en": "Directive", "note": "", "cn": "指挥的，管理的"}, {"id": "w0140", "en": "Describe", "note": "", "cn": "描述"}, {"id": "w0141", "en": "Descriptor", "note": "", "cn": "描述符"}, {"id": "w0142", "en": "Desktop system unit", "note": "", "cn": "台式电脑系统单元"}, {"id": "w0143", "en": "Destination file", "note": "", "cn": "目标文件"}, {"id": "w0144", "en": "Device-dependent", "note": "", "cn": "独立设备"}, {"id": "w0145", "en": "Details", "note": "", "cn": "细节"}, {"id": "w0146", "en": "Determined", "note": "", "cn": "决定的"}, {"id": "w0147", "en": "Digital cameras", "note": "", "cn": "数码照相机"}, {"id": "w0148", "en": "Digital notebooks", "note": "", "cn": "数字笔记本"}, {"id": "w0149", "en": "Digital bideo camera", "note": "", "cn": "数码摄影机"}, {"id": "w0150", "en": "Disallowed", "note": "", "cn": "不允许"}, {"id": "w0151", "en": "Discrete-speech recognition system", "note": "", "cn": "不连续语言识别系统"}, {"id": "w0152", "en": "Distinct", "note": "", "cn": "清楚的，明显的"}, {"id": "w0153", "en": "Document", "note": "", "cn": "文档"}, {"id": "w0154", "en": "Document files", "note": "", "cn": "文档文件"}, {"id": "w0155", "en": "Domain", "note": "", "cn": "范围"}, {"id": "w0156", "en": "Dot-matrix printer", "note": "", "cn": "点矩阵式打印机"}, {"id": "w0157", "en": "Dual-scan monitor", "note": "", "cn": "双向扫描显示器"}, {"id": "w0158", "en": "Dumb terminal", "note": "", "cn": "非智能终端"}, {"id": "w0159", "en": "Duplicating", "note": "", "cn": "副本，复制"}, {"id": "w0160", "en": "During", "note": "", "cn": "在…期间"}, {"id": "w0161", "en": "Data security", "note": "", "cn": "数据安全"}, {"id": "w0162", "en": "Data transmission specifications", "note": "", "cn": "数据传输说明"}, {"id": "w0163", "en": "Database administrator", "note": "", "cn": "数据库管理员"}, {"id": "w0164", "en": "Datagram", "note": "", "cn": "数据电报"}, {"id": "w0165", "en": "Dataplay", "note": "", "cn": "数字播放器"}, {"id": "w0166", "en": "Demodulation", "note": "", "cn": "解调"}, {"id": "w0167", "en": "Denial of service attack", "note": "", "cn": "拒绝服务攻击"}, {"id": "w0168", "en": "Dial-up service", "note": "", "cn": "拨号服务"}, {"id": "w0169", "en": "Digital cash", "note": "", "cn": "数字现金"}, {"id": "w0170", "en": "Digital signals", "note": "", "cn": "数字信号"}, {"id": "w0171", "en": "Digital subscriber line", "note": "", "cn": "数字用户线路"}, {"id": "w0172", "en": "Digital versatile disc", "note": "", "cn": "数字化通用磁盘"}, {"id": "w0173", "en": "Digital video disc", "note": "", "cn": "数字化视频光盘"}, {"id": "w0174", "en": "Direct access", "note": "", "cn": "直接存取"}, {"id": "w0175", "en": "Directory", "note": "", "cn": "目录"}, {"id": "w0176", "en": "Directory search", "note": "", "cn": "目录搜索"}, {"id": "w0177", "en": "Disaster recovery plan", "note": "", "cn": "灾难恢复计划"}, {"id": "w0178", "en": "Disk caching", "note": "", "cn": "磁盘驱动器高速缓存"}, {"id": "w0179", "en": "Diskette", "note": "", "cn": "磁盘"}, {"id": "w0180", "en": "Disk", "note": "", "cn": "磁碟"}, {"id": "w0181", "en": "Distributed data processing system", "note": "", "cn": "分部数据处理系统"}, {"id": "w0182", "en": "Distributed processing", "note": "", "cn": "分布处理"}, {"id": "w0183", "en": "Domain code", "note": "", "cn": "域代码"}, {"id": "w0184", "en": "Downloading", "note": "", "cn": "下载"}, {"id": "w0185", "en": "Dynamic", "note": "", "cn": "动态的"}, {"id": "w0186", "en": "DVD", "note": "digital bersatile", "cn": "数字化通用磁盘；数字化通用光盘"}, {"id": "w0187", "en": "DVD-R", "note": "", "cn": "可写DVD"}, {"id": "w0188", "en": "DVD-RAM DVD", "note": "", "cn": "随机存取器"}, {"id": "w0189", "en": "DVD-ROM", "note": "", "cn": "只读DVD"}, {"id": "w0190", "en": "E-book", "note": "", "cn": "电子阅读器"}, {"id": "w0191", "en": "Expansion cards", "note": "", "cn": "扩展卡"}, {"id": "w0192", "en": "End user", "note": "", "cn": "终端用户"}, {"id": "w0193", "en": "E-cash", "note": "", "cn": "电子现金"}, {"id": "w0194", "en": "E-commerce", "note": "", "cn": "电子商务"}, {"id": "w0195", "en": "Effect", "note": "", "cn": "效果，影响"}, {"id": "w0196", "en": "Effective", "note": "", "cn": "有效的"}, {"id": "w0197", "en": "Elapsed", "note": "", "cn": "过去，消逝"}, {"id": "w0198", "en": "Electronic cash", "note": "", "cn": "电子现金"}, {"id": "w0199", "en": "Electronic commerce", "note": "", "cn": "电子商务"}, {"id": "w0200", "en": "Electronic communications privacy act of 1986", "note": "", "cn": "电子通信隐私法案"}, {"id": "w0201", "en": "Element", "note": "", "cn": "成分，要素"}, {"id": "w0202", "en": "Encrypting", "note": "", "cn": "加密术"}, {"id": "w0203", "en": "Endpoint", "note": "", "cn": "端点"}, {"id": "w0204", "en": "Energy star", "note": "", "cn": "能源之星"}, {"id": "w0205", "en": "Entry", "note": "", "cn": "进入"}, {"id": "w0206", "en": "Enterprise computing", "note": "", "cn": "企业计算化"}, {"id": "w0207", "en": "Environment", "note": "", "cn": "环境"}, {"id": "w0208", "en": "Equivalent", "note": "", "cn": "等价物"}, {"id": "w0209", "en": "Erasable optical disks", "note": "", "cn": "可擦除式光盘"}, {"id": "w0210", "en": "Ergonomics", "note": "", "cn": "人类工程学"}, {"id": "w0211", "en": "Error", "note": "", "cn": "错误"}, {"id": "w0212", "en": "Ethics", "note": "", "cn": "道德规范"}, {"id": "w0213", "en": "Exact", "note": "", "cn": "准确的"}, {"id": "w0214", "en": "Execute", "note": "", "cn": "执行"}, {"id": "w0215", "en": "Existing", "note": "", "cn": "现存的"}, {"id": "w0216", "en": "Expires", "note": "", "cn": "期满，断气"}, {"id": "w0217", "en": "External modem", "note": "", "cn": "外置调制解调器"}, {"id": "w0218", "en": "Extra", "note": "", "cn": "额外的"}, {"id": "w0219", "en": "Extract", "note": "", "cn": "吸取"}, {"id": "w0220", "en": "Extranet", "note": "", "cn": "企业外部网"}, {"id": "w0221", "en": "Extended", "note": "", "cn": "扩展的"}, {"id": "w0222", "en": "Fax machine", "note": "", "cn": "传真机"}, {"id": "w0223", "en": "Fetch", "note": "", "cn": "拿来"}, {"id": "w0224", "en": "Field", "note": "", "cn": "域"}, {"id": "w0225", "en": "File", "note": "", "cn": "文件"}, {"id": "w0226", "en": "Filename", "note": "", "cn": "文件名"}, {"id": "w0227", "en": "Find", "note": "", "cn": "搜索"}, {"id": "w0228", "en": "Fire Wire port", "note": "", "cn": "火线端口"}, {"id": "w0229", "en": "Firmware", "note": "", "cn": "固件"}, {"id": "w0230", "en": "Flag", "note": "", "cn": "旗帜，标志"}, {"id": "w0231", "en": "Flash RAM", "note": "", "cn": "闪存"}, {"id": "w0232", "en": "Flatbed scanner", "note": "", "cn": "台式扫描器"}, {"id": "w0233", "en": "Flat-panel monitor", "note": "", "cn": "纯平显示器"}, {"id": "w0234", "en": "Floppy disk", "note": "", "cn": "软盘"}, {"id": "w0235", "en": "Formatting toolbar", "note": "", "cn": "格式化工具条"}, {"id": "w0236", "en": "Formula", "note": "", "cn": "公式"}, {"id": "w0237", "en": "Function", "note": "", "cn": "函数"}, {"id": "w0238", "en": "Fair credit reporting act of 1970", "note": "", "cn": "公平信用报告法案"}, {"id": "w0239", "en": "Fiber-optic cable", "note": "", "cn": "光纤电缆"}, {"id": "w0240", "en": "File compression", "note": "", "cn": "文件压缩"}, {"id": "w0241", "en": "File decompression", "note": "", "cn": "文件解压缩"}, {"id": "w0242", "en": "Filter", "note": "", "cn": "过滤"}, {"id": "w0243", "en": "Firewall", "note": "", "cn": "防火墙"}, {"id": "w0244", "en": "Fixed disk", "note": "", "cn": "固定硬盘"}, {"id": "w0245", "en": "Flash memory", "note": "", "cn": "闪存"}, {"id": "w0246", "en": "Flexible disk", "note": "", "cn": "可折叠磁盘"}, {"id": "w0247", "en": "Floppies", "note": "", "cn": "磁盘"}, {"id": "w0248", "en": "Floppy-disk cartridge", "note": "", "cn": "磁盘盒"}, {"id": "w0249", "en": "Format", "note": "", "cn": "格式"}, {"id": "w0250", "en": "Formatting", "note": "", "cn": "格式化"}, {"id": "w0251", "en": "Foundation", "note": "", "cn": "基础，根据，建立"}, {"id": "w0252", "en": "Free", "note": "", "cn": "自由的，免费的"}, {"id": "w0253", "en": "Freedom of information act of 1970", "note": "", "cn": "信息自由法案"}, {"id": "w0254", "en": "Frequency", "note": "", "cn": "频率"}, {"id": "w0255", "en": "Frustrated", "note": "", "cn": "受挫折"}, {"id": "w0256", "en": "Full-duplex communication", "note": "", "cn": "全双通通信"}, {"id": "w0257", "en": "General-purpose application", "note": "", "cn": "通用运用程序"}, {"id": "w0258", "en": "Generate", "note": "", "cn": "产生，导致"}, {"id": "w0259", "en": "Gigahertz", "note": "", "cn": "千兆赫"}, {"id": "w0260", "en": "Graphic tablet", "note": "", "cn": "绘图板"}, {"id": "w0261", "en": "Grants", "note": "", "cn": "授予"}, {"id": "w0262", "en": "Green pc", "note": "", "cn": "绿色个人计算机"}, {"id": "w0263", "en": "Group", "note": "", "cn": "组"}, {"id": "w0264", "en": "Handle", "note": "", "cn": "把柄，把手，记号"}, {"id": "w0265", "en": "Handheld computer", "note": "", "cn": "手提电脑"}, {"id": "w0266", "en": "Hard copy", "note": "", "cn": "硬拷贝"}, {"id": "w0267", "en": "Hard disk", "note": "", "cn": "硬盘"}, {"id": "w0268", "en": "Hardware", "note": "", "cn": "硬件"}, {"id": "w0269", "en": "Help", "note": "", "cn": "帮助"}, {"id": "w0270", "en": "Host computer", "note": "", "cn": "主机"}, {"id": "w0271", "en": "Home page", "note": "", "cn": "主页"}, {"id": "w0272", "en": "Hyperlink", "note": "", "cn": "超链接"}, {"id": "w0273", "en": "Hacker", "note": "", "cn": "黑客"}, {"id": "w0274", "en": "Half-duplex communication", "note": "", "cn": "半双通通信"}, {"id": "w0275", "en": "Hard-disk cartridge", "note": "", "cn": "硬盘盒"}, {"id": "w0276", "en": "Hard-disk pack", "note": "", "cn": "硬盘组"}, {"id": "w0277", "en": "Head crash", "note": "", "cn": "磁头碰撞"}, {"id": "w0278", "en": "Header", "note": "", "cn": "标题"}, {"id": "w0279", "en": "Help desk specialist", "note": "", "cn": "帮助办公专家"}, {"id": "w0280", "en": "Helper applications", "note": "", "cn": "帮助软件"}, {"id": "w0281", "en": "Hierarchical network", "note": "", "cn": "层次型网络"}, {"id": "w0282", "en": "Historically", "note": "", "cn": "从历史角度"}, {"id": "w0283", "en": "History file", "note": "", "cn": "历史文件"}, {"id": "w0284", "en": "Hits", "note": "", "cn": "匹配记录"}, {"id": "w0285", "en": "Horizontal portal", "note": "", "cn": "横向用户"}, {"id": "w0286", "en": "Host", "note": "", "cn": "主机"}, {"id": "w0287", "en": "Hot site", "note": "", "cn": "热网站"}, {"id": "w0288", "en": "Hybrid network", "note": "", "cn": "混合网络"}, {"id": "w0289", "en": "Identify", "note": "", "cn": "识别"}, {"id": "w0290", "en": "Identifier", "note": "", "cn": "识别符"}, {"id": "w0291", "en": "Identity", "note": "", "cn": "统一性，一致"}, {"id": "w0292", "en": "Identical", "note": "", "cn": "完全相似的"}, {"id": "w0293", "en": "Ignored", "note": "", "cn": "忽略的，不理会的"}, {"id": "w0294", "en": "Image capturing device", "note": "", "cn": "图像获取设备"}, {"id": "w0295", "en": "Immediately", "note": "", "cn": "立即"}, {"id": "w0296", "en": "Implement", "note": "", "cn": "实现，工具"}, {"id": "w0297", "en": "Implementation", "note": "", "cn": "成就"}, {"id": "w0298", "en": "Include", "note": "", "cn": "包含"}, {"id": "w0299", "en": "Increment", "note": "", "cn": "增加"}, {"id": "w0300", "en": "Indicated", "note": "", "cn": "指出"}, {"id": "w0301", "en": "Individual", "note": "", "cn": "个别的，独特的"}, {"id": "w0302", "en": "Information technology", "note": "", "cn": "信息技术"}, {"id": "w0303", "en": "Inherited", "note": "", "cn": "遗传的"}, {"id": "w0304", "en": "Initialization", "note": "", "cn": "初始化"}, {"id": "w0305", "en": "Ink-jet printer", "note": "", "cn": "墨水喷射印刷机"}, {"id": "w0306", "en": "Integrated package", "note": "", "cn": "综合性组件"}, {"id": "w0307", "en": "Intelligent terminal", "note": "", "cn": "智能终端设备"}, {"id": "w0308", "en": "Intergrated circuit", "note": "", "cn": "集成电路"}, {"id": "w0309", "en": "Intended", "note": "", "cn": "故意的"}, {"id": "w0310", "en": "Internet", "note": "", "cn": "网络"}, {"id": "w0311", "en": "Interface", "note": "", "cn": "接口"}, {"id": "w0312", "en": "Interface cards", "note": "", "cn": "接口卡"}, {"id": "w0313", "en": "Internal modem", "note": "", "cn": "内部调制解调器"}, {"id": "w0314", "en": "Interpret", "note": "", "cn": "解释，说明"}, {"id": "w0315", "en": "Interprocess", "note": "", "cn": "进程间的"}, {"id": "w0316", "en": "Interrupted", "note": "", "cn": "中断的，不对称的"}, {"id": "w0317", "en": "Interval", "note": "", "cn": "间隔，距离"}, {"id": "w0318", "en": "line", "note": "", "cn": "行列"}, {"id": "w0319", "en": "Internet telephony", "note": "", "cn": "网络电话"}, {"id": "w0320", "en": "Internet terminal", "note": "", "cn": "互联网终端"}, {"id": "w0321", "en": "Invalid", "note": "", "cn": "无效的"}, {"id": "w0322", "en": "Invocation", "note": "", "cn": "祈祷"}, {"id": "w0323", "en": "Invoke", "note": "", "cn": "实行，要求"}, {"id": "w0324", "en": "Involved", "note": "", "cn": "复杂的，有关的"}, {"id": "w0325", "en": "Identification", "note": "", "cn": "识别"}, {"id": "w0326", "en": "I-drive", "note": "", "cn": "网络硬盘驱动器"}, {"id": "w0327", "en": "Illusion of anonymity", "note": "", "cn": "匿名幻想"}, {"id": "w0328", "en": "Index search", "note": "", "cn": "索引搜索"}, {"id": "w0329", "en": "Information pushers", "note": "", "cn": "信息推送器"}, {"id": "w0330", "en": "Initializing", "note": "", "cn": "初始化"}, {"id": "w0331", "en": "Instant messaging", "note": "", "cn": "计时信息"}, {"id": "w0332", "en": "Internal hard disk", "note": "", "cn": "内置硬盘"}, {"id": "w0333", "en": "Internet hard drive", "note": "", "cn": "网络硬盘驱动器"}, {"id": "w0334", "en": "Intranet", "note": "", "cn": "企业内部网"}, {"id": "w0335", "en": "Issued", "note": "", "cn": "发行，放出"}, {"id": "w0336", "en": "Joystick", "note": "", "cn": "操纵杆"}, {"id": "w0337", "en": "Kernel", "note": "", "cn": "内核，种子"}, {"id": "w0338", "en": "Keyword search", "note": "", "cn": "关键字搜索"}, {"id": "w0339", "en": "Language", "note": "", "cn": "语言"}, {"id": "w0340", "en": "Laser printer", "note": "", "cn": "激光打印机"}, {"id": "w0341", "en": "Layout files", "note": "", "cn": "版式文件"}, {"id": "w0342", "en": "Lazy", "note": "", "cn": "懒惰的"}, {"id": "w0343", "en": "Library", "note": "", "cn": "图书馆，集合"}, {"id": "w0344", "en": "Light pen", "note": "", "cn": "光笔"}, {"id": "w0345", "en": "Link", "note": "", "cn": "联系，连接"}, {"id": "w0346", "en": "Loader", "note": "", "cn": "装货机，加载者"}, {"id": "w0347", "en": "Locale", "note": "", "cn": "现场"}, {"id": "w0348", "en": "Locate", "note": "", "cn": "定位"}, {"id": "w0349", "en": "Logical operations", "note": "", "cn": "逻辑运算"}, {"id": "w0350", "en": "Lands", "note": "", "cn": "凸面"}, {"id": "w0351", "en": "Line of sight communication", "note": "", "cn": "视影通信"}, {"id": "w0352", "en": "Low bandwidth", "note": "", "cn": "低带宽"}, {"id": "w0353", "en": "Lurking", "note": "", "cn": "潜伏"}, {"id": "w0354", "en": "Main board", "note": "", "cn": "主板"}, {"id": "w0355", "en": "Manual", "note": "", "cn": "手册，手动的"}, {"id": "w0356", "en": "Manipulation", "note": "", "cn": "操作，处理"}, {"id": "w0357", "en": "Mapping", "note": "", "cn": "映射"}, {"id": "w0358", "en": "Mark", "note": "", "cn": "标记"}, {"id": "w0359", "en": "Mark sensing", "note": "", "cn": "标志检测"}, {"id": "w0360", "en": "Mask", "note": "", "cn": "伪装，屏蔽"}, {"id": "w0361", "en": "Mechanical mouse", "note": "", "cn": "机械鼠标"}, {"id": "w0362", "en": "Memory", "note": "", "cn": "内存"}, {"id": "w0363", "en": "Menu", "note": "", "cn": "菜单"}, {"id": "w0364", "en": "Menu bar", "note": "", "cn": "菜单条"}, {"id": "w0365", "en": "Message", "note": "", "cn": "消息"}, {"id": "w0366", "en": "Microprocessor", "note": "", "cn": "微处理器"}, {"id": "w0367", "en": "Microseconds", "note": "", "cn": "微秒"}, {"id": "w0368", "en": "Mode", "note": "", "cn": "模式"}, {"id": "w0369", "en": "Modem card", "note": "", "cn": "调制解调器"}, {"id": "w0370", "en": "Modification", "note": "", "cn": "修改，缓和"}, {"id": "w0371", "en": "Modify", "note": "", "cn": "修改"}, {"id": "w0372", "en": "Monitor", "note": "", "cn": "显示器"}, {"id": "w0373", "en": "Motherboard", "note": "", "cn": "主板"}, {"id": "w0374", "en": "Mouse", "note": "", "cn": "鼠标"}, {"id": "w0375", "en": "Multifunctional device", "note": "", "cn": "多功能设备"}, {"id": "w0376", "en": "Magnetic tape reels", "note": "", "cn": "磁带卷"}, {"id": "w0377", "en": "Magnetic tape streamers", "note": "", "cn": "磁带条"}, {"id": "w0378", "en": "Mailing list", "note": "", "cn": "邮件列表"}, {"id": "w0379", "en": "Medium band", "note": "", "cn": "媒质带宽"}, {"id": "w0380", "en": "Metasearch engine", "note": "", "cn": "整合搜索引擎"}, {"id": "w0381", "en": "Microwave", "note": "", "cn": "微波"}, {"id": "w0382", "en": "Modem", "note": "", "cn": "解调器"}, {"id": "w0383", "en": "Modulation", "note": "", "cn": "解调"}, {"id": "w0384", "en": "Necessary", "note": "", "cn": "必要的"}, {"id": "w0385", "en": "Net PC", "note": "", "cn": "网络计算机"}, {"id": "w0386", "en": "Network", "note": "", "cn": "网络"}, {"id": "w0387", "en": "Network adapter card", "note": "", "cn": "网卡"}, {"id": "w0388", "en": "Network personal computer", "note": "", "cn": "网络个人电脑"}, {"id": "w0389", "en": "Network terminal", "note": "", "cn": "网络终端"}, {"id": "w0390", "en": "Notation", "note": "", "cn": "标记法"}, {"id": "w0391", "en": "Notebook computer", "note": "", "cn": "笔记本电脑"}, {"id": "w0392", "en": "Notebook system unit", "note": "", "cn": "笔记本系统单元"}, {"id": "w0393", "en": "Numeric entry", "note": "", "cn": "数字输入"}, {"id": "w0394", "en": "National information infrastructure protection act of 1996", "note": "", "cn": "国际信息保护法案"}, {"id": "w0395", "en": "National service provider", "note": "", "cn": "全国性服务供应商"}, {"id": "w0396", "en": "Network architecture", "note": "", "cn": "网络体系结构"}, {"id": "w0397", "en": "Network bridge", "note": "", "cn": "网桥"}, {"id": "w0398", "en": "Network gateway", "note": "", "cn": "网关"}, {"id": "w0399", "en": "Network manager", "note": "", "cn": "网络管理员"}, {"id": "w0400", "en": "Newsgroup", "note": "", "cn": "新闻组"}, {"id": "w0401", "en": "No electronic theft act of 1997", "note": "", "cn": "无电子盗窃法"}, {"id": "w0402", "en": "Node", "note": "", "cn": "节点"}, {"id": "w0403", "en": "Nonnegative", "note": "", "cn": "禁止转让的，不可谈判的"}, {"id": "w0404", "en": "Nonvolatile storage", "note": "", "cn": "非易失性存储"}, {"id": "w0405", "en": "Normally", "note": "", "cn": "正规地"}, {"id": "w0406", "en": "Object embedding", "note": "", "cn": "对象嵌入"}, {"id": "w0407", "en": "Object linking", "note": "", "cn": "目标链接"}, {"id": "w0408", "en": "Obtain", "note": "", "cn": "获得"}, {"id": "w0409", "en": "Occur", "note": "", "cn": "发生"}, {"id": "w0410", "en": "Offset", "note": "", "cn": "抵销，支派"}, {"id": "w0411", "en": "Often", "note": "", "cn": "经常"}, {"id": "w0412", "en": "Open architecture", "note": "", "cn": "开放式体系结构"}, {"id": "w0413", "en": "Operation", "note": "", "cn": "操作"}, {"id": "w0414", "en": "Operating System", "note": "", "cn": "操作系统"}, {"id": "w0415", "en": "Optical disk", "note": "", "cn": "光盘"}, {"id": "w0416", "en": "Optical mouse", "note": "", "cn": "光电鼠标"}, {"id": "w0417", "en": "Optical scanner", "note": "", "cn": "光电扫描仪"}, {"id": "w0418", "en": "Optional", "note": "", "cn": "可选择的"}, {"id": "w0419", "en": "Order", "note": "", "cn": "次序"}, {"id": "w0420", "en": "Oriented", "note": "", "cn": "以…为方向的，以…为目的的"}, {"id": "w0421", "en": "Original", "note": "", "cn": "最初的，原始的"}, {"id": "w0422", "en": "Otherwise", "note": "", "cn": "否则"}, {"id": "w0423", "en": "Outline", "note": "", "cn": "大纲"}, {"id": "w0424", "en": "Output", "note": "", "cn": "输出"}, {"id": "w0425", "en": "Overwritten", "note": "", "cn": "覆盖"}, {"id": "w0426", "en": "Off-line browsers", "note": "", "cn": "离线浏览器"}, {"id": "w0427", "en": "Online storage", "note": "", "cn": "联机存储"}, {"id": "w0428", "en": "Pack", "note": "", "cn": "包裹，背包"}, {"id": "w0429", "en": "Palmtop computer", "note": "", "cn": "掌上电脑"}, {"id": "w0430", "en": "Parallel ports", "note": "", "cn": "并行端口"}, {"id": "w0431", "en": "Parent", "note": "", "cn": "父亲"}, {"id": "w0432", "en": "Parentheses", "note": "", "cn": "括弧"}, {"id": "w0433", "en": "Particular", "note": "", "cn": "特别的"}, {"id": "w0434", "en": "Passive", "note": "", "cn": "消极的，被动的"}, {"id": "w0435", "en": "Passive-matrix", "note": "", "cn": "被动矩阵"}, {"id": "w0436", "en": "Path", "note": "", "cn": "路径"}, {"id": "w0437", "en": "PC card", "note": "", "cn": "个人计算机卡"}, {"id": "w0438", "en": "Pedantic", "note": "", "cn": "卖弄学问的，迂腐的"}, {"id": "w0439", "en": "Pending", "note": "", "cn": "迫近的，悬而未决的"}, {"id": "w0440", "en": "Perform", "note": "", "cn": "执行，表演"}, {"id": "w0441", "en": "Personal laser printer", "note": "", "cn": "个人激光打印机"}, {"id": "w0442", "en": "Personal video recorder card", "note": "", "cn": "个人视频记录卡"}, {"id": "w0443", "en": "Photo printer", "note": "", "cn": "照片打印机"}, {"id": "w0444", "en": "Pixel", "note": "", "cn": "像素"}, {"id": "w0445", "en": "Pipe", "note": "", "cn": "管道"}, {"id": "w0446", "en": "Platform scanner", "note": "", "cn": "平版式扫描仪"}, {"id": "w0447", "en": "Plotter", "note": "", "cn": "绘图仪"}, {"id": "w0448", "en": "Plug and play", "note": "", "cn": "即插即用"}, {"id": "w0449", "en": "Plug-in boards", "note": "", "cn": "插件卡"}, {"id": "w0450", "en": "Plus", "note": "", "cn": "正号，加号"}, {"id": "w0451", "en": "Pointer", "note": "", "cn": "指示器"}, {"id": "w0452", "en": "Pointing stick", "note": "", "cn": "指示棍"}, {"id": "w0453", "en": "Poison", "note": "", "cn": "毒药，毒害"}, {"id": "w0454", "en": "Port", "note": "", "cn": "端口"}, {"id": "w0455", "en": "Portable", "note": "", "cn": "可携带的，可移动的"}, {"id": "w0456", "en": "Portable scanner", "note": "", "cn": "便携式扫描仪"}, {"id": "w0457", "en": "Possibly", "note": "", "cn": "可能地，或者"}, {"id": "w0458", "en": "Presence", "note": "", "cn": "出席"}, {"id": "w0459", "en": "Presentation files", "note": "", "cn": "演示文稿"}, {"id": "w0460", "en": "Presentation graphics", "note": "", "cn": "电子文稿程序"}, {"id": "w0461", "en": "Previous", "note": "", "cn": "早先的"}, {"id": "w0462", "en": "Primary storage", "note": "", "cn": "主存"}, {"id": "w0463", "en": "Procedures", "note": "", "cn": "规程"}, {"id": "w0464", "en": "Processor", "note": "", "cn": "处理机"}, {"id": "w0465", "en": "Produce", "note": "", "cn": "生产，产生"}, {"id": "w0466", "en": "Programming control lanugage", "note": "", "cn": "程序控制语言"}, {"id": "w0467", "en": "Protocol", "note": "", "cn": "协议"}, {"id": "w0468", "en": "Packets", "note": "", "cn": "数据包"}, {"id": "w0469", "en": "Parallel data transmission", "note": "", "cn": "平行数据传输"}, {"id": "w0470", "en": "Peer-to-peer network system", "note": "", "cn": "点对点网络系统"}, {"id": "w0471", "en": "Person-person auction site", "note": "", "cn": "个人对个人拍卖站点"}, {"id": "w0472", "en": "Physical security", "note": "", "cn": "物理安全"}, {"id": "w0473", "en": "Pits", "note": "", "cn": "凹面"}, {"id": "w0474", "en": "Plug-in", "note": "", "cn": "插件程序"}, {"id": "w0475", "en": "Polling", "note": "", "cn": "轮询"}, {"id": "w0476", "en": "Privacy", "note": "", "cn": "隐私权"}, {"id": "w0477", "en": "Precisely", "note": "", "cn": "精确的"}, {"id": "w0478", "en": "Proactive", "note": "", "cn": "主动地"}, {"id": "w0479", "en": "Process", "note": "", "cn": "进程"}, {"id": "w0480", "en": "Programmer", "note": "", "cn": "程序员"}, {"id": "w0481", "en": "Protection", "note": "", "cn": "保护"}, {"id": "w0482", "en": "Protocols", "note": "", "cn": "协议"}, {"id": "w0483", "en": "Provider", "note": "", "cn": "供应商"}, {"id": "w0484", "en": "Proxy server", "note": "", "cn": "代理服务"}, {"id": "w0485", "en": "Pull products", "note": "", "cn": "推取程序"}, {"id": "w0486", "en": "Push products", "note": "", "cn": "推送程序"}, {"id": "w0487", "en": "Queue", "note": "", "cn": "队列"}, {"id": "w0488", "en": "RAM cache", "note": "", "cn": "随机高速缓冲器"}, {"id": "w0489", "en": "Range", "note": "", "cn": "范围"}, {"id": "w0490", "en": "React", "note": "", "cn": "起反应，反抗"}, {"id": "w0491", "en": "Real", "note": "", "cn": "真实的"}, {"id": "w0492", "en": "Receipt", "note": "", "cn": "收到，接到"}, {"id": "w0493", "en": "Receptions", "note": "", "cn": "接待，欢迎"}, {"id": "w0494", "en": "Recipient", "note": "", "cn": "接受者"}, {"id": "w0495", "en": "Recognized", "note": "", "cn": "公认的"}, {"id": "w0496", "en": "Record", "note": "", "cn": "记录"}, {"id": "w0497", "en": "Regular", "note": "", "cn": "规则的"}, {"id": "w0498", "en": "Reference", "note": "", "cn": "涉及"}, {"id": "w0499", "en": "Refuse", "note": "", "cn": "拒绝"}, {"id": "w0500", "en": "Related", "note": "", "cn": "有关的，相关的"}, {"id": "w0501", "en": "Relational database", "note": "", "cn": "关系数据库"}, {"id": "w0502", "en": "Release", "note": "", "cn": "释放"}, {"id": "w0503", "en": "Reliable", "note": "", "cn": "可靠的"}, {"id": "w0504", "en": "Remaining", "note": "", "cn": "剩余"}, {"id": "w0505", "en": "Replace", "note": "", "cn": "替换"}, {"id": "w0506", "en": "Represent", "note": "", "cn": "表现，展示"}, {"id": "w0507", "en": "Reposition", "note": "", "cn": "改变…的位置"}, {"id": "w0508", "en": "Required", "note": "", "cn": "必须的"}, {"id": "w0509", "en": "Resolution", "note": "", "cn": "分辨率"}, {"id": "w0510", "en": "Resolve", "note": "", "cn": "解决，决心"}, {"id": "w0511", "en": "Respectively", "note": "", "cn": "分别地，各自地"}, {"id": "w0512", "en": "Resume", "note": "", "cn": "继续，恢复"}, {"id": "w0513", "en": "Row", "note": "", "cn": "行"}, {"id": "w0514", "en": "Readable", "note": "", "cn": "易读的，清晰的"}, {"id": "w0515", "en": "Read-only", "note": "", "cn": "只读"}, {"id": "w0516", "en": "Reformatting", "note": "", "cn": "重组"}, {"id": "w0517", "en": "Regional service provider", "note": "", "cn": "区域性服务供应商"}, {"id": "w0518", "en": "Repetitive motion injury", "note": "", "cn": "反复性动作损伤"}, {"id": "w0519", "en": "Retransmission", "note": "", "cn": "重新翻译"}, {"id": "w0520", "en": "Reverse directory", "note": "", "cn": "反向目录"}, {"id": "w0521", "en": "Right to financial privacy act of 1979", "note": "", "cn": "财产隐私法案"}, {"id": "w0522", "en": "Ring network", "note": "", "cn": "环形网"}, {"id": "w0523", "en": "Routine", "note": "", "cn": "例行的，一般的常规"}, {"id": "w0524", "en": "Scanner", "note": "", "cn": "扫描器"}, {"id": "w0525", "en": "Scheduled.", "note": "", "cn": "预定的"}, {"id": "w0526", "en": "Search", "note": "", "cn": "查找"}, {"id": "w0527", "en": "Second", "note": "", "cn": "秒"}, {"id": "w0528", "en": "Secondary storage device", "note": "", "cn": "辅助存储设备"}, {"id": "w0529", "en": "Segment", "note": "", "cn": "部分，线段"}, {"id": "w0530", "en": "Select", "note": "", "cn": "选择"}, {"id": "w0531", "en": "Semantics", "note": "", "cn": "语义学"}, {"id": "w0532", "en": "Semiconductor", "note": "", "cn": "半导体"}, {"id": "w0533", "en": "Semaphore", "note": "", "cn": "信号"}, {"id": "w0534", "en": "Sequence", "note": "", "cn": "序列，顺序"}, {"id": "w0535", "en": "Serial ports", "note": "", "cn": "串行端口"}, {"id": "w0536", "en": "Server", "note": "", "cn": "服务器"}, {"id": "w0537", "en": "Share", "note": "", "cn": "均分，一份"}, {"id": "w0538", "en": "Shared laser printer", "note": "", "cn": "共享激光打印机"}, {"id": "w0539", "en": "Sheet", "note": "", "cn": "表格"}, {"id": "w0540", "en": "Shut down", "note": "", "cn": "关机"}, {"id": "w0541", "en": "Significant", "note": "", "cn": "重要的"}, {"id": "w0542", "en": "Silicon chip", "note": "", "cn": "硅片"}, {"id": "w0543", "en": "Slots", "note": "", "cn": "插槽"}, {"id": "w0544", "en": "Smart card", "note": "", "cn": "智能卡"}, {"id": "w0545", "en": "Soft copy", "note": "", "cn": "软拷贝"}, {"id": "w0546", "en": "Software", "note": "", "cn": "软件"}, {"id": "w0547", "en": "Software suite", "note": "", "cn": "软件协议"}, {"id": "w0548", "en": "Sorting", "note": "", "cn": "排序"}, {"id": "w0549", "en": "Source file", "note": "", "cn": "源文件"}, {"id": "w0550", "en": "Special-purpose application", "note": "", "cn": "专用文件"}, {"id": "w0551", "en": "Specify", "note": "", "cn": "明确说明"}, {"id": "w0552", "en": "Spreadsheet", "note": "", "cn": "电子数据表"}, {"id": "w0553", "en": "Standard toolbar", "note": "", "cn": "标准工具栏"}, {"id": "w0554", "en": "Status", "note": "", "cn": "状态"}, {"id": "w0555", "en": "Stream", "note": "", "cn": "流"}, {"id": "w0556", "en": "Subsequent", "note": "", "cn": "后来的，并发的"}, {"id": "w0557", "en": "Success", "note": "", "cn": "成功，胜利"}, {"id": "w0558", "en": "Suitable", "note": "", "cn": "合适的"}, {"id": "w0559", "en": "Supercomputer", "note": "", "cn": "巨型机"}, {"id": "w0560", "en": "Support", "note": "", "cn": "支持"}, {"id": "w0561", "en": "Suspends", "note": "", "cn": "中止"}, {"id": "w0562", "en": "Symbol", "note": "", "cn": "符号，象征"}, {"id": "w0563", "en": "Synchronization", "note": "", "cn": "同步"}, {"id": "w0564", "en": "System cabine", "note": "", "cn": "系统箱"}, {"id": "w0565", "en": "System clock", "note": "", "cn": "时钟"}, {"id": "w0566", "en": "System software", "note": "", "cn": "系统软件"}, {"id": "w0567", "en": "Satellite", "note": "", "cn": "卫星无线连接服务"}, {"id": "w0568", "en": "Search engines", "note": "", "cn": "搜索引擎"}, {"id": "w0569", "en": "Search providers", "note": "", "cn": "搜索供应者"}, {"id": "w0570", "en": "Search services", "note": "", "cn": "搜索服务器"}, {"id": "w0571", "en": "Sectors", "note": "", "cn": "扇区"}, {"id": "w0572", "en": "Security", "note": "", "cn": "安全"}, {"id": "w0573", "en": "Sending and receiving devices", "note": "", "cn": "发送接收设备"}, {"id": "w0574", "en": "Sequential access", "note": "", "cn": "顺序存取"}, {"id": "w0575", "en": "Serial data transmission", "note": "", "cn": "单向通信"}, {"id": "w0576", "en": "Signature line", "note": "", "cn": "签名档"}, {"id": "w0577", "en": "Snoopware", "note": "", "cn": "监控软件"}, {"id": "w0578", "en": "Software copyright act of 1980", "note": "", "cn": "软件版权法案"}, {"id": "w0579", "en": "Software piracy", "note": "", "cn": "软件盗版"}, {"id": "w0580", "en": "Solid-state storage", "note": "", "cn": "固态存储器"}, {"id": "w0581", "en": "Specialized search engine", "note": "", "cn": "专用搜索引擎"}, {"id": "w0582", "en": "Spiders", "note": "", "cn": "网页爬虫"}, {"id": "w0583", "en": "Spike", "note": "", "cn": "尖峰电压"}, {"id": "w0584", "en": "Standard", "note": "", "cn": "标准的"}, {"id": "w0585", "en": "Star network", "note": "", "cn": "星型网"}, {"id": "w0586", "en": "State", "note": "", "cn": "说明，规定，状态"}, {"id": "w0587", "en": "Static", "note": "", "cn": "静态的，静止的"}, {"id": "w0588", "en": "Store", "note": "", "cn": "存储"}, {"id": "w0589", "en": "Strategy", "note": "", "cn": "方案"}, {"id": "w0590", "en": "Subject", "note": "", "cn": "主题"}, {"id": "w0591", "en": "Subscription address", "note": "", "cn": "预定地址"}, {"id": "w0592", "en": "Superdisk", "note": "", "cn": "超级磁盘"}, {"id": "w0593", "en": "Surfing", "note": "", "cn": "网上冲浪"}, {"id": "w0594", "en": "Surge protector", "note": "", "cn": "浪涌保护器"}, {"id": "w0595", "en": "Systems analyst", "note": "", "cn": "系统分析师"}, {"id": "w0596", "en": "Table", "note": "", "cn": "二维表"}, {"id": "w0597", "en": "Telephony", "note": "", "cn": "电话学"}, {"id": "w0598", "en": "Television boards", "note": "", "cn": "电视扩展卡"}, {"id": "w0599", "en": "Terminal", "note": "", "cn": "终端"}, {"id": "w0600", "en": "Template", "note": "", "cn": "模板"}, {"id": "w0601", "en": "Temporarily", "note": "", "cn": "临时地，暂时地"}, {"id": "w0602", "en": "Text entry", "note": "", "cn": "文本输入"}, {"id": "w0603", "en": "Thermal printer", "note": "", "cn": "热印刷"}, {"id": "w0604", "en": "Thin client", "note": "", "cn": "瘦客"}, {"id": "w0605", "en": "Thread", "note": "", "cn": "线程"}, {"id": "w0606", "en": "Toggle key", "note": "", "cn": "触发键"}, {"id": "w0607", "en": "Toolbar", "note": "", "cn": "工具栏"}, {"id": "w0608", "en": "Touch screen", "note": "", "cn": "触摸屏"}, {"id": "w0609", "en": "Trackball", "note": "", "cn": "追踪球"}, {"id": "w0610", "en": "Traditionally", "note": "", "cn": "习惯上"}, {"id": "w0611", "en": "Transmit", "note": "", "cn": "传输"}, {"id": "w0612", "en": "TV tuner card", "note": "", "cn": "电视调谐卡"}, {"id": "w0613", "en": "Two-state system", "note": "", "cn": "双状态系统"}, {"id": "w0614", "en": "Technical writer", "note": "", "cn": "技术协作者"}, {"id": "w0615", "en": "Technostress", "note": "", "cn": "重压技术"}, {"id": "w0616", "en": "Telnet", "note": "", "cn": "远程登录"}, {"id": "w0617", "en": "Temporary", "note": "", "cn": "临时的"}, {"id": "w0618", "en": "Time-sharing system", "note": "", "cn": "分时系统"}, {"id": "w0619", "en": "Topology", "note": "", "cn": "拓扑结构"}, {"id": "w0620", "en": "Tracks", "note": "", "cn": "磁道"}, {"id": "w0621", "en": "Truncated", "note": "", "cn": "截取"}, {"id": "w0622", "en": "Traditional cookies", "note": "", "cn": "传统的信息记录程序"}, {"id": "w0623", "en": "Twisted pair", "note": "", "cn": "双绞"}, {"id": "w0624", "en": "Unaffected.", "note": "", "cn": "自然的"}, {"id": "w0625", "en": "Unicode", "note": "", "cn": "统一字符标准"}, {"id": "w0626", "en": "Unidirectional", "note": "", "cn": "单向的"}, {"id": "w0627", "en": "Unique", "note": "", "cn": "独特的"}, {"id": "w0628", "en": "Uploading", "note": "", "cn": "上传"}, {"id": "w0629", "en": "Usenet", "note": "", "cn": "世界性新闻组网络"}, {"id": "w0630", "en": "Valid", "note": "", "cn": "有效的"}, {"id": "w0631", "en": "Variable", "note": "", "cn": "可变的，变数"}, {"id": "w0632", "en": "Version", "note": "", "cn": "版本"}, {"id": "w0633", "en": "Virtual memory", "note": "", "cn": "虚拟内存"}, {"id": "w0634", "en": "Video display screen", "note": "", "cn": "视频显示屏"}, {"id": "w0635", "en": "Voice recognition system", "note": "", "cn": "声音识别系统"}, {"id": "w0636", "en": "Vertical portal", "note": "", "cn": "纵向门户"}, {"id": "w0637", "en": "Video privacy protection act of 1988", "note": "", "cn": "视频隐私权保护法案"}, {"id": "w0638", "en": "Virus checker", "note": "", "cn": "病毒检测程序"}, {"id": "w0639", "en": "Virus", "note": "", "cn": "病毒"}, {"id": "w0640", "en": "Voiceband", "note": "", "cn": "音频带宽"}, {"id": "w0641", "en": "Volatile storage", "note": "", "cn": "易失性存储"}, {"id": "w0642", "en": "Voltage surge", "note": "", "cn": "电涌"}, {"id": "w0643", "en": "wait", "note": "", "cn": "等待"}, {"id": "w0644", "en": "Wand reader", "note": "", "cn": "条形码读入"}, {"id": "w0645", "en": "Wall", "note": "", "cn": "警告"}, {"id": "w0646", "en": "Web", "note": "", "cn": "网络；万维网"}, {"id": "w0647", "en": "Web appliance", "note": "", "cn": "环球网设备"}, {"id": "w0648", "en": "Web page", "note": "", "cn": "网页"}, {"id": "w0649", "en": "Web site address", "note": "", "cn": "网络地址"}, {"id": "w0650", "en": "Web terminal", "note": "", "cn": "环球网终端"}, {"id": "w0651", "en": "Webcam", "note": "", "cn": "摄像头"}, {"id": "w0652", "en": "What-if analysis", "note": "", "cn": "假定分析"}, {"id": "w0653", "en": "Wireless revolution", "note": "", "cn": "无线革命"}, {"id": "w0654", "en": "Word", "note": "", "cn": "字长"}, {"id": "w0655", "en": "Word processing", "note": "", "cn": "文字处理"}, {"id": "w0656", "en": "Word wrap", "note": "", "cn": "自动换行"}, {"id": "w0657", "en": "Worksheet file", "note": "", "cn": "工作文件"}, {"id": "w0658", "en": "Web auctions", "note": "", "cn": "网上拍卖"}, {"id": "w0659", "en": "Web broadcasters", "note": "", "cn": "网络广播"}, {"id": "w0660", "en": "Web portals", "note": "", "cn": "门户网站"}, {"id": "w0661", "en": "Web sites", "note": "", "cn": "网站"}, {"id": "w0662", "en": "Web storefront creation packages", "note": "", "cn": "网上商店创建包"}, {"id": "w0663", "en": "Web storefronts", "note": "", "cn": "网上商店"}, {"id": "w0664", "en": "Web utilities", "note": "", "cn": "网上应用程序"}, {"id": "w0665", "en": "Web-downloading utilities", "note": "", "cn": "网页下载应用程序"}, {"id": "w0666", "en": "Webmaster web", "note": "", "cn": "站点管理员"}, {"id": "w0667", "en": "Wireless modems", "note": "", "cn": "无线调制解调器"}, {"id": "w0668", "en": "Wireless service provider", "note": "", "cn": "无线服务供应商"}, {"id": "w0669", "en": "World wide web", "note": "", "cn": "万维网"}, {"id": "w0670", "en": "Worm", "note": "", "cn": "蠕虫病毒"}, {"id": "w0671", "en": "Write-protect notch", "note": "", "cn": "写保护口"}, {"id": "w0672", "en": "IT", "note": "information technology", "cn": "信息技术"}, {"id": "w0673", "en": "CD", "note": "compact disc", "cn": "压缩盘"}, {"id": "w0674", "en": "PDA", "note": "personal digital assistant", "cn": "个人数字助理"}, {"id": "w0675", "en": "RAM", "note": "random access memory", "cn": "随机存储器"}, {"id": "w0676", "en": "WWW", "note": "World Wide Web", "cn": "万维网"}, {"id": "w0677", "en": "DBMS", "note": "database management system", "cn": "数据库管理系统"}, {"id": "w0678", "en": "HTML", "note": "Hypertext Markup Language", "cn": "超文本标示语言"}, {"id": "w0679", "en": "OLE", "note": "object linking and embedding", "cn": "对象链接入"}, {"id": "w0680", "en": "SQL", "note": "structured query language", "cn": "结构化查询语言"}, {"id": "w0681", "en": "URL", "note": "uniform resouice locator", "cn": "统一资源定位器"}, {"id": "w0682", "en": "AGP", "note": "accelerated graphics port", "cn": "加速图形接口"}, {"id": "w0683", "en": "ALU", "note": "arithmetic-logic unit", "cn": "算术逻辑单元"}, {"id": "w0684", "en": "CPU", "note": "central processing unit", "cn": "中央处理器"}, {"id": "w0685", "en": "CMOS", "note": "complementary metal-oxide semiconductor", "cn": "互补金属氧化物半导体"}, {"id": "w0686", "en": "CISC", "note": "complex instruction set computer", "cn": "复杂指令集计算机"}, {"id": "w0687", "en": "HPSB", "note": "high performance serial bus", "cn": "高性能串行总线"}, {"id": "w0688", "en": "ISA", "note": "industry standard architecture", "cn": "工业标准结构体系"}, {"id": "w0689", "en": "PCI", "note": "peripheral component interconnect", "cn": "外部设备互连总线"}, {"id": "w0690", "en": "PCMCIA", "note": "Personal Memory Card International Association", "cn": "个人计算机存储卡国际协会"}, {"id": "w0691", "en": "ROM", "note": "read-only memory", "cn": "只读存储器"}, {"id": "w0692", "en": "USB", "note": "universal serial bus", "cn": "通用串行总线"}, {"id": "w0693", "en": "CRT", "note": "cathode-ray tube", "cn": "阴极射线管"}, {"id": "w0694", "en": "HDTV", "note": "high-definition television", "cn": "高清晰度电视"}, {"id": "w0695", "en": "LCD", "note": "liquid crystal display monitor", "cn": "液晶显示器"}, {"id": "w0696", "en": "MICR magnetic-ink character recognition", "note": "", "cn": "磁墨水字符识别器"}, {"id": "w0697", "en": "OCR", "note": "optical-character recognition", "cn": "光电字符识别器"}, {"id": "w0698", "en": "OMR", "note": "optical-mark recognition", "cn": "光标阅读器"}, {"id": "w0699", "en": "TFT", "note": "thin film transistor monitor", "cn": "薄膜晶体管显示器"}, {"id": "w0700", "en": "Zip disk", "note": "", "cn": "压缩磁盘"}, {"id": "w0701", "en": "Domain name system", "note": "DNS", "cn": "域名服务器"}, {"id": "w0702", "en": "File transfer protocol", "note": "FTP", "cn": "文件传送协议"}, {"id": "w0703", "en": "Hypertext markup language", "note": "HTML", "cn": "超文本链接标识语言"}, {"id": "w0704", "en": "Local area network", "note": "LAN", "cn": "局域网"}, {"id": "w0705", "en": "Internet relay chat", "note": "IRC", "cn": "互联网多线交谈"}, {"id": "w0706", "en": "Metropolitan area network", "note": "MAN", "cn": "城域网"}, {"id": "w0707", "en": "Network operation system", "note": "NOS", "cn": "网络操作系统"}, {"id": "w0708", "en": "Uniform resource locator", "note": "URL", "cn": "统一资源定位器"}, {"id": "w0709", "en": "Wide area network", "note": "WAN", "cn": "广域网"}, {"id": "w0710", "en": "Web server", "note": "", "cn": "服务器"}, {"id": "w0711", "en": "well-connected", "note": "", "cn": "连接良好"}, {"id": "w0712", "en": "well-known services", "note": "", "cn": "公认的服务"}, {"id": "w0713", "en": "wide area network, WAN", "note": "", "cn": "广域网"}, {"id": "w0714", "en": "wildcard character", "note": "", "cn": "通配符"}, {"id": "w0715", "en": "wildcarding", "note": "", "cn": "通配符方式"}, {"id": "w0716", "en": "window menu", "note": "", "cn": "窗口菜单"}, {"id": "w0717", "en": "Windows 2000 Task Manager", "note": "", "cn": "任务管理器"}, {"id": "w0718", "en": "Windows Internet Name Service, WINS", "note": "", "cn": "命名服务"}, {"id": "w0719", "en": "Windows Management Instrumentation, WMI", "note": "", "cn": "管理规范"}, {"id": "w0720", "en": "Windows Media Services", "note": "", "cn": "服务"}, {"id": "w0721", "en": "WINS, Windows Internet Name Service", "note": "", "cn": "命名服务"}, {"id": "w0722", "en": "WINS proxy", "note": "", "cn": "代理"}, {"id": "w0723", "en": "WINS resource", "note": "", "cn": "资源"}, {"id": "w0724", "en": "wireless communication", "note": "", "cn": "无线通讯"}, {"id": "w0725", "en": "WMI, Windows Management Instrumentation", "note": "", "cn": "管理规范"}, {"id": "w0726", "en": "workgroup", "note": "", "cn": "工作组"}, {"id": "w0727", "en": "X.509v3 certificate", "note": "", "cn": "证书"}, {"id": "w0728", "en": "XOR, exclusive OR", "note": "", "cn": "异或"}, {"id": "w0729", "en": "zone", "note": "", "cn": "区域"}, {"id": "w0730", "en": "zone list", "note": "", "cn": "区域列表"}, {"id": "w0731", "en": "zone transfer", "note": "", "cn": "区域传送"}, {"id": "w0732", "en": "TCP", "note": "Transmission Control Protocol", "cn": "传输控制协议，基于连接的服务"}, {"id": "w0733", "en": "UDP", "note": "User Datagram Protocol", "cn": "用户数据报协议，无连接的服务"}, {"id": "w0734", "en": "IP", "note": "Internet Protocol", "cn": "Internet协议，信息传递机制"}];
+const BANK_INFO={"count":734,"source":"计算机专业英语词汇终结版.pdf"};
+var EXAM_NUM=20, EXAM_SCORE=5;
+
+/* ============ 基础工具 ============ */
+function $(s){return document.querySelector(s)}
+function forEachNode(nodes, fn){ for(var i=0;i<nodes.length;i++) fn(nodes[i], i); }
+function toggleCls(el, cls, force){ if(force) el.classList.add(cls); else el.classList.remove(cls); }
+function pad2(n){ n=String(n); return n.length<2?"0"+n:n; }
+function fmt(sec){ return pad2(Math.floor(sec/60))+":"+pad2(sec%60); }
+function shuffle(a){ var r=a.slice(); for(var i=r.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=r[i];r[i]=r[j];r[j]=t;} return r; }
+/* 长文本折行：中文按 2 字符宽计（兼容旧机型） */
+function wrapCn(s, lim){ return String(s||""); }
+
+/* ============ 进度存储 ============ */
+var LS_KEY="enword_v1";
+function load(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||"{}"); }catch(e){ return {}; } }
+function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(progress)); }catch(e){} }
+var progress=load();
+function rec(id){ if(!progress[id]) progress[id]={ok:null,wrong_count:0}; var r=progress[id];
+  if(r.in_wrong===undefined){ r.in_wrong=(r.ok===false); r.life=r.in_wrong?1:0; } return r; }
+/* 只读访问：不存在返回空对象，不往进度里塞空记录 */
+function recGet(id){ var r=progress[id]; if(!r||typeof r!=="object") return {};
+  if(r.in_wrong===undefined){ r.in_wrong=(r.ok===false); r.life=r.in_wrong?1:0; } return r; }
+function migrateProgress(){ var ch=false;
+  for(var id in progress){ var r=progress[id];
+    if(!r||typeof r!=="object"||id.charAt(0)==="_") continue;
+    if(r.in_wrong===undefined){ r.in_wrong=(r.ok===false); r.life=r.in_wrong?1:0; ch=true; }
+    if(r.wrong_count===undefined){ r.wrong_count=0; ch=true; }
+    if(!r.in_wrong && r.life){ r.life=0; ch=true; }
+  }
+  if(ch) save(); }
+migrateProgress();
+/* ---------- 错词寿命机制 ----------
+   答错（任何模块）：累计次数+1，入错词本（寿命初始 1）；次数达 3/5/7/9 或 >10 时寿命+1。
+   只有「错词考试」答对才寿命 -1，归零后移除；顺序/普通考试答对不影响错词状态。 */
+function bumpWrong(r){ r.wrong_count=(r.wrong_count||0)+1; var wc=r.wrong_count;
+  if(!r.in_wrong){ r.in_wrong=true; r.life=1; }
+  if(wc===3||wc===5||wc===7||wc===9||wc>10) r.life=(r.life||1)+1; }
+function lifeDec(r){ if(!r.in_wrong) return false;
+  r.life=Math.max(0,(r.life||1)-1);
+  if(r.life<=0){ r.in_wrong=false; return true; }
+  return false; }
+/* ctx: seq=顺序/错词重做等非考试，exam=普通考试，wexam=错词考试 */
+function record(id, ok, ctx){ var r=rec(id); r.ok=ok;
+  var cleared=false;
+  if(!ok) bumpWrong(r); else if(ctx==="wexam") cleared=lifeDec(r);
+  save(); return cleared; }
+
+/* ============ 词库工具 ============ */
+function byId(id){ for(var i=0;i<BANK.length;i++){ if(BANK[i].id===id) return BANK[i]; } return null; }
+function isDone(it){ var r=progress[it.id]; return !!(r && r.ok!==null && r.ok!==undefined); }
+
+/* 记忆位置 = 「连续完成题目的最后一题」：
+   做了 1、2、3、4，跳过 5 又做了 6、7、8 → 下次打开就在第 4 题 */
+function resumeIndex(){
+  var last=-1;
+  for(var i=0;i<BANK.length;i++){ if(isDone(BANK[i])) last=i; else break; }
+  if(last>=0) return last;
+  return Math.min(progress._last||0, Math.max(0,BANK.length-1));
+}
+
+/* 中文释义等价判定
+   · 去空格、统一中英标点、忽略句末句号
+   · 省略号「…」/「...」/「什么」/「XX」互相等价（如「改变…的位置」）
+   · 释义含多个义项（以 ，；/ 分隔）时，答出任一义项即算对 */
+function normCn(s){
+  s=String(s==null?"":s).replace(/[\s\u3000]+/g,"");
+  s=s.replace(/[（(]/g,"(").replace(/[）)]/g,")");
+  s=s.replace(/[，,、]+/g,"，").replace(/[；;]+/g,"；").replace(/[：:]+/g,"：");
+  s=s.replace(/[。.]+$/,"");
+  s=s.replace(/…+/g,"\u00a7").replace(/\.{2,}/g,"\u00a7").replace(/。{2,}/g,"\u00a7");
+  s=s.replace(/[“”"'’‘]/g,"");
+  return s;
+}
+function sameOne(user, ref){
+  var c=normCn(ref), u=normCn(user);
+  if(u==="" ) return false;
+  if(u===c) return true;
+  if(c.indexOf("\u00a7")>=0){                 /* 参考释义里有省略号占位 */
+    u=u.replace(/什么/g,"\u00a7").replace(/[xXＸｘ]{2,}/g,"\u00a7")
+       .replace(/某(个|些)?/g,"\u00a7").replace(/省略(的)?(部分|内容)?/g,"\u00a7");
+    if(u===c) return true;
+  }
+  return false;
+}
+function senses(cn){ return String(cn||"").split(/[，,；;\/]/).filter(function(x){return x.trim();}); }
+function checkMeaning(user, it){
+  if(sameOne(user, it.cn)) return true;
+  var ss=senses(it.cn);
+  for(var i=0;i<ss.length;i++){ if(sameOne(user, ss[i])) return true; }
+  return false;
+}
+
+/* ============ 通用 UI ============ */
+var toastTimer=null;
+function toast(msg){
+  var t=$("#toast"); t.textContent=msg; t.classList.add("show");
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer=setTimeout(function(){ t.classList.remove("show"); }, 1400);
+}
+var modalCb=null;
+function msg(t,p){ $("#mbox").innerHTML="<h3>"+t+"</h3><p>"+(p||"")+"</p><div class='btns'><button style='background:#1a5276' onclick='closeModal()'>确定</button></div>"; $("#modal").classList.add("show"); }
+function confirm2(t,p,cb){ modalCb=cb; $("#mbox").innerHTML="<h3>"+t+"</h3><p>"+(p||"")+"</p><div class='btns'><button style='background:#c62828' onclick='closeModal()'>取消</button><button style='background:#1a5276' onclick='doConfirm()'>确定</button></div>"; $("#modal").classList.add("show"); }
+function doConfirm(){ closeModal(); if(modalCb){ var cb=modalCb; modalCb=null; cb(); } }
+function closeModal(){ $("#modal").classList.remove("show"); }
+function footerBtns(btns){
+  var f=$("#footer"); f.innerHTML="";
+  btns.forEach(function(b){
+    var el=document.createElement("button"); el.textContent=b[0]; el.style.background=b[1]; el.onclick=b[2];
+    f.appendChild(el);
+  });
+}
+function showFb(html){ var f=$("#fb"); f.style.display="block"; f.innerHTML=html; }
+function hideFb(){ $("#fb").style.display="none"; }
+function stat(){
+  var done=0, right=0, wrong=0;
+  for(var i=0;i<BANK.length;i++){
+    var r=progress[BANK[i].id];
+    if(r && r.ok!==null && r.ok!==undefined){ done++; if(r.ok===true) right++; else wrong++; }
+  }
+  var rate=done?Math.round(right/done*100):0;
+  var wq=BANK.filter(function(x){ return recGet(x.id).in_wrong; }).length;
+  $("#stat").textContent="已做 "+done+"/"+BANK.length+" · 正确率 "+rate+"% · 错词 "+wq;
+}
+
+/* ============ 模式切换 ============ */
+var mode="顺序", queue=[], idx=0, seqSavedIdx=null, answered=false;
+function setMode(m){
+  if(mode==="考试" && exam && exam.active && !exam.finished){ msg("考试中","考试进行中，不能切换到其他板块！\n请先交卷或退出考试。"); return; }
+  if(mode==="顺序" && m!=="顺序") seqSavedIdx=idx;
+  mode=m;
+  forEachNode(document.querySelectorAll("#tabs button"), function(b){ toggleCls(b,"active",b.dataset.mode===m); });
+  $("#examBar").style.display="none";
+  if(m==="考试"){ enterExamBoard(); return; }
+  examBarHide();
+  $("#qnav").style.display="none";
+  if(m==="顺序"){
+    queue=BANK.slice();
+    idx=(seqSavedIdx===null)?resumeIndex():seqSavedIdx;
+    idx=Math.max(0,Math.min(idx,Math.max(0,queue.length-1)));
+  }else{      /* 错词 */
+    queue=BANK.filter(function(x){ return recGet(x.id).in_wrong; });
+    if(!queue.length){ msg("错词本","太棒了，当前没有错词！\n\n（错词需在「错词考试」中答对、寿命归零后才会移除）"); mode="顺序"; queue=BANK.slice(); idx=0;
+      forEachNode(document.querySelectorAll("#tabs button"), function(b){ toggleCls(b,"active",b.dataset.mode==="顺序"); });
+    } else idx=0;
+  }
+  renderQ();
+}
+
+/* ============ 顺序 / 错词（选择题） ============ */
+function buildOptions(it){
+  /* 1 个正确答案 + 3 个随机干扰（来自其它词条释义），选项顺序随机；
+     干扰项优先选与正确答案长度相近的，选项更像人话；
+     并排除"与正确答案同义/互为子串"的干扰项，避免出现两个都算对的选项 */
+  var correct=it.cn, L=Math.max(1, correct.length);
+  var nc=normCn(correct);
+  var cap=Math.max(16, Math.round(L*1.6)), rcap=Math.max(24, Math.round(L*2.5));
+  var best=[], fallback=[], seen={};
+  seen[correct]=1;
+  function ambiguous(cn){
+    var n=normCn(cn);
+    if(n===nc) return true;                                  /* 规范化后完全相同 */
+    if(n.length>=2 && nc.length>=2 && (n.indexOf(nc)>=0 || nc.indexOf(n)>=0)) return true; /* 互为子串 */
+    return false;
+  }
+  var others=shuffle(BANK);
+  for(var i=0;i<others.length;i++){
+    var cn=others[i].cn;
+    if(!cn || seen[cn]) continue;
+    if(ambiguous(cn)) continue;
+    if(senses(cn)[0]===senses(correct)[0]) continue;         /* 首义项相同也跳过，避免近似重复 */
+    seen[cn]=1;
+    if(cn.length<=cap){ best.push(cn); if(best.length>=6) break; }
+    else if(cn.length<=rcap){ fallback.push(cn); }
+  }
+  var pool=best.slice(0,3);
+  for(var j=0;j<fallback.length && pool.length<3;j++) pool.push(fallback[j]);
+  if(pool.length<3){                                         /* 兜底：放宽长度限制再补 */
+    for(var k=0;k<others.length && pool.length<3;k++){
+      var c2=others[k].cn;
+      if(!c2 || seen[c2] || ambiguous(c2)) continue;
+      seen[c2]=1; pool.push(c2);
+    }
+  }
+  return shuffle(pool.concat([correct]));
+}
+function renderQ(){
+  var it=queue[idx];
+  hideFb(); $("#answerBox").style.display="none"; $("#card").style.display="none";
+  $("#wordcard").style.display="block";
+  if(!it){ $("#head").textContent="暂无单词"; $("#word").textContent=""; $("#note").textContent=""; $("#opts").innerHTML=""; return; }
+  $("#head").textContent="[第 "+(idx+1)+"/"+queue.length+" 个单词]"+((mode==="错词")?" · 错词重做":"");
+  $("#word").textContent=it.en;
+  $("#note").textContent=it.note?("全称：" + it.note):"";
+  $("#note").style.display=it.note?"block":"none";
+  answered=false;
+  var opts=buildOptions(it), o=$("#opts"); o.innerHTML="";
+  opts.forEach(function(cn,i){
+    var d=document.createElement("div"); d.className="opt"; d.textContent=cn;
+    d.setAttribute("data-cn", cn);
+    d.onclick=function(){ pickOption(d, cn, it); };
+    o.appendChild(d);
+    d.style.animation="staggerIn .3s ease "+(i*0.06)+"s both";
+  });
+  footerBtns((mode==="错词")
+    ? [["◀ 上一题","#1a5276",function(){nav(-1)}],
+       ["跳过 ▶","#7f8c8d",function(){nav(1)}],
+       ["📝 错词考试","#d35400",startWrongExam],
+       ["🔁 换一批","#8e44ad",renderQ],
+       ["🗑 重置","#c62828",resetProgress]]
+    : [["◀ 上一题","#1a5276",function(){nav(-1)}],
+       ["跳过 ▶","#7f8c8d",function(){nav(1)}],
+       ["🔁 换一批","#8e44ad",renderQ],
+       ["🗑 重置","#c62828",resetProgress]]);
+  if(mode==="错词"){
+    var rr=recGet(it.id);
+    if(rr.in_wrong) showFb("📕 错词寿命 "+rr.life+"（在「错词考试」中答对 -1，归零后移除）"+
+                           (rr.wrong_count?("\n🔁 累计答错 "+rr.wrong_count+" 次"):"")+
+                           "\n\n📚 错词共 "+BANK.filter(function(x){return recGet(x.id).in_wrong;}).length+" 个，点下方「📝 错词考试」抽题练习。");
+  }
+  progress._last=idx; save();
+  $("#main").scrollTop=0;
+  stat();
+}
+function pickOption(el, cn, it){
+  if(answered) return;
+  var right=(normCn(cn)===normCn(it.cn));
+  /* 同义项也算对（个别词条释义写法略有差异） */
+  if(!right && checkMeaning(cn, it)) right=true;
+  answered=true;
+  var nodes=document.querySelectorAll("#opts .opt");
+  forEachNode(nodes, function(n){
+    var isThis=(n===el);
+    if(normCn(n.getAttribute("data-cn"))===normCn(it.cn)) n.classList.add("right");
+    else if(isThis) n.classList.add("wrong");
+  });
+  var r=rec(it.id);
+  if(right){
+    record(it.id, true, mode==="错词"?"wrong":"seq");
+    stat();
+    var extra="";
+    if(r.wrong_count) extra="\n（该词累计答错 "+r.wrong_count+" 次）";
+    if(r.in_wrong) extra+="\n📕 仍在错词本：寿命 "+r.life+"（只有「错词考试」答对才 -1）";
+    showFb("<span class='tag-ok'>✅ 回答正确！</span>\n<span class='k'>"+it.en+"</span> —— "+it.cn+extra);
+    toast("✅ 正确");
+    setTimeout(function(){ if(answered && mode!=="错词") nav(1); }, 1100);
+  }else{
+    record(it.id, false, mode==="错词"?"wrong":"seq");
+    stat();
+    showFb("<span class='tag-no'>❌ 答错了，已加入错词本</span>\n<span class='k'>"+it.en+"</span> —— "+it.cn+
+           "\n你选的是："+cn+(r.wrong_count>1?("\n（该词累计答错 "+r.wrong_count+" 次）"):"")+
+           "\n📕 错词寿命 "+r.life+"（在「错词考试」中答对 -1，归零后移除）");
+    toast("❌ 已加入错词本");
+  }
+}
+function nav(d){
+  var ni=idx+d;
+  if(ni<0){ toast("已经是第一个单词"); return; }
+  if(ni>=queue.length){ toast("已经是最后一个单词"); return; }
+  idx=ni; renderQ();
+}
+
+/* ============ 考试（普通：20 题填空听写；错词考试：≤10 题选中文） ============ */
+var EXAM_NUM=20, EXAM_SCORE=5, WEXAM_NUM=10;
+var exam=null, examUsed=0, examTimer=null, examChecked=false;
+function examTitle(){ return (exam&&exam.kind==="wrong")?"错词考试":"模拟考试"; }
+
+function examIds(){ return BANK.map(function(x){ return x.id; }); }
+function pickPlanned(ids, orderKey, curKey, n){
+  var plan=(progress._exam_plan && typeof progress._exam_plan==="object")?progress._exam_plan:{};
+  var order=plan[orderKey];
+  if(!Array.isArray(order) || order.length!==ids.length ||
+     ids.some(function(id){ return order.indexOf(id)<0; })){
+    order=shuffle(ids); plan[curKey]=0;
+  }
+  var m=order.length, cur=plan[curKey]||0;
+  if(!(cur>=0) || cur>=m) cur=0;
+  var end=cur+n, picked;
+  if(end<=m) picked=order.slice(cur,end);
+  else picked=order.slice(cur).concat(order.slice(0,end-m));
+  plan[orderKey]=order; plan[curKey]=end%m;
+  progress._exam_plan=plan;
+  return picked;
+}
+function enterExamBoard(){
+  if(exam && exam.active){
+    if(exam.finished){ renderResult(); return; }
+    if(exam.paused){ showPaused(); return; }
+    startTicker(); renderExamQ(); return;
+  }
+  renderExamReady();
+}
+function examBarShow(btns){
+  $("#examBar").style.display="flex"; $("#examBar").innerHTML="";
+  btns.forEach(function(b){
+    var el=document.createElement("button"); el.textContent=b[0]; el.style.background=b[1]; el.onclick=b[2];
+    $("#examBar").appendChild(el);
+  });
+}
+function examBarHide(){ $("#examBar").style.display="none"; $("#examBar").innerHTML=""; }
+function renderExamReady(){
+  examBarHide(); $("#qnav").style.display="none";
+  $("#wordcard").style.display="none"; $("#opts").innerHTML=""; hideFb();
+  $("#answerBox").style.display="none"; $("#card").style.display="block";
+  var cnt=progress._exam_count||0;
+  $("#head").textContent="📝 模拟考试 · 第 "+(cnt+1)+" 次考试";
+  $("#card").textContent="考试说明：\n\n· 共 "+EXAM_NUM+" 题（随机抽词），每题 "+EXAM_SCORE+" 分，满分 "+(EXAM_NUM*EXAM_SCORE)+" 分\n"+
+    "· 填空听写式：给出英文单词，你输入中文意思\n"+
+    "· 点「确认答案」后立刻对照：释义一致即算对（多义项答出任一义项即可）\n"+
+    "· 「改变…的位置」这类带省略号的释义：输入「改变…的位置」「改变什么的位置」「改变...的位置」都算对\n"+
+    "· 答错的词自动进入「错词」板块\n"+
+    "· 错词清除规则：只有「错词考试」答对才减少寿命，寿命归零后移除\n"+
+    "· 抽词用环形算法：每场 20 题不重复，连续多场可覆盖全部 "+BANK.length+" 个单词\n"+
+    "· 考试中可暂停/退出，强制关闭也会自动保存，下次打开继续\n"+
+    "· 考试中不能切换板块\n\n当前第 "+(cnt+1)+" 次考试 · 已完成 "+cnt+" 次\n\n点击下方「开始考试」按钮开始。（错词考试在「错词」板块进入）";
+  footerBtns([["开始考试","#1a5276",function(){ startExam(); }]]);
+  stat();
+}
+function startExam(kind){
+  kind=kind||"normal";
+  var ids;
+  if(kind==="wrong"){
+    var wIds=BANK.filter(function(x){ return recGet(x.id).in_wrong; }).map(function(x){ return x.id; });
+    if(!wIds.length){ msg("错词考试","当前没有错词，先去刷词吧！"); return; }
+    ids=shuffle(wIds).slice(0,Math.min(WEXAM_NUM,wIds.length));
+  }else{
+    ids=pickPlanned(examIds(), "en_order", "en_cur", EXAM_NUM);
+  }
+  exam={active:true,finished:false,paused:false,kind:kind,ids:ids,idx:0,answers:{},order:{}};
+  examUsed=0; examChecked=false;
+  progress.exam=exam; save();
+  startTicker(); examBarShow([["⏸ 暂停","#b9770e",pauseExam],["📮 交卷","#27ae60",askFinish]]);
+  renderExamQ();
+}
+function startWrongExam(){
+  if(mode==="考试" && exam && exam.active && !exam.finished){ msg("考试中","考试进行中，不能开始新的考试！\n请先交卷或退出考试。"); return; }
+  var w=BANK.filter(function(x){ return recGet(x.id).in_wrong; });
+  if(!w.length){ msg("错词考试","当前没有错词，先去刷词吧！"); return; }
+  setMode("考试");
+  startExam("wrong");
+}
+function startTicker(){
+  if(examTimer) clearInterval(examTimer);
+  examTimer=setInterval(function(){
+    if(!exam || !exam.active || exam.finished || exam.paused) return;
+    examUsed++; exam.used=examUsed;
+    var h=$("#head");
+    if(h && mode==="考试") h.textContent="⏱ "+examTitle()+" · 已用 "+fmt(examUsed)+" · 第 "+((exam.idx||0)+1)+"/"+exam.ids.length+" 题";
+  }, 1000);
+}
+function stopTicker(){ if(examTimer){ clearInterval(examTimer); examTimer=null; } }
+function renderExamQ(){
+  var it=byId(exam.ids[exam.idx]);
+  if(!it){ renderResult(); return; }
+  var wrongKind=(exam.kind==="wrong");
+  $("#wordcard").style.display="block"; $("#card").style.display="none"; hideFb();
+  var qn=$("#qnav");
+  $("#head").textContent="⏱ "+examTitle()+" · 已用 "+fmt(examUsed)+" · 第 "+(exam.idx+1)+"/"+exam.ids.length+" 题";
+  $("#word").textContent=it.en;
+  if(wrongKind){
+    /* 错词考试：给英文选中文（4 选 1、选项随机），点选即判分，每题一次 */
+    $("#note").textContent=it.note?("全称：" + it.note):"";
+    $("#note").style.display=it.note?"block":"none";
+    $("#answerBox").style.display="none";
+    exam.order=exam.order||{};
+    var opts=exam.order[it.id];
+    if(!opts){ opts=buildOptions(it); exam.order[it.id]=opts; progress.exam=exam; save(); }
+    var a=exam.answers[it.id];
+    var o=$("#opts"); o.innerHTML="";
+    opts.forEach(function(cn,i){
+      var d=document.createElement("div"); d.className="opt"; d.textContent=cn;
+      if(a){
+        if(checkMeaning(cn, it)) d.classList.add("right");
+        else if(cn===a.ans) d.classList.add("wrong");
+      }else{
+        d.onclick=function(){ wrongExamPick(it, cn); };
+      }
+      o.appendChild(d);
+      if(!a) d.style.animation="staggerIn .3s ease "+(i*0.06)+"s both";
+    });
+    examChecked=!!a;
+    footerBtns([["◀ 上一题","#1a5276",function(){ examNav(-1) }],
+                ["下一题 ▶","#1a5276",function(){ examNext() }],
+                ["📮 交卷","#c62828",askFinish]]);
+    renderExamNav();
+    $("#main").scrollTop=0;
+    stat();
+    return;
+  }
+  $("#note").textContent=it.note?("全称：" + it.note):"";
+  $("#note").style.display=it.note?"block":"none";
+  $("#opts").innerHTML="";
+  var ab=$("#answerBox"); ab.style.display="flex";
+  var inp=$("#answerInput");
+  inp.disabled=false; inp.value=(exam.answers[it.id] && exam.answers[it.id].ans)||"";
+  $("#card").style.display="block";
+  $("#card").textContent="✍️ 填空：请写出这个单词的中文意思（输入后点「确认答案」，会立刻对照）";
+  examChecked=false;
+  inp.onkeydown=function(e){ if(e.key==="Enter"){ if(!examChecked) checkExamAnswer(); else examNext(); } };
+  footerBtns([["◀ 上一题","#1a5276",function(){ examNav(-1) }],
+              ["确认答案","#27ae60",checkExamAnswer],
+              ["下一题 ▶","#1a5276",examNext],
+              ["📮 交卷","#c62828",askFinish]]);
+  renderExamNav();
+  $("#main").scrollTop=0;
+  stat();
+}
+function renderExamNav(){
+  var q=$("#qnav"); q.innerHTML=""; q.style.display="flex";
+  exam.ids.forEach(function(id,i){
+    var a=exam.answers[id];
+    var b=document.createElement("button");
+    b.textContent=(i+1);
+    b.className=a?(a.ok?"ok":"no"):"un";
+    b.onclick=function(){ if(mode!=="考试") return; exam.idx=i; renderExamQ(); };
+    q.appendChild(b);
+  });
+}
+function wrongExamPick(it, cn){
+  if(!exam || !exam.active || exam.finished || exam.paused) return;
+  if(exam.answers[it.id]) return;                       /* 每题只判一次 */
+  var right=(normCn(cn)===normCn(it.cn));
+  if(!right && checkMeaning(cn, it)) right=true;
+  exam.answers[it.id]={ans:cn, correct:it.cn, ok:right};
+  var cleared=record(it.id, right, "wexam");            /* 错词考试：答对寿命-1 */
+  examChecked=true; progress.exam=exam; save();
+  renderExamQ(); renderExamNav();
+  showFb((right?"<span class='tag-ok'>✅ 回答正确！</span>":"<span class='tag-no'>❌ 回答错误</span>")+
+         "\n<span class='k'>"+it.en+"</span> —— 正确答案："+it.cn+
+         "\n你选的是："+cn+
+         (cleared?"\n🎉 错词寿命归零，已从错词本移除！":"\n📕 仍在错词本：寿命 "+recGet(it.id).life+""));
+  toast(right?"✅ 正确":"❌ 错误");
+}
+function checkExamAnswer(){
+  var it=byId(exam.ids[exam.idx]);
+  var inp=$("#answerInput");
+  var user=inp.value.trim();
+  if(!user){ toast("请先输入中文意思"); inp.focus(); return; }
+  var ok=checkMeaning(user, it);
+  exam.answers[it.id]={ans:user, correct:it.cn, ok:ok};
+  progress.exam=exam; save();
+  record(it.id, ok, "exam");
+  stat(); renderExamNav();
+  examChecked=true;
+  inp.disabled=true;
+  showFb((ok?"<span class='tag-ok'>✅ 回答正确！</span>":"<span class='tag-no'>❌ 回答错误（已加入错词本）</span>")+
+         "\n<span class='k'>"+it.en+"</span> —— 正确答案："+it.cn+
+         "\n你的答案："+user+
+         (ok?"":"\n📕 错词寿命 "+recGet(it.id).life+"（在「错词考试」中答对 -1）"));
+  toast(ok?"✅ 正确":"❌ 错误");
+}
+function examNext(){
+  if(!examChecked && !exam.answers[exam.ids[exam.idx]]){ toast("请先确认答案"); return; }
+  if(exam.idx>=exam.ids.length-1){ askFinish(); return; }
+  exam.idx++; progress.exam=exam; save(); renderExamQ();
+}
+function examNav(d){
+  var ni=exam.idx+d;
+  if(ni<0){ toast("已经是第一题"); return; }
+  if(ni>=exam.ids.length){ toast("已经是最后一题"); return; }
+  exam.idx=ni; progress.exam=exam; save(); renderExamQ();
+}
+function pauseExam(){
+  exam.paused=true; stopTicker(); progress.exam=exam; save(); showPaused();
+}
+function resumeExam(){
+  exam.paused=false; examChecked=!!exam.answers[exam.ids[exam.idx]];
+  progress.exam=exam; save(); startTicker();
+  examBarShow([["⏸ 暂停","#b9770e",pauseExam],["📮 交卷","#27ae60",askFinish]]);
+  renderExamQ();
+}
+function showPaused(){
+  stopTicker(); examBarHide();
+  $("#wordcard").style.display="none"; $("#opts").innerHTML=""; $("#answerBox").style.display="none";
+  $("#qnav").style.display="none";
+  $("#card").style.display="block";
+  $("#head").textContent="⏸ "+examTitle()+"已暂停";
+  $("#card").textContent="考试已暂停。\n\n已用时间："+fmt(examUsed)+"\n已作答 "+
+    (Object.keys(exam.answers||{}).length)+"/"+exam.ids.length+" 题\n\n点下面「继续考试」恢复答题（进度已自动保存，关掉页面也不会丢）。";
+  footerBtns([["▶ 继续考试","#1a5276",resumeExam],
+              ["📮 交卷","#27ae60",askFinish],
+              ["⬅ 返回顺序","#7f8c8d",function(){ setMode("顺序") }]]);
+}
+function askFinish(){
+  var un=exam.ids.length-Object.keys(exam.answers||{}).length;
+  confirm2("交卷","确定要交卷吗？"+(un?("\n还有 "+un+" 题未作答。"):""),finishExam);
+}
+function finishExam(){
+  stopTicker();
+  exam.finished=true; exam.paused=false; exam.left=0; exam.used=examUsed;
+  if(exam.kind==="wrong") progress._wexam_count=(progress._wexam_count||0)+1;
+  else progress._exam_count=(progress._exam_count||0)+1;
+  progress.exam=exam; save(); examBarHide(); renderResult();
+}
+function renderResult(){
+  stopTicker(); examBarHide(); $("#qnav").style.display="none";
+  $("#wordcard").style.display="none"; $("#opts").innerHTML=""; $("#answerBox").style.display="none";
+  var qs=exam.ids.map(byId), ans=exam.answers||{};
+  var correct=0, wrong=[], un=0;
+  qs.forEach(function(x){
+    var a=ans[x.id];
+    if(!a) un++;
+    else if(a.ok) correct++; else wrong.push(x);
+  });
+  var score=correct*EXAM_SCORE;
+  var wrongKind=(exam.kind==="wrong");
+  $("#card").style.display="block";
+  $("#head").textContent="🏁 "+examTitle()+"结束";
+  var tailTxt;
+  if(wrongKind){
+    var clearedN=qs.filter(function(x){ return ans[x.id] && ans[x.id].ok && !recGet(x.id).in_wrong; }).length;
+    var leftN=BANK.filter(function(x){ return recGet(x.id).in_wrong; }).length;
+    tailTxt="🎉 本次清除 "+clearedN+" 个错词（寿命归零）；答对寿命 -1，答错寿命不变。\n📕 剩余错词："+leftN+" 个";
+  }else{
+    tailTxt=((un===0 && wrong.length===0) ? "全部答对，太棒了！"
+      : (wrong.length ? "下滑查看错题号，点击可逐题回顾；错词已自动进入「错词」板块（需在错词考试中答对才能移除）。"
+                      : "本次没有答错的词，但还有题目未作答。"));
+  }
+  $("#card").textContent="🏆 "+examTitle()+"成绩："+score+" 分 / 满分 "+(qs.length*EXAM_SCORE)+" 分\n\n"+
+    "✅ 答对 "+correct+" 题 · ❌ 答错 "+wrong.length+" 题 · ⭕ 未答 "+un+" 题\n"+
+    "⏱ 用时 "+fmt(examUsed)+"\n\n"+tailTxt;
+  var o=$("#opts"); o.innerHTML="";
+  var d=document.createElement("div");
+  d.className="opt ok";
+  d.style.cssText="background:#e8f8f0;color:#1a7f37;border-color:#2ecc71;font-weight:bold;cursor:default";
+  d.textContent="🏆 成绩："+score+" 分（答对 "+correct+"/"+qs.length+"）";
+  o.appendChild(d);
+  if(wrong.length){
+    var t=document.createElement("div");
+    t.style.cssText="font-size:13px;color:#c62828;font-weight:bold;margin:6px 0";
+    t.textContent="📌 错题（点击回顾）："; o.appendChild(t);
+    var wrap=document.createElement("div");
+    wrong.forEach(function(x){
+      var b=document.createElement("button"); b.className="chip"; b.textContent=x.en;
+      b.onclick=function(){ reviewOne(x.id); };
+      wrap.appendChild(b);
+    });
+    o.appendChild(wrap);
+  }
+  var allWrap=document.createElement("div");
+  allWrap.style.cssText="margin-top:10px";
+  var tb=document.createElement("button"); tb.className="chip"; tb.style.background="linear-gradient(135deg,#1a5276,#2471a3)";
+  tb.textContent="📋 逐题回顾全部 "+qs.length+" 题";
+  tb.onclick=function(){ reviewOne(exam.ids[0]); };
+  allWrap.appendChild(tb); o.appendChild(allWrap);
+  footerBtns(wrongKind
+    ? [["🔄 再考一次错词","#b9770e",function(){ startExam("wrong"); }],
+       ["⬅ 返回错词列表","#1a5276",function(){ exam=null; delete progress.exam; save(); setMode("错词"); }],
+       ["🗑 重置","#c62828",resetProgress]]
+    : [["🔄 重新考试","#b9770e",renderExamReady],
+       ["⬅ 返回顺序","#1a5276",function(){ exam=null; delete progress.exam; save(); setMode("顺序"); }],
+       ["🗑 重置","#c62828",resetProgress]]);
+  stat();
+}
+var reviewIdx=0;
+function reviewOne(id){
+  reviewIdx=exam.ids.indexOf(id);
+  if(reviewIdx<0) reviewIdx=0;
+  renderReview();
+}
+function renderReview(){
+  var it=byId(exam.ids[reviewIdx]), a=exam.answers[it.id]||{};
+  $("#card").style.display="none"; $("#answerBox").style.display="none";
+  $("#wordcard").style.display="block"; $("#opts").innerHTML="";
+  $("#head").textContent="📋 回顾 · 第 "+(reviewIdx+1)+"/"+exam.ids.length+" 题"+(a.ok?" · ✅":" · ❌");
+  $("#word").textContent=it.en;
+  $("#note").textContent=it.note?("全称：" + it.note):"";
+  $("#note").style.display=it.note?"block":"none";
+  showFb((a.ans===undefined?"<span class='tag-no'>⭕ 未作答</span>":
+            (a.ok?"<span class='tag-ok'>✅ 你答对了</span>":"<span class='tag-no'>❌ 你答错了</span>"))+
+         "\n<span class='k'>正确答案：</span>"+it.cn+
+         (a.ans!==undefined?("\n<span class='k'>我的答案：</span>"+a.ans):""));
+  footerBtns([["◀ 上一题","#1a5276",function(){ if(reviewIdx>0){ reviewIdx--; renderReview(); } else toast("已经是第一题"); }],
+              ["下一题 ▶","#1a5276",function(){ if(reviewIdx<exam.ids.length-1){ reviewIdx++; renderReview(); } else toast("已经是最后一题"); }],
+              ["⬅ 返回成绩","#27ae60",renderResult]]);
+}
+
+/* ============ 重置 ============ */
+function resetProgress(){ resetStep(1); }
+function resetStep(n){
+  if(n===1) confirm2("重置进度（1/3）","确定要清除全部做题记录与错词本吗？\n此操作不可恢复！",function(){ resetStep(2); });
+  else if(n===2) confirm2("重置进度（2/3）","再次确认：将清空做题记录、错词次数和考试记录！",function(){ resetStep(3); });
+  else confirm2("重置进度（3/3）","最后一次确认：立即清空全部数据并重新开始！",function(){
+    progress={}; save(); stopTicker(); exam=null; examBarHide(); seqSavedIdx=null;
+    mode="顺序";
+    forEachNode(document.querySelectorAll("#tabs button"), function(b){ toggleCls(b,"active",b.dataset.mode==="顺序"); });
+    queue=BANK.slice(); idx=0; renderQ(); examBarHide();
+    msg("完成","🗑 已清除全部做题记录，重新开始！");
+  });
+}
+
+/* ============ 启动 ============ */
+forEachNode(document.querySelectorAll("#tabs button"), function(b){
+  b.addEventListener("click", function(){ setMode(b.dataset.mode); });
+});
+function showErrBox(msg, ln){
+  try{
+    var d=document.getElementById("__errbox");
+    if(!d){
+      d=document.createElement("div"); d.id="__errbox";
+      d.style.cssText="position:fixed;left:0;right:0;top:0;background:#c62828;color:#fff;font-size:12px;line-height:1.6;padding:8px 34px 8px 10px;z-index:999";
+      var x=document.createElement("span"); x.textContent="✕";
+      x.style.cssText="position:absolute;right:6px;top:5px;font-size:14px;cursor:pointer;padding:2px 8px";
+      x.onclick=function(){ if(d.parentNode) d.parentNode.removeChild(d); };
+      d.appendChild(x);
+      document.body.appendChild(d);
+      setTimeout(function(){ if(d.parentNode) d.parentNode.removeChild(d); }, 12000);
+    }
+    var s=document.createElement("div"); s.textContent=msg; d.appendChild(s);
+  }catch(e){}
+}
+window.addEventListener("error", function(e){
+  showErrBox("脚本错误："+(e.message||"")+" @ "+(e.lineno||"?"), e.lineno);
+});
+(function init(){
+  try{
+    exam=(progress.exam && typeof progress.exam==="object" && progress.exam.active)?progress.exam:null;
+    if(exam){
+      /* 恢复未完成的考试 */
+      exam.ids=(exam.ids||[]).filter(function(id){ return !!byId(id); });
+      if(!exam.ids.length){ exam=null; delete progress.exam; save(); }
+      else{
+        mode="考试";
+        forEachNode(document.querySelectorAll("#tabs button"), function(b){ toggleCls(b,"active",b.dataset.mode==="考试"); });
+        examUsed=exam.used||0;
+        exam.idx=Math.max(0,Math.min(exam.idx||0, exam.ids.length-1));
+        if(exam.finished){ renderResult(); }
+        else if(exam.paused){ showPaused(); }
+        else{
+          examBarShow([["⏸ 暂停","#b9770e",pauseExam],["📮 交卷","#27ae60",askFinish]]);
+          startTicker(); examChecked=!!(exam.answers&&exam.answers[exam.ids[exam.idx]]); renderExamQ();
+        }
+        window.__appReady=true;
+        return;
+      }
+    }
+    mode="顺序";
+    queue=BANK.slice();
+    idx=resumeIndex();
+    renderQ();
+    window.__appReady=true;
+  }catch(e){
+    try{ localStorage.removeItem(LS_KEY); }catch(_){}
+    progress={}; exam=null; mode="顺序"; queue=BANK.slice(); idx=0;
+    try{ renderQ(); }catch(_){}
+    showErrBox("初始化失败（已自动清除本地旧数据，请刷新页面重试）："+((e&&e.message)?e.message:e));
+  }
+})();
+/* 微信/QQ 环境提示 */
+if(navigator.userAgent.indexOf("MicroMessenger")>=0 || navigator.userAgent.indexOf("QQBrowser")>=0 || navigator.userAgent.indexOf("MQQBrowser")>=0){
+  try{
+    var tip=document.createElement("div");
+    tip.style.cssText="position:fixed;left:0;right:0;top:0;background:#fff8e1;color:#8a6d3b;font-size:12px;line-height:1.6;padding:7px 34px 7px 10px;z-index:998;text-align:center";
+    var tx=document.createElement("span"); tx.textContent="✕";
+    tx.style.cssText="position:absolute;right:6px;top:5px;font-size:14px;cursor:pointer;padding:2px 8px;color:#8a6d3b";
+    tx.onclick=function(){ if(tip.parentNode) tip.parentNode.removeChild(tip); };
+    tip.textContent="ℹ️ 微信/QQ 内可能显示不全：如按钮缺失或无法操作，请点右上角「…」→「用其他应用打开」→ 选浏览器打开";
+    tip.appendChild(tx); document.body.appendChild(tip);
+  }catch(e){}
+}
+</script>
+</body>
+</html>

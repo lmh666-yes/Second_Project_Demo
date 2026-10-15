@@ -1,0 +1,19 @@
+# npm（本工程未使用 npm，以下仅保险）
+node_modules/
+npm-debug.log*
+
+# 临时文件
+*.txt
+
+# Android 构建产物（不提交）
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/captures/
+android/*.iml
+
+# 系统
+.DS_Store
+Thumbs.db

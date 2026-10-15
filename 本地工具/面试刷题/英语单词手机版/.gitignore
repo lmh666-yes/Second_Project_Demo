@@ -1,0 +1,19 @@
+# 临时文件
+*.txt
+
+# Android 构建产物（不提交）
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/captures/
+android/*.iml
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 签名密钥已一并提交（android/enword-release.jks + keystore.properties）：
+# 这样以后在任何电脑上重新打包都是同一签名，可直接覆盖升级已安装的 App。
+# 若你不想把密钥放进仓库，可删掉这两行注释（即不提交），但务必自行备份密钥文件。

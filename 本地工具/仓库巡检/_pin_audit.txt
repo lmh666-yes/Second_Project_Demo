@@ -1,0 +1,206 @@
+==============================================================================
+## 板1 检测端 (F407ZE)
+   源：EnvMonitor\Project_1_检测端\Project\FWLIB\inc
+   头文件 37 个，被占用引脚 45 个，其中冲突 7 个，无人认领 67 个
+==============================================================================
+
+### 冲突引脚（同一脚被 >= 2 个模块声明）
+
+- **PA2**  ← 2 个占用者
+    - `SYS_ETH_MDIO`   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_eth.h:18   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_eth.h:19
+    - `SYS_USART2_TX`   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_usart.h:28   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_usart.h:29
+- **PB3**  ← 2 个占用者
+    - `SYS_SPI1_SCK`   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_spi.h:27   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_spi.h:28
+    - `SYS_SPI3_SCK`   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_spi.h:41   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_spi.h:42
+- **PB4**  ← 2 个占用者
+    - `SYS_SPI1_MISO`   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_spi.h:29   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_spi.h:30
+    - `SYS_SPI3_MISO`   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_spi.h:43   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_spi.h:44
+- **PB5**  ← 2 个占用者
+    - `SYS_SPI1_MOSI`   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_spi.h:31   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_spi.h:32
+    - `SYS_SPI3_MOSI`   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_spi.h:45   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_spi.h:46
+- **PB10**  ← 2 个占用者
+    - `SYS_I2C2_SCL`   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_i2c.h:33   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_i2c.h:34
+    - `SYS_USART3_TX`   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_usart.h:33   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_usart.h:34
+- **PB11**  ← 2 个占用者
+    - `SYS_I2C2_SDA`   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_i2c.h:35   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_i2c.h:36
+    - `SYS_USART3_RX`   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_usart.h:35   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_usart.h:36
+- **PB15**  ← 2 个占用者
+    - `LCD_BL`   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\lcd.h:24   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\lcd.h:25
+    - `SYS_SPI2_MOSI`   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_spi.h:38   EnvMonitor\Project_1_检测端\Project\FWLIB\inc\sys_spi.h:39
+
+### 全部占用引脚（单占用也列出，便于人工对表）
+
+- PA0  KEY1
+- PA1  SYS_ETH_REFCLK
+- PA2  SYS_ETH_MDIO, SYS_USART2_TX  [冲突]
+- PA3  SYS_USART2_RX
+- PA7  SYS_ETH_CRSDV
+- PA8  SYS_I2C3_SCL
+- PA9  SYS_USART1_TX
+- PA10 SYS_USART1_RX
+- PB0  SYS_LORA_M0
+- PB1  SYS_LORA_M1
+- PB2  SYS_LORA_AUX
+- PB3  SYS_SPI1_SCK, SYS_SPI3_SCK  [冲突]
+- PB4  SYS_SPI1_MISO, SYS_SPI3_MISO  [冲突]
+- PB5  SYS_SPI1_MOSI, SYS_SPI3_MOSI  [冲突]
+- PB8  SYS_I2C1_SCL
+- PB9  SYS_I2C1_SDA
+- PB10 SYS_I2C2_SCL, SYS_USART3_TX  [冲突]
+- PB11 SYS_I2C2_SDA, SYS_USART3_RX  [冲突]
+- PB13 SYS_SPI2_SCK
+- PB14 SYS_SPI2_MISO
+- PB15 LCD_BL, SYS_SPI2_MOSI  [冲突]
+- PC1  SYS_ETH_MDC
+- PC4  SYS_ETH_RXD0
+- PC5  SYS_ETH_RXD1
+- PC6  SYS_USART6_TX
+- PC7  SYS_USART6_RX
+- PC9  SYS_I2C3_SDA
+- PC10 SYS_UART4_TX
+- PC11 SYS_UART4_RX
+- PC12 SYS_UART5_TX
+- PD2  SYS_UART5_RX
+- PD3  SYS_ETH_PHY_RST
+- PE2  KEY2
+- PE3  KEY3
+- PE4  KEY4
+- PE13 LED2
+- PE14 LED3
+- PF7  SYS_ADC_LIGHT
+- PF8  BEEP
+- PF9  LED0
+- PF10 LED1
+- PG9  SYS_DHT11
+- PG11 SYS_ETH_TXEN
+- PG13 SYS_ETH_TXD0
+- PG14 SYS_ETH_TXD1
+
+### 无人认领引脚（库里没有任何模块声明；选空闲脚先看这里）
+
+  PA4  PA5  PA6  PA11  PA12  PA13  PA14  PA15  PB6  PB7  PB12  PC0  PC2  PC3  PC8  PC13  PC14  PC15  PD0  PD1  PD4  PD5  PD6  PD7  PD8  PD9  PD10  PD11  PD12  PD13  PD14  PD15  PE0  PE1  PE5  PE6  PE7  PE8  PE9  PE10  PE11  PE12  PE15  PF0  PF1  PF2  PF3  PF4  PF5  PF6  PF11  PF12  PF13  PF14  PF15  PG0  PG1  PG2  PG3  PG4  PG5  PG6  PG7  PG8  PG10  PG12  PG15
+
+==============================================================================
+## 板2 通信端 (F407ZG)
+   源：EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc
+   头文件 58 个，被占用引脚 62 个，其中冲突 15 个，无人认领 50 个
+==============================================================================
+
+### 冲突引脚（同一脚被 >= 2 个模块声明）
+
+- **PA2**  ← 2 个占用者
+    - `SYS_ETH_MDIO`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_eth.h:30   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_eth.h:31
+    - `SYS_USART2_TX`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_usart.h:41   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_usart.h:42
+- **PA4**  ← 2 个占用者
+    - `SYS_DAC_OUT`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_adc.h:63   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_adc.h:64
+    - `SYS_DAC1`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_dac.h:31   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_dac.h:32
+- **PA5**  ← 3 个占用者
+    - `SENSOR_ADC`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\ntc_pt100.h:65   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\ntc_pt100.h:66
+    - `SYS_ADC_JMP`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_adc.h:58   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_adc.h:59
+    - `SYS_DAC2`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_dac.h:33   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_dac.h:34
+- **PB3**  ← 2 个占用者
+    - `SYS_SPI1_SCK`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:27   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:28
+    - `SYS_SPI3_SCK`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:41   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:42
+- **PB4**  ← 2 个占用者
+    - `SYS_SPI1_MISO`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:29   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:30
+    - `SYS_SPI3_MISO`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:43   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:44
+- **PB5**  ← 2 个占用者
+    - `SYS_SPI1_MOSI`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:31   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:32
+    - `SYS_SPI3_MOSI`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:45   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:46
+- **PB10**  ← 2 个占用者
+    - `SYS_I2C2_SCL`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_i2c.h:59   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_i2c.h:60
+    - `SYS_USART3_TX`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_usart.h:46   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_usart.h:47
+- **PB11**  ← 2 个占用者
+    - `SYS_I2C2_SDA`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_i2c.h:61   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_i2c.h:62
+    - `SYS_USART3_RX`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_usart.h:48   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_usart.h:49
+- **PB14**  ← 2 个占用者
+    - `SYS_SPI2_MISO`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:36   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:37
+    - `W25QXX_CS`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\w25qxx.h:17   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\w25qxx.h:18
+- **PB15**  ← 2 个占用者
+    - `LCD_BL`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\lcd.h:38   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\lcd.h:39
+    - `SYS_SPI2_MOSI`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:38   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_spi.h:39
+- **PC1**  ← 2 个占用者
+    - `SYS_ETH_MDC`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_eth.h:32   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_eth.h:33
+    - `MOTOR_IN1`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\uln2003.h:36   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\uln2003.h:37
+- **PC4**  ← 2 个占用者
+    - `SYS_ETH_RXD0`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_eth.h:36   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_eth.h:37
+    - `MOTOR_IN4`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\uln2003.h:42   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\uln2003.h:43
+- **PC5**  ← 2 个占用者
+    - `RGB5X5_DATA`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\rgb5x5.h:46   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\rgb5x5.h:47
+    - `SYS_ETH_RXD1`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_eth.h:38   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_eth.h:39
+- **PG9**  ← 2 个占用者
+    - `DHT11`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\dht11.h:26   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\dht11.h:27
+    - `DS18B20`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\ds18b20.h:13   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\ds18b20.h:14
+- **PG13**  ← 2 个占用者
+    - `SYS_ETH_TXD0`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_eth.h:42   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\sys_eth.h:43
+    - `TB6612_STBY`   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\tb6612.h:61   EnvMonitor\Project_2_数据通信端\Project\FWLIB\inc\tb6612.h:62
+
+### 全部占用引脚（单占用也列出，便于人工对表）
+
+- PA0  KEY3
+- PA1  SYS_ETH_REFCLK
+- PA2  SYS_ETH_MDIO, SYS_USART2_TX  [冲突]
+- PA3  SYS_USART2_RX
+- PA4  SYS_DAC1, SYS_DAC_OUT  [冲突]
+- PA5  SENSOR_ADC, SYS_ADC_JMP, SYS_DAC2  [冲突]
+- PA7  SYS_ETH_CRSDV
+- PA8  SYS_I2C3_SCL
+- PA9  SYS_USART1_TX
+- PA10 SYS_USART1_RX
+- PA11 SYS_CAN_RX
+- PA12 SYS_CAN_TX
+- PB0  XPT2046_CLK
+- PB1  XPT2046_PEN
+- PB2  XPT2046_DOUT
+- PB3  SYS_SPI1_SCK, SYS_SPI3_SCK  [冲突]
+- PB4  SYS_SPI1_MISO, SYS_SPI3_MISO  [冲突]
+- PB5  SYS_SPI1_MOSI, SYS_SPI3_MOSI  [冲突]
+- PB6  TB6612_PWMA
+- PB7  TB6612_PWMB
+- PB8  SYS_I2C1_SCL
+- PB9  SYS_I2C1_SDA
+- PB10 SYS_I2C2_SCL, SYS_USART3_TX  [冲突]
+- PB11 SYS_I2C2_SDA, SYS_USART3_RX  [冲突]
+- PB13 SYS_SPI2_SCK
+- PB14 SYS_SPI2_MISO, W25QXX_CS  [冲突]
+- PB15 LCD_BL, SYS_SPI2_MOSI  [冲突]
+- PC0  MPU6050_INT
+- PC1  MOTOR_IN1, SYS_ETH_MDC  [冲突]
+- PC2  MOTOR_IN2
+- PC3  MOTOR_IN3
+- PC4  MOTOR_IN4, SYS_ETH_RXD0  [冲突]
+- PC5  RGB5X5_DATA, SYS_ETH_RXD1  [冲突]
+- PC6  SYS_USART6_TX
+- PC7  SYS_USART6_RX
+- PC9  SYS_I2C3_SDA
+- PC10 SYS_UART4_TX
+- PC11 SYS_UART4_RX
+- PC12 SYS_UART5_TX
+- PC13 XPT2046_CS
+- PD2  SYS_UART5_RX
+- PD3  SYS_ETH_PHY_RST
+- PE2  KEY2
+- PE3  KEY1
+- PE4  KEY0
+- PE5  SYS_LORA_M0
+- PE6  SYS_LORA_M1
+- PE7  SYS_LORA_AUX
+- PF7  SYS_ADC_LIGHT
+- PF8  BEEP
+- PF9  LED0
+- PF10 LED1
+- PF11 XPT2046_DIN
+- PG2  TB6612_AIN1
+- PG3  TB6612_AIN2
+- PG4  TB6612_BIN1
+- PG5  TB6612_BIN2
+- PG8  SYS_RS485_DE
+- PG9  DHT11, DS18B20  [冲突]
+- PG11 SYS_ETH_TXEN
+- PG13 SYS_ETH_TXD0, TB6612_STBY  [冲突]
+- PG14 SYS_ETH_TXD1
+
+### 无人认领引脚（库里没有任何模块声明；选空闲脚先看这里）
+
+  PA6  PA13  PA14  PA15  PB12  PC8  PC14  PC15  PD0  PD1  PD4  PD5  PD6  PD7  PD8  PD9  PD10  PD11  PD12  PD13  PD14  PD15  PE0  PE1  PE8  PE9  PE10  PE11  PE12  PE13  PE14  PE15  PF0  PF1  PF2  PF3  PF4  PF5  PF6  PF12  PF13  PF14  PF15  PG0  PG1  PG6  PG7  PG10  PG12  PG15
+

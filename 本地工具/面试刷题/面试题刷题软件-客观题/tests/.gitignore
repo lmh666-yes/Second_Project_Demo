@@ -1,0 +1,6 @@
+题库.good.json
+题库.json.bak
+progress.json.bak
+*.run.txt
+crash_run.txt
+stress_*.txt
