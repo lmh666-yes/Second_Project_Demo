@@ -52,6 +52,19 @@ QString typeTag(const Card &c)
     return QStringLiteral("函数");
 }
 
+/* 落地页内容：与网页版 / 手机版同一份清单（标准库速查-手机版.html 的
+   HOT_MODULES / HOT_TOPICS / 三条路径卡）。改一处要三处一起改。
+   锚点一律用**纯 ASCII 下标**（q:0 / mod:0 / path:0）而不是把中文塞进 href ——
+   href 里的非 ASCII 会被 QUrl 百分号编码，回来对不上，数值下标最稳。 */
+const char *kHotModules[] = { "USART", "GPIO", "TIM", "ADC", "DMA", "I2C",
+                              "SPI", "NVIC", "EXTI", "RCC", "FLASH", "RTC" };
+const char *kHotTopics[] = { "串口 DMA + 空闲中断", "定时器 PWM", "数据帧组包 + CRC16",
+                             "FreeRTOS 任务框架", "LoRa 点对点", "ESP8266 + MQTT",
+                             "I2C 接传感器", "看门狗", "RTC 电子钟", "Flash 断网缓存" };
+
+const int kHotModuleN = int(sizeof(kHotModules) / sizeof(kHotModules[0]));
+const int kHotTopicN  = int(sizeof(kHotTopics)  / sizeof(kHotTopics[0]));
+
 } // namespace
 
 MainWindow::MainWindow(QWidget *parent)
@@ -270,6 +283,22 @@ void MainWindow::refreshList()
         m_list->addItem(QStringLiteral("%1  ⟨%2⟩").arg(c.n, typeTag(c)));
     }
     m_list->blockSignals(false);
+
+    /* 落地页只在「资料查询 · 全部模块 · 没搜索」时出现，与网页/手机一致：
+       一搜索或一选模块，列表就是正常结果，落地页立刻消失。
+       这时右侧显示落地页而不是第一条卡；列表**不选中**任何行（选中会触发
+       onCardPicked 把详情换成第 0 条卡，盖掉落地页）。 */
+    const bool landing = (m_section == int(Card::Ref)) && mod.isEmpty()
+                         && m_search->text().trimmed().isEmpty();
+    if (landing) {
+        m_list->setCurrentRow(-1);
+        m_current = -1;
+        m_detail->setHtml(landingHtml());
+        m_detail->verticalScrollBar()->setValue(0);
+        updateCounts();
+        return;
+    }
+
     updateCounts();
     if (!m_shown.isEmpty())
         m_list->setCurrentRow(0);
@@ -279,8 +308,69 @@ void MainWindow::refreshList()
     }
 }
 
+/* 落地页 HTML（「从这里开始」）。Qt 富文本不支持 flex/grid，
+   所以路径卡与 chip 一律摊平成块级元素 + 空格分隔。 */
+QString MainWindow::landingHtml() const
+{
+    const bool dark = (Theme::mode() == Theme::Dark);
+    const QString dim    = dark ? QStringLiteral("#8b93a3") : QStringLiteral("#5b667a");
+    const QString accent = dark ? QStringLiteral("#7fb3ff") : QStringLiteral("#1a6fd6");
+
+    QString h = QStringLiteral(
+        "<p style='font-size:15px;font-weight:700;margin:0 0 6px 0;'>👋 从这里开始</p>"
+        "<p style='color:%1;font-size:12px;margin:0 0 12px 0;'>"
+        "不确定用哪个函数？先看「流程卡」（按功能给完整可抄的初始化流程），"
+        "或「引导教程」（从零一步步搭到能跑）。下面按你常做的事分组。</p>").arg(dim);
+
+    const struct { const char *ic, *t, *d, *anchor; } paths[3] = {
+        { "🧭", "我要自己搭一个外设",     "打开「引导教程」，从接线到验收一步步做", "path:0" },
+        { "📋", "我知道要干嘛，只差代码", "搜功能词（如「打开DMA中断」），直接看流程卡", "path:1" },
+        { "📖", "我要查某个函数的参数",   "搜函数名或宏名，看参数表 / 返回值 / 示例",   "path:2" },
+    };
+    for (const auto &p : paths)
+        h += QStringLiteral("<p style='margin:0 0 8px 0;'>"
+                            "<a href='%1' style='color:%5;font-weight:600;'>%2 %3</a>"
+                            "<br><span style='color:%4;font-size:12px;'>%6</span></p>")
+                 .arg(QString::fromLatin1(p.anchor), QString::fromUtf8(p.ic),
+                      QString::fromUtf8(p.t), dim, accent, QString::fromUtf8(p.d));
+
+    h += QStringLiteral("<p style='color:%1;font-size:12px;margin:14px 0 5px 0;'>"
+                        "热门主题（点一下直接搜）</p>").arg(dim);
+    for (int i = 0; i < kHotTopicN; ++i)
+        h += QStringLiteral("<a href='q:%1'>%2</a>&nbsp;&nbsp;")
+                 .arg(i).arg(CardHtml::esc(QString::fromUtf8(kHotTopics[i])));
+
+    h += QStringLiteral("<p style='color:%1;font-size:12px;margin:14px 0 5px 0;'>"
+                        "常用模块（点一下筛该模块）</p>").arg(dim);
+    for (int i = 0; i < kHotModuleN; ++i) {
+        const QString mod = QString::fromUtf8(kHotModules[i]);
+        int n = 0;
+        for (int ci : m_ds.indicesOfSection(int(Card::Ref)))
+            if (m_ds.at(ci).m == mod) ++n;
+        if (!n)
+            continue;
+        h += QStringLiteral("<a href='mod:%1'>%2</a>&nbsp;<span style='color:%4;"
+                            "font-size:11px;'>(%3)</span>&nbsp;&nbsp;")
+                 .arg(i).arg(CardHtml::esc(mod)).arg(n).arg(dim);
+    }
+    return h;
+}
+
 void MainWindow::updateCounts()
 {
+    const QString mod = (m_module->currentIndex() > 0) ? m_module->currentText() : QString();
+    const bool landing = (m_section == int(Card::Ref)) && mod.isEmpty()
+                         && m_search->text().trimmed().isEmpty();
+    if (landing) {
+        int flow = 0, guide = 0;
+        for (const Card &c : m_ds.cards()) {
+            if (c.isFlow())  ++flow;
+            if (c.isGuide()) ++guide;
+        }
+        m_count->setText(QStringLiteral("共 %1 条 · %2 流程卡 + %3 向导可直接照着做")
+                             .arg(m_ds.size()).arg(flow).arg(guide));
+        return;
+    }
     m_count->setText(QStringLiteral("%1 · 显示 %2 / 共 %3 条")
                          .arg(sectionName(m_section))
                          .arg(m_shown.size()).arg(m_ds.size()));
@@ -337,6 +427,39 @@ void MainWindow::onAnchor(const QUrl &url)
         if (m_current >= 0)
             QApplication::clipboard()->setText(CardHtml::copyText(m_ds.at(m_current)));
         statusBar()->showMessage(QStringLiteral("代码已复制到剪贴板"), 2000);
+    } else if (s.startsWith(QStringLiteral("q:"))) {
+        /* 落地页「热门主题」chip：把词填进搜索框（屏蔽信号免得防抖定时器再刷一遍） */
+        const int i = s.mid(2).toInt();
+        if (i >= 0 && i < kHotTopicN) {
+            m_searchTimer->stop();
+            m_search->blockSignals(true);
+            m_search->setText(QString::fromUtf8(kHotTopics[i]));
+            m_search->blockSignals(false);
+            refreshList();
+        }
+    } else if (s.startsWith(QStringLiteral("mod:"))) {
+        /* 落地页「常用模块」chip：选中对应模块；setCurrentIndex 会触发 refreshList */
+        const int i = s.mid(4).toInt();
+        if (i >= 0 && i < kHotModuleN) {
+            const int idx = m_module->findText(QString::fromUtf8(kHotModules[i]));
+            if (idx > 0)
+                m_module->setCurrentIndex(idx);
+            else
+                statusBar()->showMessage(QStringLiteral("该模块当前没有条目"), 2000);
+        }
+    } else if (s.startsWith(QStringLiteral("path:"))) {
+        /* 落地页三条路径卡：0 切「引导教程」，1/2 直接塞搜索词 */
+        const int i = s.mid(5).toInt();
+        if (i == 0) {
+            onSectionClicked(int(Card::Guide));
+        } else if (i == 1 || i == 2) {
+            m_searchTimer->stop();
+            m_search->blockSignals(true);
+            m_search->setText(i == 1 ? QStringLiteral("打开DMA中断")
+                                     : QStringLiteral("USART_Init"));
+            m_search->blockSignals(false);
+            refreshList();
+        }
     }
 }
 

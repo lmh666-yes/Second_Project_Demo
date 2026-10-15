@@ -128,6 +128,9 @@ ToolboxWindow::ToolboxWindow(QWidget *parent)
         {"RTOS 检查",    buildRtosPage()},
         {"编码守卫",     buildEncodingPage()},
         {"链路仿真",     buildLinkPage()},
+        {"LoRa 检查",    buildLoraPage()},
+        {"OTA 台架",     buildOtaPage()},
+        {"固件预算",     buildFirmwareBudgetPage()},
     };
     const Item wrap[] = {
         {"工程体检总览", buildOverviewPage()},
@@ -491,16 +494,165 @@ QWidget *ToolboxWindow::buildLinkPage()
     return p;
 }
 
+QWidget *ToolboxWindow::buildLoraPage()
+{
+    ToolRunPage *p = new ToolRunPage(
+        QStringLiteral("LoRa 检查"),
+        QStringLiteral("核查两板 lora_e22.h 的配置一致性、引脚宏成对性、波特率合法性、"
+                       "帧间隔合理性。报告写到 工具箱/检查/LoRa检查/LoRa检查报告.md。"), this);
+    p->setSteps({{QStringLiteral("LoRa 检查"),
+                  py(m_toolsDir, QStringLiteral("检查/LoRa检查/lora_check.py")), nullptr}});
+    p->setReportPath(py(m_toolsDir, QStringLiteral("检查/LoRa检查/LoRa检查报告.md")));
+    m_warnTargets.append(p);
+    return p;
+}
+
+/* OTA 台架：把 OTA/tools/ota_send.py 的串口直连模式包成界面。
+   脚本在**仓库根**的 OTA/tools/ 下（在工具箱树之外），所以这里按"从工具箱目录上溯
+   找到含 OTA/tools/ota_send.py 的那层"来定位，不把脚本挪进工具箱
+   （挪进来要同步三处目录判据：settings.cpp::resolveIniPath、lookup/apppaths.cpp、
+   ToolboxWindow::toolsDirPath，收益不抵风险）。
+   TCP server 模式不包：那条路是"先起监听 → 再给板子上电让 ESP8266 反连"，
+   顺序卡死在命令行里，做成按钮反而更绕，说明里留一行直接给命令。 */
+QWidget *ToolboxWindow::buildOtaPage()
+{
+    ToolRunPage *p = new ToolRunPage(
+        QStringLiteral("OTA 台架"),
+        QStringLiteral(
+            "把 OTA/tools/ota_send.py 的【串口直连模式】包成界面（不经 WiFi）。\n"
+            "接线：USB-TTL 接板子 USART3 —— PB10(TX) 接 USB-TTL 的 RX，PB11(RX) 接 USB-TTL 的 TX，"
+            "而且【必须共地】。台架调试请先断开 ESP8266，别让两个发送源打架。\n"
+            "顺序：① 板子跑在 App（不是 Boot）；② 本页填 COM 口与固件 bin，点「运行」；"
+            "③ 脚本先 QUERY 再 BEGIN，10 秒内没应答就退出并提示检查接线/波特率。\n"
+            "发完 END 后板子要擦 64KB 下载扇区，【等约 8 秒别断电】，收到 DONE 才算成功；"
+            "END 之后再上电重启，Bootloader 会把新固件搬到运行区。\n"
+            "TCP server 模式（走 WiFi、板子反连 PC）本页包不住：请直接在仓库根跑 "
+            "python OTA/tools/ota_send.py --tcp-server 8899 --bin <bin> --ver <n>。\n"
+            "脚本位置：仓库根 OTA/tools/ota_send.py（在工具箱树之外，本页按相对仓库根引用）。"),
+        this);
+
+    QLineEdit *com = new QLineEdit(this);
+    com->setPlaceholderText(QStringLiteral("COM 口，如 COM7"));
+    QLineEdit *bin = new QLineEdit(this);
+    bin->setPlaceholderText(QStringLiteral("固件 bin 路径，如 OTA/OTA1/Objects/app.bin"));
+    QSpinBox *ver = new QSpinBox(this);
+    ver->setRange(1, 65535);
+    ver->setValue(1);
+
+    Settings st;
+    com->setText(st.value(QStringLiteral("ota/com")).toString());
+    bin->setText(st.value(QStringLiteral("ota/bin")).toString());
+    ver->setValue(st.value(QStringLiteral("ota/ver"), 1).toInt());
+    connect(com, &QLineEdit::textChanged, this,
+            [com](const QString &t) { Settings().setValue(QStringLiteral("ota/com"), t); });
+    connect(bin, &QLineEdit::textChanged, this,
+            [bin](const QString &t) { Settings().setValue(QStringLiteral("ota/bin"), t); });
+    connect(ver, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [](int v) { Settings().setValue(QStringLiteral("ota/ver"), v); });
+
+    QHBoxLayout *opt = p->optionsLayout();
+    opt->insertWidget(0, new QLabel(QStringLiteral("串口"), this));
+    opt->insertWidget(1, com);
+    opt->insertWidget(2, new QLabel(QStringLiteral("固件 bin"), this));
+    opt->insertWidget(3, bin);
+    opt->insertWidget(4, new QLabel(QStringLiteral("版本"), this));
+    opt->insertWidget(5, ver);
+
+    /* 从工具箱目录上溯找 OTA/tools/ota_send.py（repo 根那层） */
+    QString script;
+    QDir d(m_toolsDir);
+    for (int i = 0; i < 8; ++i) {
+        const QString cand = d.filePath(QStringLiteral("OTA/tools/ota_send.py"));
+        if (QFileInfo::exists(cand)) { script = cand; break; }
+        if (!d.cdUp()) break;
+    }
+    if (script.isEmpty())
+        script = py(m_toolsDir, QStringLiteral("../OTA/tools/ota_send.py"));   /* 找不到时留个提示 */
+
+    p->setSteps({{QStringLiteral("OTA 下发（串口直连）"), script,
+                  [com, bin, ver]() {
+                      return QStringList{QStringLiteral("--serial"), com->text().trimmed(),
+                                         QStringLiteral("--bin"), bin->text().trimmed(),
+                                         QStringLiteral("--ver"), QString::number(ver->value())};
+                  }}});
+    p->setReportPath(QFileInfo(script).absolutePath());   /* 没报告，按钮用来开脚本所在目录 */
+    p->setReportLabel(QStringLiteral("打开 OTA 目录"));
+    m_warnTargets.append(p);
+    return p;
+}
+
 QWidget *ToolboxWindow::buildOverviewPage()
 {
     return new OverviewPage(m_toolsDir, this);
+}
+
+/* 固件预算：把 检查/固件预算/firmware_budget.py 包成界面。
+   一个文件输入框按扩展名自动选模式（.map/.bin/.hex），留空则跑"分区表自检"。
+   与 OTA 台架的分工：台架负责"把固件推下去"，本页负责"推之前先算账/复核头"。 */
+QWidget *ToolboxWindow::buildFirmwareBudgetPage()
+{
+    ToolRunPage *p = new ToolRunPage(
+        QStringLiteral("固件预算"),
+        QStringLiteral(
+            "核 OTA 分区与固件体积。填一个文件就按扩展名自动选模式：\n"
+            "  · .map  Keil 链接 map：取 Code / RO / RW / ZI 与 Flash 合计，对照分区上限判越界；\n"
+            "  · .bin  裸固件：算 CRC16 并按 ota_part.h 生成 16 字节固件头，输出可直接下发的包；\n"
+            "  · .hex  Intel HEX：判地址范围是否落在预期分区（防刷过界、防盖掉 Boot）。\n"
+            "留空则只做分区表自检（Boot/App/下载区/参数区不重叠、下载区 ≥ App、镜像上限 ≤ App）——"
+            "「全量检查」跑的就是这一项。\n"
+            "分区常量取自仓库根 OTA/OTA1/ota/ota_part.h（唯一事实来源），本工具不写死。\n"
+            "文件可给绝对路径，也可给相对仓库根的路径（如 OTA/OTA1/Objects/标准模板.map）。\n"
+            "报告写到 工具箱/检查/固件预算/固件预算报告.md。"),
+        this);
+
+    QLineEdit *file = new QLineEdit(this);
+    file->setPlaceholderText(QStringLiteral("可选：.map / .bin / .hex；留空则只做分区表自检"));
+    QComboBox *part = new QComboBox(this);
+    part->addItems({QStringLiteral("App 运行区"), QStringLiteral("Boot 区"), QStringLiteral("下载区")});
+
+    Settings st;
+    file->setText(st.value(QStringLiteral("fwb/file")).toString());
+    part->setCurrentIndex(st.value(QStringLiteral("fwb/part"), 0).toInt());
+    connect(file, &QLineEdit::textChanged, this,
+            [file](const QString &t) { Settings().setValue(QStringLiteral("fwb/file"), t); });
+    connect(part, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [](int i) { Settings().setValue(QStringLiteral("fwb/part"), i); });
+
+    QHBoxLayout *opt = p->optionsLayout();
+    opt->insertWidget(0, new QLabel(QStringLiteral("文件"), this));
+    opt->insertWidget(1, file);
+    opt->insertWidget(2, new QLabel(QStringLiteral("分区"), this));
+    opt->insertWidget(3, part);
+
+    p->setSteps({{QStringLiteral("固件预算"),
+                  py(m_toolsDir, QStringLiteral("检查/固件预算/firmware_budget.py")),
+                  [file, part]() {
+                      QStringList a;
+                      const QString f = file->text().trimmed();
+                      const QString low = f.toLower();
+                      if (low.endsWith(QStringLiteral(".map")))
+                          a << QStringLiteral("--map") << f;
+                      else if (low.endsWith(QStringLiteral(".hex")))
+                          a << QStringLiteral("--hex") << f;
+                      else if (low.endsWith(QStringLiteral(".bin")))
+                          a << QStringLiteral("--bin") << f;
+                      if (part->currentIndex() == 1)
+                          a << QStringLiteral("--part") << QStringLiteral("boot");
+                      else if (part->currentIndex() == 2)
+                          a << QStringLiteral("--part") << QStringLiteral("dl");
+                      return a;
+                  }}});
+    p->setReportPath(py(m_toolsDir, QStringLiteral("检查/固件预算/固件预算报告.md")));
+    m_warnTargets.append(p);
+    return p;
 }
 
 QWidget *ToolboxWindow::buildFullCheckPage()
 {
     ToolRunPage *p = new ToolRunPage(
         QStringLiteral("全量检查"),
-        QStringLiteral("依次运行五个命令行检查，输出合并显示。写完代码收尾前跑一遍。"), this);
+        QStringLiteral("依次运行各命令行检查（编码守卫 / RTOS / 引脚规划 / LoRa / 固件预算 / "
+                       "进度扫描 / 链路仿真自检），输出合并显示。写完代码收尾前跑一遍。"), this);
 
     QVector<RunStep> steps;
     steps << RunStep{QStringLiteral("编码守卫"),
@@ -509,6 +661,11 @@ QWidget *ToolboxWindow::buildFullCheckPage()
                      py(m_toolsDir, QStringLiteral("检查/RTOS检查/rtos_check.py")), nullptr};
     steps << RunStep{QStringLiteral("引脚规划"),
                      py(m_toolsDir, QStringLiteral("检查/引脚规划/pin_planner.py")), nullptr};
+    steps << RunStep{QStringLiteral("LoRa 检查"),
+                     py(m_toolsDir, QStringLiteral("检查/LoRa检查/lora_check.py")), nullptr};
+    /* 固件预算不带参数 = 只做分区表自检（无输入也能跑，成果照样落报告） */
+    steps << RunStep{QStringLiteral("固件预算"),
+                     py(m_toolsDir, QStringLiteral("检查/固件预算/firmware_budget.py")), nullptr};
     steps << RunStep{QStringLiteral("进度扫描"),
                      py(m_toolsDir, QStringLiteral("检查/进度跟踪/progress_scan.py")),
                      []() { return QStringList{QStringLiteral("--quiet")}; }};

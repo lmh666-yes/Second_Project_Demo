@@ -25,6 +25,8 @@ const ReportDef REPORTS[] = {
     {"引脚规划", "检查/引脚规划/引脚规划报告.md"},
     {"RTOS 检查", "检查/RTOS检查/RTOS检查报告.md"},
     {"编码守卫", "检查/编码守卫/编码守卫报告.md"},
+    {"LoRa 检查", "检查/LoRa检查/LoRa检查报告.md"},
+    {"固件预算", "检查/固件预算/固件预算报告.md"},
 };
 
 /* 取报告前若干行做摘要：这些报告的开头都是总览表。 */
@@ -111,9 +113,10 @@ void OverviewPage::refresh()
         md << QStringLiteral("---") << QString();
     }
     m_view->setMarkdown(md.join(QLatin1Char('\n')));
+    const int total = int(sizeof(REPORTS) / sizeof(REPORTS[0]));
     m_status->setText(found == 0
-                          ? QStringLiteral("四份报告都还没生成。")
-                          : QStringLiteral("已读取 %1 / %2 份报告。").arg(found).arg(int(sizeof(REPORTS) / sizeof(REPORTS[0]))));
+                          ? QStringLiteral("%1 份报告都还没生成。").arg(total)
+                          : QStringLiteral("已读取 %1 / %2 份报告。").arg(found).arg(total));
 }
 
 void OverviewPage::openReportsDir()

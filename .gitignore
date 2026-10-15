@@ -39,6 +39,10 @@ EnvMonitor/Project_2_数据通信端/Project/0001_标准模板库/
 
 # ---- 大文件：芯片参考手册（本地保留，不入库）----
 1-STM32F4xx中文参考手册1.pdf
+# OTA 示例工程里的两份 PDF（中文参考手册 21.6MB + 板卡原理图），
+# 与 EnvMonitor 工程下同名文件完全重复，本地保留、不入库
+OTA/OTA1/*.pdf
+OTA/**/*.pdf
 
 # ---- Qt 工程内旧仓库的备份元数据（改名为 .git_bak 保留在本地）----
 EnvMonitor/QT_project/SerialMonitor/.git_bak/

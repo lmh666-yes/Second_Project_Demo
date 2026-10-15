@@ -90,6 +90,20 @@ static int runCli(const QStringList &args)
     if (!dirOk)
         ++fail;
 
+    /* OTA 台架页引用的 ota_send.py 在仓库根的 OTA/tools/ 下（工具箱树之外）。
+       判据是一路向上找到含 EnvMonitor/.git 的那层再拼 OTA/tools/ota_send.py；
+       定位失败时那一页会整体不可用，所以单独自检。 */
+    {
+        const QString root = findRepoRoot();
+        const bool otaOk = !root.isEmpty()
+                           && QFile::exists(QDir(root).filePath(
+                                  QStringLiteral("OTA/tools/ota_send.py")));
+        out << QString::fromUtf8("OTA 台架脚本定位：")
+            << (otaOk ? QString::fromUtf8("PASS") : QString::fromUtf8("FAIL")) << "\n";
+        if (!otaOk)
+            ++fail;
+    }
+
     /* STM32 速查（原独立程序，已并入本工具箱）：数据装载、条目计数、
        6 例搜索、28 例基线逐行回归——这些断言原样平移过来，作为回归闸门。
        数据在「工具箱/速查数据/data/dataset.json」，由网页版那条链导出；

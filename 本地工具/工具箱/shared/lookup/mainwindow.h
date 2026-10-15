@@ -32,6 +32,8 @@ public:
     int section() const { return m_section; }
     QVector<int> shown() const { return m_shown; }
     SearchEngine *engine() const { return m_engine.data(); }
+    /* 落地页 HTML（供 --selftest 做结构自检；判"什么时候显示"在 refreshList 里） */
+    QString landingHtml() const;
 
 signals:
     /* 本页的「🌗 主题」按钮切的是工具箱全局主题（与侧栏那个是同一份 QSS），

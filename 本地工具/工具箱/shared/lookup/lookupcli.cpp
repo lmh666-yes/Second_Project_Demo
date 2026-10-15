@@ -66,6 +66,26 @@ int runLookupCli(const QStringList &args, MainWindow *w)
             QString::fromUtf8("三板块条目数相加 = 总数（%1 + %2 + %3）").arg(refN).arg(guideN).arg(buildN));
         chk(d.indexOfName(QStringLiteral("NVIC_Init")) >= 0, QString::fromUtf8("按名字反查条目可用"));
 
+        /* 落地页结构自检（桌面版与网页/手机同一份清单：3 路径卡 + 10 主题 + 若干模块 chip）。
+           这里只验"清单在不在、锚点格式对不对"；至于"什么时候显示落地页"由 refreshList 决定，
+           靠 GUI 冒烟遍历覆盖。锚点刻意用纯 ASCII 下标（path:N/q:N/mod:N）——
+           中文塞进 href 会被 QUrl 百分号编码，回来对不上。 */
+        {
+            const QString land = w->landingHtml();
+            chk(land.contains(QString::fromUtf8("从这里开始")),
+                QString::fromUtf8("落地页含标题「从这里开始」"));
+            const int pathN = land.count(QStringLiteral("href='path:"));
+            chk(pathN == 3, QString::fromUtf8("路径卡 = 3（实际 %1）").arg(pathN));
+            const int qN = land.count(QStringLiteral("href='q:"));
+            chk(qN == 10, QString::fromUtf8("热门主题 chip = 10（实际 %1）").arg(qN));
+            const int modN = land.count(QStringLiteral("href='mod:"));
+            chk(modN > 0 && modN <= 12,
+                QString::fromUtf8("常用模块 chip = 1..12（实际 %1）").arg(modN));
+            chk(land.contains(QString::fromUtf8("常用模块"))
+                    && land.contains(QString::fromUtf8("热门主题")),
+                QString::fromUtf8("落地页含「热门主题 / 常用模块」两个分组标题"));
+        }
+
         out << QString::fromUtf8("\n失败项 ") << fail << "\n";
         /* 注意：这里**不要**提前 return —— 严格审查要求一次跑完，
            否则前面一项失败会把后面的搜索回归、基线比对整段吞掉（踩过）。 */

@@ -36,6 +36,9 @@ private:
     QWidget *buildRtosPage();
     QWidget *buildEncodingPage();
     QWidget *buildLinkPage();
+    QWidget *buildLoraPage();           /* LoRa 检查：配置一致性 / 引脚成对 / 波特率合法 */
+    QWidget *buildOtaPage();            /* OTA 台架：包 OTA/tools/ota_send.py 串口直连模式 */
+    QWidget *buildFirmwareBudgetPage(); /* 固件预算：分区上限 / 体积 / 固件头与 Intel HEX 复核 */
     QWidget *buildFullCheckPage();
     QWidget *buildOverviewPage();
     QWidget *buildSettingsPage();       /* 设置：集中放个性化选项（默认不变） */

@@ -23,6 +23,10 @@ r"""FreeRTOS 安全检查器（只读源码，不改任何文件）。
   5) 任务栈：xTaskCreate 的栈深度单位是字，过小或过大都提示。
   6) 堆预算：所有任务栈之和是否超过 configTOTAL_HEAP_SIZE。
   7) configASSERT 是否存在。
+  8) 看门狗 vs Flash 擦写：工程里既做长耗时擦写（SYS_FLASH_EraseSector / SaveParams /
+     Write），又把看门狗超时设得偏短（SYS_WDG_Init(<8000ms)），或超时实参判不出时，
+     给"注意"级提示——擦除期间 CPU 取指被硬件挂起、SysTick 与串口都停，喂不了狗。
+     FWLIB 里 sys_flash.c / sys_wdg.c 的"实现"不算"工程在用"，只看工程自己的调用。
 
 报告写到脚本同目录的 RTOS检查报告.md，并在控制台打印摘要。只读，不改任何文件。
 
@@ -101,6 +105,16 @@ ISR_UNSAFE_CRITICAL = {
     'portENTER_CRITICAL', 'portEXIT_CRITICAL',
 }
 
+# 看门狗 vs Flash 擦写：擦除/写页期间 CPU 取指被硬件挂起（Flash 被占用），
+# SysTick 与串口都停，这段时间喂不了狗；IWDG 一旦启动又无法停。
+# 所以"看门狗超时 < 8s + 工程里还做长擦写"要当心。阈值取 8s：
+# STM32F4 擦一个 64KB 扇区约 1s 量级，留够余量（擦 + 写 + 校验）。
+WDG_SAFE_MS = 8000
+
+# 工程里会做长耗时 Flash 擦写的接口（定义在 FWLIB/sys_flash.c，这里只认"调用"）
+FLASH_LONG_OPS = ('SYS_FLASH_EraseSector', 'SYS_FLASH_ErasePage',
+                  'SYS_FLASH_SaveParams', 'SYS_FLASH_Write')
+
 # 规则表（数据模型）外置在 工具箱/速查数据/rules/，检查器与其它工具共读一份：
 # 加一个新的 RTOS 接口只要改表，不用动脚本。表缺失/损坏时回退到上面那三份内置默认值，
 # 行为与老版本完全一致（所以"表没了"不会让检查静默失效，只会退化成内置规则）。
@@ -154,6 +168,11 @@ PRINCIPLE = {
             '申请总量超过堆大小会在创建时失败（configUSE_MALLOC_FAILED_HOOK 会抓到）。',
     'assert': '未定义 configASSERT 时，优先级违规不会被内核当场发现，只会在运行时'
               '破坏临界区。建议保留 configASSERT。',
+    'wdg_flash': '擦除/写 Flash 期间，CPU 取指被硬件挂起，SysTick 与串口都会停 —— '
+                 '这段时间喂不了狗；而 IWDG 一旦启动就无法停止。所以看门狗超时较短'
+                 '（< 8s）又做长擦写时，务必在擦除前后各 SYS_WDG_Feed() 一次，'
+                 '或把超时放到 8s 以上（IWDG 最大约 32.8s）。'
+                 '探针判"没把握喂狗"只是提示，人工确认擦除路径上有喂狗即可忽略。',
 }
 
 
@@ -669,10 +688,53 @@ def check_board(title, proj):
                          '任务栈合计约 %d 字（%d 字节），占堆 %d 字节的七成以上'
                          % (stack_words, stack_words * 4, heap), 'heap'))
 
-    # 6) configASSERT
+    # 7) configASSERT
     if not vals.get('_has_assert'):
         findings.append(('注意', 'FreeRTOS/port/FreeRTOSConfig.h',
                          '未定义 configASSERT，优先级违规不会被内核当场发现', 'assert'))
+
+    # 8) 看门狗 vs Flash 擦写：擦除/写页期间 CPU 取指被硬件挂起，SysTick 与串口都停，
+    #    这段时间喂不了狗；IWDG 一启动又停不了。判据：工程里既做长擦写，
+    #    又把看门狗超时设得偏短（< WDG_SAFE_MS），或超时实参不是常量、判不出。
+    #    只看"工程自己在调"，FWLIB 里的实现本身不算（sys_flash.c / sys_wdg.c 跳过）。
+    obj_macros = {}
+    flash_ops = []
+    wdg_inits = []
+    for path in srcs:
+        text, _ = read_text(path)
+        masked = strip_comments(text)
+        if os.path.basename(path) in ('sys_flash.c', 'sys_wdg.c'):
+            continue
+        rel = safe_rel(path)
+        for m in re.finditer(r'^\s*#\s*define\s+([A-Za-z_]\w*)\s+([^\r\n]+)', text, re.M):
+            obj_macros.setdefault(m.group(1), m.group(2).strip())
+        for m in re.finditer(r'\b(%s)\s*\(' % '|'.join(FLASH_LONG_OPS), masked):
+            flash_ops.append((rel, masked.count('\n', 0, m.start()) + 1, m.group(1)))
+        for m in re.finditer(r'\bSYS_WDG_Init\s*\(', masked):
+            res = call_args(masked, m.end() - 1)
+            tmo = None
+            if res:
+                sub = {}
+                for k, v in obj_macros.items():
+                    iv = eval_int(v)
+                    if iv is not None:
+                        sub[k] = iv
+                tmo = eval_int(res[0], sub)
+            wdg_inits.append((rel, masked.count('\n', 0, m.start()) + 1, tmo))
+
+    if flash_ops and wdg_inits:
+        wrong = [t for _, _, t in wdg_inits if t is not None and t < WDG_SAFE_MS]
+        unknown = any(t is None for _, _, t in wdg_inits)
+        if wrong or unknown:
+            rel0, ln0, op0 = flash_ops[0]
+            why = ('看门狗超时只设了 %d ms（<%d ms）' % (min(wrong), WDG_SAFE_MS)) if wrong \
+                else '看门狗超时实参不是常量、判不出（当心默认值很短）'
+            findings.append(('注意', '%s:%d' % (rel0, ln0),
+                             '工程里既做长耗时 Flash 操作（%s，此处为首次出现），%s：'
+                             '擦除/写页期间 CPU 取指被硬件挂起，SysTick 与串口都停，'
+                             '这段时间若没喂狗会直接复位。请确认擦除前后有 SYS_WDG_Feed()'
+                             '（或把看门狗超时放到 %d ms 以上）。'
+                             % (op0, why, WDG_SAFE_MS), 'wdg_flash'))
 
     return vals, findings, tasks
 
@@ -867,6 +929,62 @@ def selftest():
         ck('外置规则表生效：阻断类 / 临界区类 / 前缀类都对得上',
            'xSemaphoreGive' in BLOCKING_API and 'taskENTER_CRITICAL' in ISR_UNSAFE_CRITICAL
            and 'xQueue' in RTOS_PREFIX, '前缀 %s' % ('、'.join(RTOS_PREFIX)))
+
+        # ---- 看门狗 vs Flash 擦写（错例必须命中，反例必须不报）----
+        def mkproj(name, extra_c):
+            pp = os.path.join(d, name)
+            os.makedirs(os.path.join(pp, 'FreeRTOS', 'port'))
+            os.makedirs(os.path.join(pp, 'FWLIB', 'src'))
+            wr(os.path.join(pp, 'FreeRTOS', 'port', 'FreeRTOSConfig.h'),
+               '#define configPRIO_BITS 4\n'
+               '#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY 5\n'
+               '#define configTOTAL_HEAP_SIZE ((size_t)(30 * 1024))\n'
+               '#define configMINIMAL_STACK_SIZE ((unsigned short)128)\n'
+               '#define configMAX_PRIORITIES 8\n'
+               '#define configASSERT(x) if ((x) == 0) { for (;;); }\n')
+            wr(os.path.join(pp, 'app.c'), extra_c)
+            return pp
+
+        def fires(proj):
+            _, ff, _ = check_board('x', proj)
+            return any(k == 'wdg_flash' for _, _, _, k in ff)
+
+        ck('看门狗超时短(4s) + 长擦写 -> 命中（注意）',
+           fires(mkproj('wdg_short',
+                        '#define APP_WDG_TIMEOUT_MS 4000\n'
+                        'void App_Store(void)\n{\n'
+                        '    SYS_WDG_Init(APP_WDG_TIMEOUT_MS);\n'
+                        '    SYS_FLASH_SaveParams(&cfg, sizeof(cfg));\n}\n')))
+        # 走 sys_wdg.c / sys_flash.c 的"库实现不算"这条：把实现文件放进工程，也不该因它命中
+        ck('反例：看门狗超时够长(12s) 不报',
+           not fires(mkproj('wdg_long',
+                            '#define APP_WDG_TIMEOUT_MS 12000\n'
+                            'void App_Store(void)\n{\n'
+                            '    SYS_WDG_Init(APP_WDG_TIMEOUT_MS);\n'
+                            '    SYS_FLASH_EraseSector(0x08070000);\n}\n')))
+        ck('反例：没有看门狗，不报',
+           not fires(mkproj('no_wdg',
+                            'void App_Store(void)\n{\n'
+                            '    SYS_FLASH_EraseSector(0x08070000);\n}\n')))
+        ck('反例：没有长擦写，不报',
+           not fires(mkproj('no_flash',
+                            '#define APP_WDG_TIMEOUT_MS 4000\n'
+                            'void App_Init(void)\n{\n'
+                            '    SYS_WDG_Init(APP_WDG_TIMEOUT_MS);\n}\n')))
+        ck('看门狗超时判不出（实参是变量）时也提示"没把握"',
+           fires(mkproj('wdg_var',
+                        'void App_Store(uint32_t ms)\n{\n'
+                        '    SYS_WDG_Init(ms);\n'
+                        '    SYS_FLASH_SaveParams(&cfg, sizeof(cfg));\n}\n')))
+        # sys_wdg.c / sys_flash.c 是库实现，里面的 SYS_WDG_Init / SYS_FLASH_* 定义
+        # 不该被当成"工程在用"。放进去但工程自己不调 -> 不报。
+        lib_proj = mkproj('lib_only', 'void App_None(void)\n{\n}\n')
+        wr(os.path.join(lib_proj, 'FWLIB', 'src', 'sys_flash.c'),
+           'void SYS_FLASH_EraseSector(uint32_t a)\n{\n    (void)a;\n}\n'
+           'void SYS_FLASH_SaveParams(const void *d, uint16_t n)\n{\n    (void)d; (void)n;\n}\n')
+        wr(os.path.join(lib_proj, 'FWLIB', 'src', 'sys_wdg.c'),
+           'void SYS_WDG_Init(uint32_t ms)\n{\n    (void)ms;\n}\n')
+        ck('反例：sys_wdg.c / sys_flash.c 里的实现本身不算"在用"', not fires(lib_proj))
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
