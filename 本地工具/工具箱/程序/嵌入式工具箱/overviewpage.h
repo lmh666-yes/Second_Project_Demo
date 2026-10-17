@@ -1,9 +1,10 @@
 #ifndef OVERVIEWPAGE_H
 #define OVERVIEWPAGE_H
 
-/* 工程体检总览页：把各检查工具的结果聚到一屏。两个页签：
+/* 工程体检总览页：把各检查工具的结果聚到一屏。三个页签：
      · 可视化仪表盘 —— 健康度卡片 / 引脚热力图 / 内存占用 / 任务 / 趋势（DashboardCanvas 自绘）
      · 报告原文     —— 各工具生成的 md 报告摘要
+     · 历史回看     —— 从 _体检历史/ 里挑某一轮快照重新渲染（不只跟上一轮比）
    点「刷新」调各工具 --json 取结构化数据；首次切到本页也会自动取一次。
    只读，不改任何东西。 */
 
@@ -11,6 +12,7 @@
 #include <QVariantMap>
 #include <QWidget>
 
+class QComboBox;
 class QLabel;
 class QProcess;
 class QPushButton;
@@ -32,6 +34,9 @@ public:
     /* 「报告原文」里已转成可点链接的文件位置数（供 --shot-overview 打印核对）。 */
     int srcLinkCount() const { return m_srcTargets.size(); }
 
+    /* A1：历史回看下拉框里的快照轮数（供 --shot-overview 断言历史页真的建起来了）。 */
+    int historyCount() const;
+
 protected:
     void showEvent(QShowEvent *e) override;
 
@@ -42,6 +47,7 @@ signals:
 private slots:
     void refresh();
     void openReportsDir();
+    void showHistorySnapshot();
 
 private:
     /* 一个检查器的取数进程跑完：收 JSON、记账；全部到齐就渲染。 */
@@ -51,9 +57,15 @@ private:
 
     /* 体检快照（D2 归档 + A3 对比）：每轮刷新存一份带时间戳的 JSON，只留最近 20 份。 */
     QString     snapshotDir() const;
+    QStringList listSnapshots() const;                 /* 升序（旧→新）的快照文件绝对路径 */
+    QVariantMap readSnapshot(const QString &path) const;
     QVariantMap readPrevSnapshot() const;
     void        writeSnapshot(const QVariantMap &tools);
     QStringList computeDelta(const QVariantMap &prev, const QVariantMap &cur) const;
+
+    /* A1 历史回看：重列下拉框（最新在前）、渲染选中的那一轮。 */
+    void reloadHistory();
+    void renderHistory(const QString &path);
 
     QString m_toolsDir;
     QTabWidget      *m_tabs   = nullptr;
@@ -64,6 +76,11 @@ private:
     /* 「报告原文」里被转成链接的文件位置：下标 → "绝对路径|行号"（用下标做锚点，
        避免把带反斜杠的 Windows 路径塞进 URL 被编码搅乱）。 */
     QStringList m_srcTargets;
+
+    /* A1：历史回看页的下拉框与画布（与当前轮完全独立，互不干扰）。 */
+    QComboBox       *m_histCombo  = nullptr;
+    DashboardCanvas *m_histCanvas = nullptr;
+    QLabel          *m_histStatus = nullptr;
 
     /* 异步取数状态：各检查器并行跑，各自回来时累加，到齐后统一渲染。 */
     int         m_pending = 0;

@@ -245,7 +245,8 @@ int main(int argc, char *argv[])
 
         /* refresh 是异步的（各检查器并行跑）：跑事件循环等它们回来，最多 25s，
            以画布命中区被填充作为完成判据。 */
-        DashboardCanvas *canvas = page.findChild<DashboardCanvas *>();
+        DashboardCanvas *canvas =
+            page.findChild<DashboardCanvas *>(QStringLiteral("mainDashboard"));
         QElapsedTimer et;
         et.start();
         while (et.elapsed() < 25000) {
@@ -257,6 +258,11 @@ int main(int argc, char *argv[])
 
         /* 报告原文里可点的「文件:行」链接数（D3）：为 0 说明没转成链接或报告里没有位置信息 */
         QTextStream(stdout) << QString::fromUtf8("报告可点链接: ") << page.srcLinkCount() << "\n";
+        /* A1：历史回看下拉框里应至少有一轮快照（本轮刷新刚写的那份） */
+        const int histN = page.historyCount();
+        QTextStream(stdout) << QString::fromUtf8("历史快照轮数: ") << histN << "\n";
+        if (histN < 1)
+            return 2;
 
         /* 断言交互区域已登记：健康度卡片 + 两板热力图格，取数成功时必然 > 6。
            命中区一旦变空，悬停与点击都会失灵，所以在这里兜住。 */

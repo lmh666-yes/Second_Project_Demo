@@ -7,7 +7,8 @@ r"""引脚与资源规划器（幂等，只读源码，不改任何文件）。
   直接报出这组模块之间的冲突、要占的脚、以及中断优先级是否越过内核上限。
 
 输出：
-  1) 每块板：模块与引脚表（模块基名 -> 占用的引脚）、冲突引脚、无人认领引脚；
+  1) 每块板：模块与引脚表（模块基名 -> 占用的引脚）、冲突引脚、无人认领引脚、
+     声明了但没人用（僵尸宏）的引脚；
   2) 每块板：中断资源表（IRQn / 抢占 / 子优先级 / 出处），标注抢占低于内核上限的项；
   3) 若给出 --use，附"方案检查"：选中模块之间的冲突与引脚清单。
 
@@ -107,6 +108,45 @@ def module_of(base):
     if len(parts) >= 2 and parts[-1].upper() in FUNC_TAIL:
         return '_'.join(parts[:-1])
     return base
+
+
+def scan_unused_decls(proj, bases):
+    """A3：返回"头文件里声明了 _PORT/_PIN、但全工程没有任何代码引用"的基名集合。
+
+    判据很硬：某个基名除了它自己的声明头之外，在工程任何 .c/.h 里都找不到第二次出现
+    （注释与字符串先掩掉，免得"注释里提了一句"就算用了）。命中的多半是没启用的模块 ——
+    这些脚回收代价最低，正好配合引脚冲突报告里的"候选脚"建议。只读，不改任何文件。
+    """
+    if not os.path.isdir(proj):
+        return set()
+    masked = {}
+    for dp, _, fns in os.walk(proj):
+        for fn in fns:
+            if fn.lower().endswith(('.c', '.h')):
+                fp = os.path.normpath(os.path.join(dp, fn))
+                masked[fp] = strip_comments('\n'.join(read_lines(fp)))
+
+    unused = set()
+    for base, info in bases.items():
+        decl = info['loc'].rsplit(':', 1)[0]
+        decl = os.path.normpath(decl if os.path.isabs(decl) else os.path.join(ROOT, decl))
+        for fp, txt in masked.items():
+            if os.path.normcase(fp) == os.path.normcase(decl):
+                continue
+            if base in txt:
+                break
+        else:
+            unused.add(base)
+    return unused
+
+
+def unused_pin_map(bases, unused_bases):
+    """{脚名: [基名,...]} —— 由"无人引用"的基名占着的脚。"""
+    m = {}
+    for base in sorted(unused_bases):
+        for pb in bases[base]['pins']:
+            m.setdefault(fmt_pin(pb), []).append(base)
+    return m
 
 
 def scan_pins(inc_dir):
@@ -474,6 +514,23 @@ def render_board(title, inc_dir, use_list, result):
     out.append('  ' + '  '.join(fmt_pin(pb) for pb in free) if free else '无。')
     out.append('')
 
+    # 声明了但没人用（A3）：头文件里有 _PORT/_PIN，工程里却没有一处引用。
+    umap = unused_pin_map(bases, scan_unused_decls(
+        os.path.dirname(os.path.dirname(inc_dir)), bases))
+    out.append('### 声明了但没人用（僵尸宏）')
+    out.append('')
+    if umap:
+        for pin in sorted(umap):
+            out.append('- %s ← %s（头文件里声明了 _PORT/_PIN，全工程没有代码引用）'
+                       % (pin, '、'.join(umap[pin])))
+        out.append('')
+        out.append('> **下一步怎么做**：这些脚循环里没人用、硬件上也可能空着，'
+                   '是引脚冲突时最省事的候选。动手前仍要对照原理图确认，'
+                   '并确认不是"别的宏绕开了它"（比如模块直接用了别的脚名）。')
+    else:
+        out.append('无。')
+    out.append('')
+
     if unpaired or dup_base:
         out.append('### 需人工确认')
         out.append('')
@@ -511,7 +568,8 @@ def render_board(title, inc_dir, use_list, result):
 
 def to_json(results):
     """结构化输出，供工具箱的可视化体检面板读取。
-    occupied / conflicts / free 的键都是 'PA2' 这种脚名，值为占用者模块基名列表。"""
+    occupied / conflicts / free 的键都是 'PA2' 这种脚名，值为占用者模块基名列表。
+    decl_unused 是"声明了 _PORT/_PIN 但全工程没引用"的脚名列表（A3 热力图的第四态）。"""
     boards = []
     for title, inc, r in results:
         bases, owners, unpaired, dup_base, nfiles = r
@@ -530,12 +588,15 @@ def to_json(results):
             for pb in info['pins']:
                 detail.setdefault(fmt_pin(pb), []).append(
                     {'base': base, 'loc': info['loc']})
+        decl_unused = sorted(unused_pin_map(bases, scan_unused_decls(
+            os.path.dirname(os.path.dirname(inc)), bases)))
         boards.append({
             'title': title,
             'files': nfiles,
             'occupied': occupied,
             'conflicts': conflicts,
             'free': [fmt_pin(pb) for pb in free],
+            'decl_unused': decl_unused,
             'pin_detail': detail,
         })
     ok = all(not b['conflicts'] for b in boards)
@@ -543,10 +604,12 @@ def to_json(results):
 
 
 def selftest():
-    """自检：在临时目录造一块合成板的 FWLIB，故意埋下三类错例 ——
+    """自检：在临时目录造一块合成板的 FWLIB，故意埋下几类错例 ——
     两个模块抢同一个引脚、一对只有 _PORT 没有 _PIN 的宏、抢占低于内核上限的 ISR
-    （其中 ISR 用 SYS_NVIC_SetPriority 与 NVIC_InitStructure 两种写法各一个，覆盖两条解析路径）。
-    直接调 scan_pins / read_max_syscall / scan_irqs / render_board 核对确实命中，不写报告、不碰仓库。
+    （其中 ISR 用 SYS_NVIC_SetPriority 与 NVIC_InitStructure 两种写法各一个，覆盖两条解析路径）、
+    一个声明了却全工程没人引用的"僵尸宏"（同时留一个被引用的做反例）。
+    直接调 scan_pins / scan_unused_decls / read_max_syscall / scan_irqs / render_board /
+    to_json 核对确实命中，不写报告、不碰仓库。
     """
     import shutil
     import tempfile
@@ -569,7 +632,8 @@ def selftest():
             with open(path, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(text)
 
-        # 引脚宏：LORA_E22 与 W25QXX 故意抢同一个 PB5；TFT 独占 PC7；ADC 只有 _PORT 不成对
+        # 引脚宏：LORA_E22 与 W25QXX 故意抢同一个 PB5；TFT 独占 PC7 且被引用（反例：
+        # 不该被判成"声明未用"）；ADC 只有 _PORT 不成对；ADC_LIGHT 独占 PA3 且无人引用（错例）。
         wr(os.path.join(inc, 'pin_cfg.h'),
            '#define LORA_E22_PORT   GPIOB\n'
            '#define LORA_E22_PIN    GPIO_Pin_5\n'
@@ -577,6 +641,8 @@ def selftest():
            '#define W25QXX_PIN      GPIO_Pin_5\n'
            '#define TFT_PORT        GPIOC\n'
            '#define TFT_PIN         GPIO_Pin_7\n'
+           '#define ADC_LIGHT_PORT  GPIOA\n'
+           '#define ADC_LIGHT_PIN   GPIO_Pin_3\n'
            '#define ADC_PORT        GPIOA\n')
         wr(os.path.join(inc, 'prio_cfg.h'),
            '#define SYS_USART1_PRE_PRIO  4\n'
@@ -599,7 +665,7 @@ def selftest():
            '#define FOO_DMA_IRQ      DMA1_Stream5_IRQn\n'
            '#define BAR_DMA_STREAM   DMA2_Stream3\n')
         wr(os.path.join(src, 'a.c'),
-           'void Bsp_A_Init(void) { DMA_DeInit(DMA2_Stream0); }\n')
+           'void Bsp_A_Init(void) { DMA_DeInit(DMA2_Stream0); GPIO_Init(TFT_PORT, &cfg); }\n')
         wr(os.path.join(src, 'b.c'),
            'void Bsp_B_Init(void) { DMA_DeInit(DMA2_Stream0); p->dma_ch = DMA_Channel_2; }\n')
         wr(os.path.join(src, 'c.c'),
@@ -618,8 +684,8 @@ def selftest():
            len(conflicts) == 1 and sorted(conflicts[0][1]) == ['LORA_E22', 'W25QXX'],
            '、'.join(conflicts[0][1]) if conflicts else '无')
         ck('不成对的宏被列出（ADC）', unpaired == ['ADC'], '、'.join(unpaired) or '无')
-        ck('模块与占用脚计数正确（3 个模块 / 2 个脚）',
-           len(bases) == 3 and len(owners) == 2 and nfiles == 3,
+        ck('模块与占用脚计数正确（4 个模块 / 3 个脚）',
+           len(bases) == 4 and len(owners) == 3 and nfiles == 3,
            '%d / %d / %d' % (len(bases), len(owners), nfiles))
 
         max_syscall = read_max_syscall(os.path.join(cfgdir, 'FreeRTOSConfig.h'))
@@ -639,6 +705,14 @@ def selftest():
         ck('方案检查报出选中模块之间的冲突',
            '选中模块之间的冲突' in txt and 'PB5' in txt and 'LORA_E22' in txt)
         ck('报告渲染不炸且含中断资源表', '### 中断资源' in txt and 'USART1_IRQn' in txt)
+
+        # A3 声明了但没人用：错例（三个没人引用的基名必须被抓到）/
+        # 反例（被 a.c 引用的 TFT 必须不报，不能把"用过"的也算成僵尸）
+        unused = scan_unused_decls(tmp, bases)
+        ck('僵尸宏判定：没引用的 LORA_E22/W25QXX/ADC_LIGHT 命中，被引用的 TFT 不命中',
+           unused == {'LORA_E22', 'W25QXX', 'ADC_LIGHT'}, '、'.join(sorted(unused)) or '无')
+        ck('报告有「声明了但没人用」一节且列出 ADC_LIGHT',
+           '### 声明了但没人用' in txt and 'ADC_LIGHT' in txt)
 
         claims, unresolved = scan_dma(tmp)
         by_mod = {c['module']: c for c in claims}
@@ -679,6 +753,11 @@ def selftest():
            and all('base' in d and 'loc' in d
                    for d in j['boards'][0]['pin_detail']['PB5']),
            str(j['boards'][0]['pin_detail'].get('PB5')))
+        ck('JSON 带声明未用引脚（decl_unused 含 PA3/PB5，不含被引用的 PC7）',
+           'PA3' in j['boards'][0]['decl_unused']
+           and 'PB5' in j['boards'][0]['decl_unused']
+           and 'PC7' not in j['boards'][0]['decl_unused'],
+           str(j['boards'][0]['decl_unused']))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

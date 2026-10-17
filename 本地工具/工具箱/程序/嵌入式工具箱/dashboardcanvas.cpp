@@ -8,6 +8,7 @@
 #include <QPaintEvent>
 #include <QPen>
 #include <QPolygon>
+#include <QSet>
 #include <QSizePolicy>
 #include <QToolTip>
 #include <QVariantList>
@@ -70,6 +71,7 @@ DashboardCanvas::Palette DashboardCanvas::makePalette() const
         p.freeCell = QColor("#33333c");
         p.usedCell = QColor("#3d7eff");
         p.conflictCell = QColor("#f85149");
+        p.declCell = QColor("#a371f7");
         p.track = QColor("#33333c");
     } else {
         p.card = QColor("#f4f4f7");
@@ -84,6 +86,7 @@ DashboardCanvas::Palette DashboardCanvas::makePalette() const
         p.freeCell = QColor("#e6e6ec");
         p.usedCell = QColor("#4a8eff");
         p.conflictCell = QColor("#cf222e");
+        p.declCell = QColor("#8250df");
         p.track = QColor("#e6e6ec");
     }
     return p;
@@ -180,10 +183,19 @@ int DashboardCanvas::bar(QPainter &p, int x, int y, int w, const QString &label,
 
 int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette &pal)
 {
-    struct Item { QString name; QString detail; QColor col; };
+    struct Item { QString name; QString detail; QColor col; QString thr; };
     QVector<Item> items;
     /* 与下面 append 顺序一一对应，点卡片按此 key 跳工具页 */
     static const char *const kCardKeys[] = {"pin", "rtos", "enc", "lora", "protocol", "firmware", "progress"};
+
+    /* A2 阈值红黄线：数量类指标 1~4 处算「注意」（黄），≥5 处算「严重」（红）。
+       阈值取自清单示例「引脚冲突 ≥ 5 处转红」，其余同口径 —— 免得每次自己盯数字。
+       详情文字里的数字照旧保留，颜色只负责"要不要现在就去看"。 */
+    auto level = [&pal](int n) -> QColor {
+        if (n <= 0)
+            return pal.ok;
+        return n >= 5 ? pal.err : pal.warn;
+    };
 
     {
         const QVariantMap m = m_tools.value(QStringLiteral("pin")).toMap();
@@ -192,7 +204,7 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
             conflicts += b.toMap().value(QStringLiteral("conflicts")).toMap().size();
         items.append({QStringLiteral("引脚规划"),
                       conflicts ? QStringLiteral("%1 处冲突").arg(conflicts) : QStringLiteral("无冲突"),
-                      conflicts ? pal.err : pal.ok});
+                      level(conflicts), QStringLiteral("1~4 处黄 · ≥5 处红")});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("rtos")).toMap();
@@ -204,14 +216,15 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
         items.append({QStringLiteral("RTOS 检查"),
                       severe ? QStringLiteral("%1 严重").arg(severe)
                              : (warn ? QStringLiteral("%1 注意").arg(warn) : QStringLiteral("正常")),
-                      severe ? pal.err : (warn ? pal.warn : pal.ok)});
+                      severe ? pal.err : (warn ? pal.warn : pal.ok),
+                      QStringLiteral("有严重即红 · 仅注意则黄")});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("enc")).toMap();
         const int v = m.value(QStringLiteral("violations")).toInt();
         items.append({QStringLiteral("编码守卫"),
                       v ? QStringLiteral("%1 违规").arg(v) : QStringLiteral("无违规"),
-                      v ? pal.err : pal.ok});
+                      level(v), QStringLiteral("1~4 处黄 · ≥5 处红")});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("lora")).toMap();
@@ -220,7 +233,7 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
             n += b.toMap().value(QStringLiteral("issues")).toList().size();
         items.append({QStringLiteral("LoRa 检查"),
                       n ? QStringLiteral("%1 问题").arg(n) : QStringLiteral("正常"),
-                      n ? pal.err : pal.ok});
+                      level(n), QStringLiteral("1~2 处黄 · ≥3 处红")});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("protocol")).toMap();
@@ -231,14 +244,14 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
         n += ff.size();
         items.append({QStringLiteral("协议校验"),
                       n ? QStringLiteral("%1 问题").arg(n) : QStringLiteral("通过"),
-                      n ? pal.err : pal.ok});
+                      level(n), QStringLiteral("1~2 处黄 · ≥3 处红")});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("firmware")).toMap();
         const int n = m.value(QStringLiteral("issues")).toList().size();
         items.append({QStringLiteral("固件预算"),
                       n ? QStringLiteral("%1 问题").arg(n) : QStringLiteral("正常"),
-                      n ? pal.err : pal.ok});
+                      level(n), QStringLiteral("1~4 处黄 · ≥5 处红")});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("progress")).toMap();
@@ -246,7 +259,7 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
                       QStringLiteral("%1 待办 · %2 桩")
                           .arg(m.value(QStringLiteral("markers")).toInt())
                           .arg(m.value(QStringLiteral("stubs")).toInt()),
-                      pal.info});
+                      pal.info, QString()});
     }
 
     /* 本轮没取到数的工具：不能画成绿色"正常"——那是替失败的工具报平安。
@@ -291,7 +304,10 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
         hit.rect = QRect(cx, y, cw, ch);
         hit.key = (i < int(sizeof(kCardKeys) / sizeof(kCardKeys[0])))
                       ? QString::fromLatin1(kCardKeys[i]) : QString();
-        hit.tip = QStringLiteral("%1：%2\n点击跳到该工具页").arg(items[i].name, items[i].detail);
+        hit.tip = QStringLiteral("%1：%2").arg(items[i].name, items[i].detail);
+        if (!items[i].thr.isEmpty())
+            hit.tip += QStringLiteral("\n阈值：%1").arg(items[i].thr);   /* A2：把红黄线写进提示，可查 */
+        hit.tip += QStringLiteral("\n点击跳到该工具页");
         m_hits.append(hit);
     }
     return y + ch + 14;
@@ -364,6 +380,11 @@ int DashboardCanvas::drawPins(QPainter &p, int x, int y, int w, const Palette &p
 
         const QVariantMap occ = b.value(QStringLiteral("occupied")).toMap();
         const QVariantMap con = b.value(QStringLiteral("conflicts")).toMap();
+        /* A3：库里头文件声明了 _PORT/_PIN、但全工程没有任何代码引用的脚。
+           单列一色，配合 D3 的候选脚建议 —— 这些脚才是"回收代价最低"的。 */
+        QSet<QString> declUnused;
+        for (const QVariant &v : b.value(QStringLiteral("decl_unused")).toList())
+            declUnused.insert(v.toString());
 
         p.setPen(pal.textTer);
         for (int c = 0; c < cols; ++c) {
@@ -381,9 +402,15 @@ int DashboardCanvas::drawPins(QPainter &p, int x, int y, int w, const Palette &p
                                          .arg(QString::number(c, 16).toUpper());
                 QColor col = pal.freeCell;
                 QStringList owners;
+                bool declOnly = false;   /* 已声明但没人用（不是冲突） */
                 if (con.contains(name)) {
                     col = pal.conflictCell;
                     for (const QVariant &o : con.value(name).toList())
+                        owners << o.toString();
+                } else if (declUnused.contains(name)) {
+                    col = pal.declCell;
+                    declOnly = true;
+                    for (const QVariant &o : occ.value(name).toList())
                         owners << o.toString();
                 } else if (occ.contains(name)) {
                     col = pal.usedCell;
@@ -395,9 +422,13 @@ int DashboardCanvas::drawPins(QPainter &p, int x, int y, int w, const Palette &p
 
                 Hit hit;
                 hit.rect = cr;
-                hit.tip = owners.isEmpty()
-                              ? QStringLiteral("%1：空闲").arg(name)
-                              : QStringLiteral("%1：%2").arg(name, owners.join(QStringLiteral("、")));
+                if (owners.isEmpty())
+                    hit.tip = QStringLiteral("%1：空闲").arg(name);
+                else if (declOnly)
+                    hit.tip = QStringLiteral("%1：%2（库内声明了，但工程里没有任何代码引用）")
+                                  .arg(name, owners.join(QStringLiteral("、")));
+                else
+                    hit.tip = QStringLiteral("%1：%2").arg(name, owners.join(QStringLiteral("、")));
                 hit.pin = name;
                 hit.board = bi;
                 m_hits.append(hit);
@@ -413,6 +444,7 @@ int DashboardCanvas::drawPins(QPainter &p, int x, int y, int w, const Palette &p
         {pal.freeCell, QStringLiteral("空闲")},
         {pal.usedCell, QStringLiteral("占用")},
         {pal.conflictCell, QStringLiteral("冲突")},
+        {pal.declCell, QStringLiteral("声明未用")},
     };
     f.setPointSize(8);
     p.setFont(f);
@@ -421,8 +453,8 @@ int DashboardCanvas::drawPins(QPainter &p, int x, int y, int w, const Palette &p
         p.setBrush(g.c);
         p.drawRect(QRect(lx, ly + 3, 10, 10));
         p.setPen(pal.textSec);
-        p.drawText(QRect(lx + 14, ly, 44, 16), Qt::AlignLeft | Qt::AlignVCenter, g.t);
-        lx += 66;
+        p.drawText(QRect(lx + 14, ly, 56, 16), Qt::AlignLeft | Qt::AlignVCenter, g.t);
+        lx += 78;
     }
     return ly + 20;
 }

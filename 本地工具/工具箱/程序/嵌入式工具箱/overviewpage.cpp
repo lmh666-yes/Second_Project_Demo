@@ -4,6 +4,7 @@
 #include "pyfind.h"
 
 #include <QApplication>
+#include <QComboBox>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
@@ -87,6 +88,21 @@ QString repoRootOf(const QString &toolsDir)
     return toolsDir;
 }
 
+/* 健康度卡片的 key → 工具页标题（点卡片 / 点历史画布卡片都走这里）。 */
+QString pageOfTool(const QString &key)
+{
+    static const QHash<QString, QString> pageOf{
+        {QStringLiteral("pin"),      QStringLiteral("引脚规划")},
+        {QStringLiteral("rtos"),     QStringLiteral("RTOS 检查")},
+        {QStringLiteral("enc"),      QStringLiteral("编码守卫")},
+        {QStringLiteral("lora"),     QStringLiteral("LoRa 检查")},
+        {QStringLiteral("protocol"), QStringLiteral("协议校验")},
+        {QStringLiteral("firmware"), QStringLiteral("固件预算")},
+        {QStringLiteral("progress"), QStringLiteral("进度扫描")},
+    };
+    return pageOf.value(key);
+}
+
 } // namespace
 
 OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
@@ -123,6 +139,7 @@ OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
     m_tabs = new QTabWidget(this);
 
     m_canvas = new DashboardCanvas(this);
+    m_canvas->setObjectName(QStringLiteral("mainDashboard"));   /* 供 --shot-overview 精确定位 */
     QScrollArea *sa = new QScrollArea(this);
     sa->setWidget(m_canvas);
     sa->setWidgetResizable(true);
@@ -157,23 +174,45 @@ OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
 
     m_tabs->addTab(sa, QStringLiteral("可视化仪表盘"));
     m_tabs->addTab(m_view, QStringLiteral("报告原文"));
+
+    /* A1 历史回看：从 _体检历史/ 里挑一轮快照重新渲染，而不是只能跟上一轮比。 */
+    QWidget *hist = new QWidget(this);
+    QVBoxLayout *hl = new QVBoxLayout(hist);
+    hl->setContentsMargins(0, 0, 0, 0);
+    QHBoxLayout *hbar = new QHBoxLayout;
+    m_histCombo = new QComboBox(hist);
+    m_histCombo->setMinimumWidth(220);
+    m_histStatus = new QLabel(QStringLiteral("还没有历史快照。"), hist);
+    m_histStatus->setStyleSheet(QStringLiteral("color:rgba(127,127,127,255);"));
+    hbar->addWidget(new QLabel(QStringLiteral("选一轮快照："), hist));
+    hbar->addWidget(m_histCombo);
+    hbar->addSpacing(12);
+    hbar->addWidget(m_histStatus, 1);
+    hl->addLayout(hbar);
+    m_histCanvas = new DashboardCanvas(hist);
+    m_histCanvas->setObjectName(QStringLiteral("histDashboard"));
+    QScrollArea *hsa = new QScrollArea(hist);
+    hsa->setWidget(m_histCanvas);
+    hsa->setWidgetResizable(true);
+    hsa->setFrameShape(QFrame::NoFrame);
+    hl->addWidget(hsa, 1);
+    m_tabs->addTab(hist, QStringLiteral("历史回看"));
     lay->addWidget(m_tabs, 1);
 
     connect(bRefresh, &QPushButton::clicked, this, &OverviewPage::refresh);
     connect(bOpen, &QPushButton::clicked, this, &OverviewPage::openReportsDir);
+    connect(m_histCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &OverviewPage::showHistorySnapshot);
 
-    /* 点健康度卡片 → 跳到对应工具页（由主窗口接住，见 ToolboxWindow::jumpToPage）。 */
+    /* 点健康度卡片 → 跳到对应工具页（由主窗口接住，见 ToolboxWindow::jumpToPage）。
+       当前轮画布与历史回看画布同一套映射。 */
     connect(m_canvas, &DashboardCanvas::toolActivated, this, [this](const QString &key) {
-        static const QHash<QString, QString> pageOf{
-            {QStringLiteral("pin"),      QStringLiteral("引脚规划")},
-            {QStringLiteral("rtos"),     QStringLiteral("RTOS 检查")},
-            {QStringLiteral("enc"),      QStringLiteral("编码守卫")},
-            {QStringLiteral("lora"),     QStringLiteral("LoRa 检查")},
-            {QStringLiteral("protocol"), QStringLiteral("协议校验")},
-            {QStringLiteral("firmware"), QStringLiteral("固件预算")},
-            {QStringLiteral("progress"), QStringLiteral("进度扫描")},
-        };
-        const QString t = pageOf.value(key);
+        const QString t = pageOfTool(key);
+        if (!t.isEmpty())
+            emit requestPage(t);
+    });
+    connect(m_histCanvas, &DashboardCanvas::toolActivated, this, [this](const QString &key) {
+        const QString t = pageOfTool(key);
         if (!t.isEmpty())
             emit requestPage(t);
     });
@@ -181,7 +220,9 @@ OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
     /* 构造时不取数（要跑 6 个 Python，会拖慢工具箱启动）；先读已有的 md 报告，
        首次切到本页时再自动取一次结构化数据。 */
     m_canvas->setNotice(QStringLiteral("首次打开本页会自动取数，或点「刷新」。"));
+    m_histCanvas->setNotice(QStringLiteral("还没有历史快照。每轮体检会自动归档一份。"));
     loadTextReports();
+    reloadHistory();
 }
 
 /* 首次显示本页才取数：避免工具箱一启动就跑一遍全部 Python 拖慢启动。 */
@@ -270,6 +311,11 @@ void OverviewPage::setDropKeys(const QStringList &keys)
     m_dropKeys = keys;
 }
 
+int OverviewPage::historyCount() const
+{
+    return m_histCombo ? m_histCombo->count() : 0;
+}
+
 void OverviewPage::onFetchFinished(const QString &key, QProcess *proc)
 {
     const QByteArray out = proc->readAllStandardOutput();
@@ -300,6 +346,7 @@ void OverviewPage::finishFetch()
         const QVariantMap prev = readPrevSnapshot();
         writeSnapshot(m_tools);
         m_canvas->setDelta(computeDelta(prev, m_tools));
+        reloadHistory();   /* A1：多了一轮快照，历史回看的下拉列表跟着更新 */
     }
 
     QString st = QStringLiteral("已取数 %1 / %2")
@@ -321,17 +368,31 @@ QString OverviewPage::snapshotDir() const
     return QDir(m_toolsDir).filePath(QStringLiteral("_体检历史"));
 }
 
-QVariantMap OverviewPage::readPrevSnapshot() const
+/* 快照文件名是 yyyyMMdd_HHmmss.json，按名字升序即按时间升序（旧 → 新）。 */
+QStringList OverviewPage::listSnapshots() const
 {
     QDir d(snapshotDir());
-    const QStringList files = d.entryList(QStringList{QStringLiteral("*.json")},
-                                          QDir::Files, QDir::Name);
-    if (files.isEmpty())
-        return {};
-    QFile f(d.filePath(files.last()));   /* 名字按时间排，最后一个最新 */
+    QStringList out;
+    for (const QString &f : d.entryList(QStringList{QStringLiteral("*.json")},
+                                        QDir::Files, QDir::Name))
+        out << d.filePath(f);
+    return out;
+}
+
+QVariantMap OverviewPage::readSnapshot(const QString &path) const
+{
+    QFile f(path);
     if (!f.open(QIODevice::ReadOnly))
         return {};
     return QJsonDocument::fromJson(f.readAll()).object().toVariantMap();
+}
+
+QVariantMap OverviewPage::readPrevSnapshot() const
+{
+    const QStringList files = listSnapshots();
+    if (files.isEmpty())
+        return {};
+    return readSnapshot(files.last());   /* 名字按时间排，最后一个最新 */
 }
 
 void OverviewPage::writeSnapshot(const QVariantMap &tools)
@@ -474,4 +535,82 @@ void OverviewPage::openReportsDir()
     const QString dir = QDir(m_toolsDir).filePath(QStringLiteral("检查"));
     if (QFileInfo::exists(dir))
         QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+}
+
+/* ---------- A1 历史回看：把某一轮快照重新渲染出来 ---------- */
+
+/* 重列下拉框（最新在最前）；尽量保持原选中项，再渲染那一轮。 */
+void OverviewPage::reloadHistory()
+{
+    if (!m_histCombo)
+        return;
+    const QString keep = m_histCombo->currentData().toString();
+    const QStringList files = listSnapshots();
+
+    m_histCombo->blockSignals(true);
+    m_histCombo->clear();
+    for (int i = files.size() - 1; i >= 0; --i) {   /* 最新的排最前 */
+        const QString base = QFileInfo(files.at(i)).completeBaseName();
+        const QDateTime dt = QDateTime::fromString(base, QStringLiteral("yyyyMMdd_HHmmss"));
+        m_histCombo->addItem(dt.isValid()
+                                 ? dt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))
+                                 : base,
+                             files.at(i));
+    }
+    int idx = m_histCombo->findData(keep);
+    if (idx < 0)
+        idx = 0;
+    m_histCombo->setCurrentIndex(idx);
+    m_histCombo->blockSignals(false);
+
+    showHistorySnapshot();
+}
+
+void OverviewPage::showHistorySnapshot()
+{
+    if (m_histCombo)
+        renderHistory(m_histCombo->currentData().toString());
+}
+
+void OverviewPage::renderHistory(const QString &path)
+{
+    if (!m_histCanvas)
+        return;
+    if (path.isEmpty()) {
+        m_histCanvas->setNotice(QStringLiteral("还没有历史快照。每轮体检会自动归档一份。"));
+        if (m_histStatus)
+            m_histStatus->setText(QStringLiteral("共 0 轮"));
+        return;
+    }
+    const QVariantMap tools = readSnapshot(path);
+    if (tools.isEmpty()) {
+        m_histCanvas->setNotice(QStringLiteral("这份快照读不出来（文件可能损坏）。"));
+        if (m_histStatus)
+            m_histStatus->setText(QStringLiteral("读取失败"));
+        return;
+    }
+
+    /* 该轮没取到的工具：快照只存成功的，缺的键就是"那一轮没取到" */
+    QStringList missing;
+    for (const ToolDef &d : TOOLS) {
+        const QString key = QString::fromUtf8(d.key);
+        if (!tools.contains(key))
+            missing << key;
+    }
+    m_histCanvas->setFailed(missing);   /* 缺数照样不许画成绿色"正常" */
+    m_histCanvas->setTools(tools);
+
+    /* 与上一轮（比它更旧的那份）对比：让"这一轮变好还是变差"有基线 */
+    const QStringList files = listSnapshots();
+    const int i = files.indexOf(path);
+    m_histCanvas->setDelta(computeDelta(i > 0 ? readSnapshot(files.at(i - 1)) : QVariantMap(),
+                                        tools));
+
+    if (m_histStatus) {
+        QString st = QStringLiteral("第 %1 / %2 轮　·　%3 个工具")
+                         .arg(files.size() - i).arg(files.size()).arg(tools.size());
+        if (!missing.isEmpty())
+            st += QStringLiteral("，该轮未取到：%1").arg(missing.join(QStringLiteral("、")));
+        m_histStatus->setText(st);
+    }
 }

@@ -7,7 +7,7 @@
 
    绘制内容（自上而下）：
      1) 健康度卡片行  —— 每个检查器各一张，状态点 + 关键数字（没取到的显式标出来）
-     2) 引脚占用热力图 —— 每板 A~G × 0~F 网格，空闲/占用/冲突三态
+     2) 引脚占用热力图 —— 每板 A~G × 0~F 网格，空闲/占用/冲突/声明未用四态
      3) Flash / RAM 占用条
      4) RTOS 任务表    —— 有任务时才画
      5) 进度趋势迷你折线 —— 待办 / 桩 的历史变化 */
@@ -25,8 +25,9 @@ class DashboardCanvas : public QWidget {
 public:
     explicit DashboardCanvas(QWidget *parent = nullptr);
 
-    /* tools 的键：pin / rtos / enc / progress / lora / firmware，
-       值是各工具 --json 解析出的 QVariantMap。缺键表示该工具本次没取到。 */
+    /* tools 的键：pin / rtos / enc / lora / protocol / firmware / progress
+       （见 OverviewPage 的 TOOLS 表）。值是各工具 --json 解析出的 QVariantMap，
+       缺键表示该工具本次没取到。 */
     void setTools(const QVariantMap &tools);
 
     /* 无数据时的中央提示语。 */
@@ -71,7 +72,7 @@ private:
     struct Palette {
         QColor card, border, textPri, textSec, textTer;
         QColor ok, warn, err, info;
-        QColor freeCell, usedCell, conflictCell, track;
+        QColor freeCell, usedCell, conflictCell, declCell, track;
     };
 
     Palette makePalette() const;
