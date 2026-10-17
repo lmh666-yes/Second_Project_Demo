@@ -53,6 +53,16 @@ void DashboardCanvas::setDelta(const QStringList &lines)
     update();
 }
 
+/* A2：只挂悬停提示、既不跳页也不查引脚的那种命中区（趋势折线数据点）。 */
+int DashboardCanvas::tipHitCount() const
+{
+    int n = 0;
+    for (const Hit &h : m_hits)
+        if (h.key.isEmpty() && h.pin.isEmpty())
+            ++n;
+    return n;
+}
+
 /* 按当前主题给一整套配色。深色下用亮色文字 + 暗卡片，浅色反之。 */
 DashboardCanvas::Palette DashboardCanvas::makePalette() const
 {
@@ -259,14 +269,21 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
     {
         const QVariantMap m = m_tools.value(QStringLiteral("cache")).toMap();
         const int sv = m.value(QStringLiteral("severe")).toInt();
+        const double holdSec = m.value(QStringLiteral("hold_seconds")).toDouble();
         const QString hold = m.value(QStringLiteral("hold_text")).toString();
-        /* 只有"补传慢于写入 / 越界 / 记录塞不下"这类才红；扇区粒度与追平时间是固有提示，
-           不该把卡片长期染成黄色（否则天天黄 = 天天没人看）。 */
+        /* A1：除了"补传慢于写入 / 越界 / 记录塞不下"（severe）算红，再按"断网可扛时长"分级：
+           < 10 分钟红、< 30 分钟黄。原来只显示 hold_text 一个绿字，"只能扛 3 分钟"也看不出来。
+           注意 hold_seconds 为 0 表示宏没算出来 —— 那属于"未核算"，不替它染红（报告里另有严重项）。 */
+        QColor col = pal.ok;
+        if (sv || (holdSec > 0 && holdSec < 600))
+            col = pal.err;
+        else if (holdSec > 0 && holdSec < 1800)
+            col = pal.warn;
         items.append({QStringLiteral("断网缓存"),
                       hold.isEmpty() ? QStringLiteral("未核算")
                                      : QStringLiteral("可扛 %1").arg(hold),
-                      sv ? pal.err : pal.ok,
-                      QStringLiteral("补传慢于写入即红")});
+                      col,
+                      QStringLiteral("补传慢于写入即红 · 可扛 <10 分钟红 · <30 分钟黄")});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("progress")).toMap();
@@ -598,6 +615,21 @@ int DashboardCanvas::drawTrend(QPainter &p, int x, int y, int w, const Palette &
     };
     plot(QStringLiteral("markers"), pal.info);
     plot(QStringLiteral("stubs"), pal.warn);
+
+    /* A2：给每个数据点登记一个命中区，悬停显示这一轮的日期与两个读数 ——
+       只有折线形状时，看不出"这是哪天"、"当时是几个待办 / 几个桩"。 */
+    const int bandW = n > 1 ? qMax(8, area.width() / (n - 1)) : area.width();
+    for (int i = 0; i < n; ++i) {
+        const QVariantMap it = hist.at(i).toMap();
+        const int px = area.left() + (n <= 1 ? 0 : i * area.width() / (n - 1));
+        Hit hit;
+        hit.rect = QRect(px - bandW / 2, area.top(), bandW, area.height());
+        hit.tip = QStringLiteral("%1\n待办标记：%2　待实现桩：%3")
+                      .arg(it.value(QStringLiteral("time")).toString(),
+                           QString::number(it.value(QStringLiteral("markers")).toInt()),
+                           QString::number(it.value(QStringLiteral("stubs")).toInt()));
+        m_hits.append(hit);
+    }
 
     // 图例
     QFont f = p.font();

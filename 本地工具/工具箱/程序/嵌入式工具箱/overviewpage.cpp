@@ -4,6 +4,7 @@
 #include "pyfind.h"
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
 #include <QDesktopServices>
@@ -86,6 +87,51 @@ QString repoRootOf(const QString &toolsDir)
             break;
     }
     return toolsDir;
+}
+
+/* 快照显示名：文件名（新格式带毫秒 / 老格式只到秒）解析成时间，解析不了就退回文件名。 */
+QString snapLabel(const QString &path)
+{
+    const QString base = QFileInfo(path).completeBaseName();
+    QDateTime dt = QDateTime::fromString(base, QStringLiteral("yyyyMMdd_HHmmss_zzz"));
+    if (!dt.isValid())
+        dt = QDateTime::fromString(base, QStringLiteral("yyyyMMdd_HHmmss"));
+    return dt.isValid() ? dt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")) : base;
+}
+
+/* A4：只保留各报告里"命中项"小节 —— 冲突 / 违规 / 发现 / 检查结果 / 交叉检查 /
+   被占用 / 没人用（僵尸宏）/ 待办 / 桩函数 / 注释体检 等。
+   关键字取自现在这 7 份报告的实际小节名（不是猜的），不含关键字的整段（总览表、
+   「模块与引脚」整表、配置摘要、无人认领引脚、DMA 调用清单）会被丢掉，
+   长报告就不用一路滚了。 */
+QString filterFindings(const QString &text)
+{
+    static const QStringList kw{
+        QStringLiteral("冲突"), QStringLiteral("违规"), QStringLiteral("发现"),
+        QStringLiteral("检查结果"), QStringLiteral("交叉检查"), QStringLiteral("被占用"),
+        QStringLiteral("没人用"), QStringLiteral("未用"), QStringLiteral("僵尸"),
+        QStringLiteral("超限"), QStringLiteral("越界"), QStringLiteral("撞车"),
+        QStringLiteral("不一致"), QStringLiteral("漂移"), QStringLiteral("待办"),
+        QStringLiteral("桩函数"), QStringLiteral("注释体检"),
+    };
+    QStringList out;
+    bool keep = false;
+    for (const QString &line : text.split(QLatin1Char('\n'))) {
+        if (line.startsWith(QLatin1Char('#'))) {
+            keep = false;
+            for (const QString &k : kw)
+                if (line.contains(k)) {
+                    keep = true;
+                    break;
+                }
+            if (keep)
+                out << line;
+            continue;
+        }
+        if (keep)
+            out << line;
+    }
+    return out.join(QLatin1Char('\n'));
 }
 
 /* 健康度卡片的 key → 工具页标题（点卡片 / 点历史画布卡片都走这里）。 */
@@ -204,19 +250,36 @@ OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
     });
 
     m_tabs->addTab(sa, QStringLiteral("可视化仪表盘"));
-    m_tabs->addTab(m_view, QStringLiteral("报告原文"));
 
-    /* A1 历史回看：从 _体检历史/ 里挑一轮快照重新渲染，而不是只能跟上一轮比。 */
+    /* A4：报告原文页加"只看命中项"开关 —— 把各报告的发现/冲突/违规小节抽出来单列，
+       长报告（引脚规划那种整表）不用一路滚。 */
+    QWidget *rep = new QWidget(this);
+    QVBoxLayout *rl = new QVBoxLayout(rep);
+    rl->setContentsMargins(0, 0, 0, 0);
+    m_onlyFind = new QCheckBox(
+        QStringLiteral("只看命中项（各报告的「发现 / 冲突 / 违规 / 检查结果」小节，长报告免滚）"), rep);
+    m_onlyFind->setObjectName(QStringLiteral("onlyFindingsBox"));   /* 供 --shot-overview 定位 */
+    rl->addWidget(m_onlyFind);
+    rl->addWidget(m_view, 1);
+    m_tabs->addTab(rep, QStringLiteral("报告原文"));
+
+    /* A1 历史回看：从 _体检历史/ 里挑一轮快照重新渲染，而不是只能跟上一轮比。
+       A3：再加一个「对比基准」下拉框，两轮任选着比。 */
     QWidget *hist = new QWidget(this);
     QVBoxLayout *hl = new QVBoxLayout(hist);
     hl->setContentsMargins(0, 0, 0, 0);
     QHBoxLayout *hbar = new QHBoxLayout;
     m_histCombo = new QComboBox(hist);
-    m_histCombo->setMinimumWidth(220);
+    m_histCombo->setMinimumWidth(180);
+    m_histBaseCombo = new QComboBox(hist);
+    m_histBaseCombo->setMinimumWidth(200);
     m_histStatus = new QLabel(QStringLiteral("还没有历史快照。"), hist);
     m_histStatus->setStyleSheet(QStringLiteral("color:rgba(127,127,127,255);"));
     hbar->addWidget(new QLabel(QStringLiteral("选一轮快照："), hist));
     hbar->addWidget(m_histCombo);
+    hbar->addSpacing(8);
+    hbar->addWidget(new QLabel(QStringLiteral("对比基准："), hist));
+    hbar->addWidget(m_histBaseCombo);
     hbar->addSpacing(12);
     hbar->addWidget(m_histStatus, 1);
     hl->addLayout(hbar);
@@ -234,6 +297,11 @@ OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
     connect(bOpen, &QPushButton::clicked, this, &OverviewPage::openReportsDir);
     connect(m_histCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &OverviewPage::showHistorySnapshot);
+    /* A3：换基准就把那一轮的增减重算一遍（不必重新选主快照）。 */
+    connect(m_histBaseCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &OverviewPage::showHistorySnapshot);
+    /* A4：开关一动就重渲染报告原文。 */
+    connect(m_onlyFind, &QCheckBox::toggled, this, [this]() { loadTextReports(); });
 
     /* 点健康度卡片 → 跳到对应工具页（由主窗口接住，见 ToolboxWindow::jumpToPage）。
        当前轮画布与历史回看画布同一套映射。 */
@@ -345,6 +413,13 @@ void OverviewPage::setDropKeys(const QStringList &keys)
 int OverviewPage::historyCount() const
 {
     return m_histCombo ? m_histCombo->count() : 0;
+}
+
+/* A2：进度工具本轮返回了多少轮历史 —— ≥2 才会有趋势折线（画布据此登记悬停命中区）。 */
+int OverviewPage::progressHistoryRounds() const
+{
+    return m_tools.value(QStringLiteral("progress")).toMap()
+        .value(QStringLiteral("history")).toList().size();
 }
 
 void OverviewPage::onFetchFinished(const QString &key, QProcess *proc)
@@ -566,8 +641,14 @@ void OverviewPage::loadTextReports()
                        mt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")))
            << QString();
         /* 摘要从 16 行放宽到 60 行：报告里的「命中项表」（含 文件:行）一般在 25 行往后，
-           只取 16 行的话可点链接根本露不出来，D3 就成了摆设。 */
-        md << linkify(digest(text, 60));
+           只取 16 行的话可点链接根本露不出来，D3 就成了摆设。
+           A4：开了「只看命中项」就只保留各报告的发现/冲突/违规等小节，不再截前 60 行。 */
+        const bool onlyFind = m_onlyFind && m_onlyFind->isChecked();
+        const QString body = onlyFind ? filterFindings(text) : digest(text, 60);
+        if (onlyFind && body.trimmed().isEmpty())
+            md << QStringLiteral("> 只看命中项：这份报告本轮没有命中项小节（干净）。");
+        else
+            md << linkify(body);
         md << QStringLiteral("---") << QString();
     }
     m_view->setMarkdown(md.join(QLatin1Char('\n')));
@@ -590,26 +671,32 @@ void OverviewPage::reloadHistory()
     if (!m_histCombo)
         return;
     const QString keep = m_histCombo->currentData().toString();
+    const QString keepBase = m_histBaseCombo ? m_histBaseCombo->currentData().toString() : QString();
     const QStringList files = listSnapshots();
 
     m_histCombo->blockSignals(true);
     m_histCombo->clear();
-    for (int i = files.size() - 1; i >= 0; --i) {   /* 最新的排最前 */
-        const QString base = QFileInfo(files.at(i)).completeBaseName();
-        /* 新快照名带毫秒；老快照（不带毫秒）仍按原格式解析，两边都能显示成时间 */
-        QDateTime dt = QDateTime::fromString(base, QStringLiteral("yyyyMMdd_HHmmss_zzz"));
-        if (!dt.isValid())
-            dt = QDateTime::fromString(base, QStringLiteral("yyyyMMdd_HHmmss"));
-        m_histCombo->addItem(dt.isValid()
-                                 ? dt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))
-                                 : base,
-                             files.at(i));
-    }
+    for (int i = files.size() - 1; i >= 0; --i)        /* 最新的排最前 */
+        m_histCombo->addItem(snapLabel(files.at(i)), files.at(i));
     int idx = m_histCombo->findData(keep);
     if (idx < 0)
         idx = 0;
     m_histCombo->setCurrentIndex(idx);
     m_histCombo->blockSignals(false);
+
+    /* A3：对比基准下拉框 —— 第一项是"自动：上一轮"，其余是任一轮快照。 */
+    if (m_histBaseCombo) {
+        m_histBaseCombo->blockSignals(true);
+        m_histBaseCombo->clear();
+        m_histBaseCombo->addItem(QStringLiteral("（自动：上一轮）"), QString());
+        for (int i = files.size() - 1; i >= 0; --i)
+            m_histBaseCombo->addItem(snapLabel(files.at(i)), files.at(i));
+        int bi = m_histBaseCombo->findData(keepBase);
+        if (bi < 0)
+            bi = 0;
+        m_histBaseCombo->setCurrentIndex(bi);
+        m_histBaseCombo->blockSignals(false);
+    }
 
     showHistorySnapshot();
 }
@@ -648,15 +735,21 @@ void OverviewPage::renderHistory(const QString &path)
     m_histCanvas->setFailed(missing);   /* 缺数照样不许画成绿色"正常" */
     m_histCanvas->setTools(tools);
 
-    /* 与上一轮（比它更旧的那份）对比：让"这一轮变好还是变差"有基线 */
+    /* A3：对比基准来自「对比基准」下拉框 —— 选"自动"时仍跟上一轮比；
+       选了具体某一轮就以它为基线。让"这一轮变好还是变差"可以跟任意一轮比。 */
     const QStringList files = listSnapshots();
     const int i = files.indexOf(path);
-    m_histCanvas->setDelta(computeDelta(i > 0 ? readSnapshot(files.at(i - 1)) : QVariantMap(),
-                                        tools));
+    QString basePath = m_histBaseCombo ? m_histBaseCombo->currentData().toString() : QString();
+    if (basePath.isEmpty() && i > 0)
+        basePath = files.at(i - 1);
+    m_histCanvas->setDelta(
+        computeDelta(basePath.isEmpty() ? QVariantMap() : readSnapshot(basePath), tools));
 
     if (m_histStatus) {
         QString st = QStringLiteral("第 %1 / %2 轮　·　%3 个工具")
                          .arg(files.size() - i).arg(files.size()).arg(tools.size());
+        st += QStringLiteral("　·　对比基准：%1")
+                  .arg(basePath.isEmpty() ? QStringLiteral("无（最早一轮）") : snapLabel(basePath));
         if (!missing.isEmpty())
             st += QStringLiteral("，该轮未取到：%1").arg(missing.join(QStringLiteral("、")));
         m_histStatus->setText(st);

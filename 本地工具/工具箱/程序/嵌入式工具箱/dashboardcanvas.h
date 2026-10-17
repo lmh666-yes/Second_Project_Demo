@@ -47,6 +47,10 @@ public:
     /* 上一轮被标成"未取到"的工具数（供 --shot-overview 的缺数断言）。 */
     int failedCount() const { return m_failedKeys.size(); }
 
+    /* A2：只做悬停提示、不响应点击的命中区数（趋势折线的数据点）。
+       供 --shot-overview 断言"趋势点悬停读数已登记"，免得哪天被改没了没人发现。 */
+    int tipHitCount() const;
+
 protected:
     void paintEvent(QPaintEvent *e) override;
     void mouseMoveEvent(QMouseEvent *e) override;

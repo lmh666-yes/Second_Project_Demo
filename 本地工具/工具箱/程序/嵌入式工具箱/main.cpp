@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QCheckBox>
 #include <QCoreApplication>
 #include <QDir>
 #include <QElapsedTimer>
@@ -262,8 +263,9 @@ int main(int argc, char *argv[])
 
     /* 体检面板截图：直接构造总览页、同步取数、渲染成 PNG。
        用途：验证可视化面板真的画出了东西（GUI 冒烟只证明"没崩"，看不到画没画）。
-       用法：Toolbox.exe --shot-overview <输出.png> [--drop <工具键,...>]
-             --drop 用于断言"给定的工具没取到数时，面板标成未取到而不是绿色正常"。 */
+       用法：Toolbox.exe --shot-overview <输出.png> [--drop <工具键,...>] [--only-findings]
+             --drop 用于断言"给定的工具没取到数时，面板标成未取到而不是绿色正常"。
+             --only-findings 用于断言"报告原文的只看命中项开关真的把非命中项段落删掉了"。 */
     if (args.contains(QStringLiteral("--shot-overview"))) {
         QString path = QStringLiteral("overview.png");
         for (int i = 0; i + 1 < args.size(); ++i) {
@@ -318,6 +320,16 @@ int main(int argc, char *argv[])
             QTextStream(stdout) << QString::fromUtf8("交互命中区: ") << n << "\n";
             if (n < 6)
                 return 2;
+            /* A2：进度历史有两轮以上就必须画出趋势折线，折线的数据点要登记悬停命中区。
+               错例判据：有折线却一个趋势点命中区都没有（改没了悬停读数）→ 失败。
+               反例：历史不足两轮时不画折线，也就不断言，免得误伤。 */
+            const int rounds = page.progressHistoryRounds();
+            const int tipN = canvas->tipHitCount();
+            QTextStream(stdout) << QString::fromUtf8("趋势点命中区: ") << tipN
+                                << QString::fromUtf8("（历史 ") << rounds
+                                << QString::fromUtf8(" 轮）\n");
+            if (rounds >= 2 && tipN < 1)
+                return 2;
             /* D4：--drop 指定的键必须被记成"未取到"（缺数不许画成绿色"正常"） */
             if (!dropKeys.isEmpty()) {
                 const int dn = canvas->failedCount();
@@ -326,6 +338,21 @@ int main(int argc, char *argv[])
                 if (dn != dropKeys.size())
                     return 2;
             }
+        }
+        /* A4：--only-findings 打开"只看命中项"开关，断言过滤真的生效。
+           错例：过滤后条目名链接没变少（等于没过滤）；反例：过滤后一条都不剩（删过头）。
+           报告是检查产物、可能一份都没有 —— 所以只在"过滤前就有条目名链接"时才断言。 */
+        if (args.contains(QStringLiteral("--only-findings"))) {
+            const int fullDoc = page.docLinkCount();
+            if (QCheckBox *box = page.findChild<QCheckBox *>(QStringLiteral("onlyFindingsBox"))) {
+                box->setChecked(true);
+                QApplication::processEvents();
+            }
+            const int fnDoc = page.docLinkCount();
+            QTextStream(stdout) << QString::fromUtf8("只看命中项链接: ") << fullDoc
+                                << QString::fromUtf8(" → ") << fnDoc << "\n";
+            if (fullDoc > 0 && (fnDoc < 1 || fnDoc >= fullDoc))
+                return 2;
         }
         return page.grab().save(path) ? 0 : 1;
     }

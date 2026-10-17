@@ -13,6 +13,7 @@
 #include <QWidget>
 
 class QComboBox;
+class QCheckBox;
 class QLabel;
 class QProcess;
 class QPushButton;
@@ -39,6 +40,9 @@ public:
 
     /* A1：历史回看下拉框里的快照轮数（供 --shot-overview 断言历史页真的建起来了）。 */
     int historyCount() const;
+
+    /* A2：进度工具返回的历史轮数（≥2 才会有趋势折线；供 --shot-overview 决定是否断言趋势命中区）。 */
+    int progressHistoryRounds() const;
 
 protected:
     void showEvent(QShowEvent *e) override;
@@ -86,10 +90,15 @@ private:
     /* C1：报告原文里被转成链接的条目名（点它跳「单片机手册」对应卡）。 */
     QStringList m_docTargets;
 
-    /* A1：历史回看页的下拉框与画布（与当前轮完全独立，互不干扰）。 */
+    /* A1：历史回看页的下拉框与画布（与当前轮完全独立，互不干扰）。
+       A3：再加一个「对比基准」下拉框，可任选两轮出增减，而不是只能跟上一轮比。 */
     QComboBox       *m_histCombo  = nullptr;
+    QComboBox       *m_histBaseCombo = nullptr;
     DashboardCanvas *m_histCanvas = nullptr;
     QLabel          *m_histStatus = nullptr;
+
+    /* A4：「报告原文」页的「只看命中项」开关（各报告的发现/冲突/违规小节抽出来单列）。 */
+    QCheckBox       *m_onlyFind   = nullptr;
 
     /* 异步取数状态：各检查器并行跑，各自回来时累加，到齐后统一渲染。 */
     int         m_pending = 0;
