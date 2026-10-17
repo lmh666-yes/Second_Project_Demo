@@ -9,7 +9,7 @@
 /* BMP280 气压 + 温度传感器驱动实现
  *
  * 实现流程:
- *   1) 初始化: 读 0xD0 自检(须 = 0x58) + 读 0x88~0x9F 共 24 字节标定系数
+ *   1) 初始化: 读 0xD0 自检(0x58 = BMP280 / 0x60 = BME280) + 读 0x88~0x9F 共 24 字节标定系数
  *      + 写 0xF5/0xF4 配置;
  *   2) 读数据: forced 模式触发 0xF4,等转换结束,读 0xF7 起 6 字节,
  *      一次事务读完,6 字节取自同一采样时刻;
@@ -156,8 +156,8 @@ static uint32_t bmp280_compensate_P_int64(const Bmp280Calib_t *c,
 
 
 /* 等待转换结束: 轮询 0xF3 的 bit3(measuring) 变 0
- * 返回: SYS_BMP280_OK / SYS_BMP280_ERR_TIMEOUT / 负数(I2C 错误)
- * 读 status 失败或超过 SYS_BMP280_MEAS_TIMEOUT_MS 返回 ERR_TIMEOUT */
+ * 返回: SYS_BMP280_OK / SYS_BMP280_ERR_TIMEOUT
+ * 读 status 失败或超过 SYS_BMP280_MEAS_TIMEOUT_MS 均返回 ERR_TIMEOUT */
 static int bmp280_wait_ready(SysI2cId_t bus, uint8_t addr7)
 {
     uint32_t t0 = SYS_TICK_GetTick();
@@ -228,7 +228,7 @@ int SYS_BMP280_ReadRaw(SysI2cId_t bus, int32_t *temp_c100, uint32_t *press_pa)
     err = bmp280_write_ctrl_meas(bus, s_addr[bus], BMP280_MODE_FORCED);
     if (err != SYS_I2C_OK) return err;
 
-    /* 手册: 单次转换耗时随过采样上升,最高配置最坏约 43 ms
+    /* 手册 App.B 算例: T×1 + P×4 约 11.5 ms;最高档最坏时间手册未注明,
      * 先等固定余量,再轮询 status 确认 */
     delay_ms(SYS_BMP280_FORCED_DELAY_MS);
     err = bmp280_wait_ready(bus, s_addr[bus]);
@@ -300,26 +300,26 @@ uint8_t SYS_BMP280_InitAddr(SysI2cId_t bus, uint8_t addr7)
 
     if (bus >= SYS_I2C_COUNT) return SYS_BMP280_ERR_PARAM;
 
-    /* 先初始化总线,调用方不用自己 Init I2C */
+    /* 先初始化总线,调用方不用自己 Init I2C;注意 I2C_DeInit 会打断同总线上的
+     * 进行中事务,应在启动阶段统一初始化一次,不要在并发使用中重复调用 */
     SYS_I2C_Init(bus, 400000);
 
     /* 保存本次使用的地址,后续读函数沿用,
      * 这样 InitAddr(0x77) 之后 Read/ReadRaw 也跟着走 0x77 */
     s_addr[bus] = addr7;
 
-    /* 1) 自检: 0xD0 须读到 0x58
-     *    0x60 = BME280、0x55 = BMP180,两者寄存器与标定系数均不同,
-     *    本驱动不适用,统一返回 SYS_BMP280_ERR_CHIP_ID */
+    /* 1) 自检: 0xD0 接受 0x58(BMP280) 与 0x60(BME280)
+     *    手册: BME280 向下寄存器兼容 BMP280,压力/温度控制与读出完全相同,
+     *    只多出湿度通道(本驱动不用);0x55 = BMP180 寄存器与标定系数均不同,不适用 */
     err = SYS_I2C_ReadByte(bus, addr7, BMP280_REG_ID, &id);
     if (err != SYS_I2C_OK) return SYS_BMP280_ERR_CHIP_ID;
-    if (id != BMP280_ID_VALUE) {
-        (void)BMP280_ID_BME280;
+    if ((id != BMP280_ID_VALUE) && (id != BMP280_ID_BME280)) {
         (void)BMP280_ID_BMP180;
         return SYS_BMP280_ERR_CHIP_ID;
     }
 
     /* 2) 软复位: 写 0xB6,使器件回到已知初态
-     *    手册要求复位后延时再读标定系数,复位期间器件不响应 */
+     *    手册 tstartup = 2ms(首次通信前),这里取 5ms 余量再读标定系数 */
     if (SYS_I2C_WriteByte(bus, addr7, BMP280_REG_RESET, BMP280_RESET_CMD) == SYS_I2C_OK) {
         delay_ms(5);
     }
@@ -351,8 +351,8 @@ uint8_t SYS_BMP280_InitAddr(SysI2cId_t bus, uint8_t addr7)
     }
 
     /* 5) 写 0xF4 CTRL_MEAS:
-     *    forced 模式先写 sleep 清 mode,每次读之前再由 Trigger 触发;
-     *    normal 模式在此直接进连续转换 */
+     *    forced 模式先写 sleep 清 mode,Read/ReadRaw 每次调用内部自行触发转换;
+     *    Trigger 仅供上层自控采样节奏;normal 模式在此直接进连续转换 */
 #if (SYS_BMP280_USE_NORMAL_MODE != 0)
     err = bmp280_write_ctrl_meas(bus, addr7, BMP280_MODE_NORMAL);
 #else

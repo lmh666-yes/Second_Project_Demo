@@ -18,7 +18,8 @@
  * 读端看 seq：等于 0xFFFFFFFF 当空槽跳过；2)3) 之间断电则该条被忽略，
  * 下次 init 从它开始重写。
  * W25QXX_Write 要求目标已擦除：本模块 2)3) 写之前已保证，单条约 1ms，
- * 不需要 WriteSafe（每次约 50ms）。 */
+ * 不需要 WriteSafe（每次约 50ms）。
+ * 并发保护用互斥量（见下面的 log_lock/log_unlock），不挂调度器。 */
 
 /* 编译期护栏（配错立刻报错） */
 /* 1) 槽长必须 4 字节对齐：槽内 seq / ts 是按 32 位小端拼出的字段 */
@@ -56,24 +57,66 @@ static volatile uint16_t s_head     = 0U;    /* 下一条要写哪个槽 */
 static volatile uint16_t s_count    = 0U;    /* 现有多少条有效记录 */
 static volatile uint32_t s_next_seq = 0UL;   /* 下一条记录的序号（0 是合法值，0xFFFFFFFF 才是空槽） */
 static volatile uint16_t s_lost     = 0U;    /* 因整扇区擦除而被连带丢弃的记录数（只增） */
+static volatile uint8_t  s_clearing = 0U;    /* 1 = 正在分步清日志（此时不准写新记录） */
+static volatile uint16_t s_clear_sec = 0U;   /* 分步清日志：已经擦到第几个扇区 */
 
 
 /* 内部小工具 */
 
 /* 槽里统一用小端存（低字节在前）。不用 memcpy 强转是为了换平台也正确 */
 /* 本模块被两方并发使用：缓存任务调 W25QXX_LogWrite 写，补传任务调
- * W25QXX_LogRead / LogTail 读。s_head / s_count / s_lost 必须原子更新，
+ * W25QXX_LogRead / LogTail 读。s_head / s_count / s_lost / s_next_seq 必须原子更新，
  * seq 与数据段的两次页编程也不能交错，否则读端会看到序号跳号或 count 不符。
  *
- * 有 FreeRTOS 时用 vTaskSuspendAll()/xTaskResumeAll()，不关中断，只禁止任务
- * 切换，支持嵌套；没有 RTOS 时为空操作（单任务轮询模型无并发）。
- * 锁内包含页编程与扇区擦除，擦除最坏约 50ms，用挂起调度而非临界区可避免
- * 关中断 50ms。 */
+ * 有 FreeRTOS 时用**互斥量**（整条记录的读改写都在同一把锁里）：
+ * 不用 vTaskSuspendAll 是因为那会把整个系统停住——写路径跨扇区时要擦一个
+ * 4KB 扇区（typ 45ms / max 400ms），清日志连续 16 个扇区更久；
+ * 互斥量只挡住同样用本模块的任务，心跳 / 采集 / 界面等无关任务照常跑，
+ * 等待期间会出让 CPU，也不关中断。支持同任务重入（用了递归锁）。
+ * 没有 RTOS 时为空操作（单任务轮询模型无并发）。
+ *
+ * 边界：1) 中断上下文不拿锁（互斥量不能在 ISR 里等），本模块只允许在任务里调；
+ *       2) 调度器未启动时（上电初始化）加锁是空操作，此时还没有别的任务；
+ *       3) 建锁失败（堆不够）退化为无锁，不能因此卡死。 */
 #if (defined(__CORTEX_M) || defined(__ARM_ARCH)) && defined(configUSE_PREEMPTION)
 #include "FreeRTOS.h"
 #include "task.h"
-#define W25QXX_LOG_LOCK()    vTaskSuspendAll()
-#define W25QXX_LOG_UNLOCK()  (void)xTaskResumeAll()
+#include "semphr.h"
+
+static SemaphoreHandle_t s_log_mtx = 0;      /* 惰性创建，第一次加锁时建 */
+
+static void log_lock(void)
+{
+    BaseType_t sched;
+
+    if (__get_IPSR() != 0U) return;                 /* 中断里不锁：互斥量不能在 ISR 等 */
+
+    sched = xTaskGetSchedulerState();
+    if (sched != taskSCHEDULER_RUNNING) return;     /* 调度器没跑：单线程，无并发 */
+
+    if (s_log_mtx == 0) {                           /* 临界区保护"判空 + 创建" */
+        taskENTER_CRITICAL();
+        if (s_log_mtx == 0) {
+            s_log_mtx = xSemaphoreCreateRecursiveMutex();
+        }
+        taskEXIT_CRITICAL();
+    }
+    if (s_log_mtx == 0) return;                     /* 建锁失败：退化为无锁 */
+
+    (void)xSemaphoreTakeRecursive(s_log_mtx, portMAX_DELAY);
+}
+
+static void log_unlock(void)
+{
+    if (__get_IPSR() != 0U) return;
+    if (xTaskGetSchedulerState() != taskSCHEDULER_RUNNING) return;
+    if (s_log_mtx == 0) return;
+
+    (void)xSemaphoreGiveRecursive(s_log_mtx);
+}
+
+#define W25QXX_LOG_LOCK()    log_lock()
+#define W25QXX_LOG_UNLOCK()  log_unlock()
 #else
 #define W25QXX_LOG_LOCK()    do { } while (0)
 #define W25QXX_LOG_UNLOCK()  do { } while (0)
@@ -258,6 +301,12 @@ uint8_t W25QXX_LogInit(void)
         if (s_next_seq == W25QXX_LOG_EMPTY) s_next_seq = 0UL;
     }
 
+    /* 重新 init 就把"分步清日志"的进度清掉：否则一次没走完的 ClearStep 之后
+     * 再调 LogInit，s_clearing 还留在 1，写接口会一直回 ERR_BUSY 写不进任何东西。
+     * 这里已经全片扫过一遍，s_count / s_head 就是当前真实状态。 */
+    s_clearing  = 0U;
+    s_clear_sec = 0U;
+
     s_inited = 1U;
     return W25QXX_LOG_OK;
 }
@@ -278,7 +327,15 @@ uint8_t W25QXX_LogWrite(uint32_t ts, const uint8_t *data, uint16_t len)
     addr  = (uint32_t)W25QXX_LOG_BASE + ((uint32_t)s_head * W25QXX_LOG_SLOT_SIZE);
 
     W25QXX_LOG_LOCK();      /* 整条记录的写入（可能含一次扇区擦除）必须一气呵成，
-                             * s_head 在这里读、到函数末尾才推进，中间不能被别人改 */
+                             * s_head 在这里读、到函数末尾才推进，中间不能被别人改。
+                             * 擦除留在锁内是故意的：读者也要拿这把锁，看不到"擦了一半"
+                             * 的槽，比把擦除搬到锁外更稳妥；代价只是同样用本模块的任务
+                             * 多等一次擦除（typ 45ms），不影响心跳/采集/界面 */
+
+    if (s_clearing != 0U) {     /* 正在分步清日志：这一条先不写，让调用方下轮再写 */
+        W25QXX_LOG_UNLOCK();
+        return W25QXX_LOG_ERR_BUSY;
+    }
 
     /* 1) 这个槽还是上一圈的旧数据，先把它所在的整个扇区擦掉
      *    一个扇区 128 条，平均写 128 次才擦一次，摊下来约 0.8ms/条 */
@@ -364,28 +421,66 @@ uint16_t W25QXX_LogCount(void)
     return s_count;
 }
 
-uint8_t W25QXX_LogClear(void)
+/* 分步清日志：一次擦一个扇区，每次调用单独拿一次锁，扇区之间别的任务能插进来
+ * 不这么拆的话，一次清 16 个扇区就要连着占锁 0.7 秒以上，补传任务全被堵住 */
+uint8_t W25QXX_LogClearStep(uint8_t *done)
 {
-    uint32_t i;
+    uint32_t a;
+
+    if (done == 0) return W25QXX_LOG_ERR_PARAM;
+    *done = 0U;
 
     if (s_inited == 0U) return W25QXX_LOG_ERR_NOT_INIT;
 
-    W25QXX_LOG_LOCK();      /* 擦除期间不许别的任务写/读同一片 Flash */
-    for (i = 0UL; i < (uint32_t)W25QXX_LOG_SECTORS; i++) {
-        uint32_t a = (uint32_t)W25QXX_LOG_BASE + (i * W25QXX_SECTOR_SIZE);
-        if (W25QXX_EraseSector(a) != 0U) {
-            W25QXX_LOG_UNLOCK();        /* 中途失败：已擦的扇区保持全空，指针不动即可 */
-            return W25QXX_LOG_ERR_FLASH;
-        }
+    W25QXX_LOG_LOCK();
+
+    if (s_clearing == 0U) {         /* 第一步：先把账归零并置"清理中"标记，
+                                     * 这样读接口立刻看到"空"，写接口拿到 ERR_BUSY */
+        s_clearing   = 1U;
+        s_clear_sec  = 0U;
+        s_head       = 0U;
+        s_count      = 0U;
+        s_lost       = 0U;
+        s_next_seq   = 0UL;
     }
 
-    s_head     = 0U;
-    s_count    = 0U;
-    s_lost     = 0U;
-    s_next_seq = 0UL;
+    if (s_clear_sec >= (uint16_t)W25QXX_LOG_SECTORS) {   /* 已经擦完（兜底） */
+        s_clearing = 0U;
+        *done = 1U;
+        W25QXX_LOG_UNLOCK();
+        return W25QXX_LOG_OK;
+    }
+
+    a = (uint32_t)W25QXX_LOG_BASE + ((uint32_t)s_clear_sec * W25QXX_SECTOR_SIZE);
+    if (W25QXX_EraseSector(a) != 0U) {
+        s_clearing = 0U;            /* 失败：解除标记，已擦的扇区保持全空，下次重来 */
+        W25QXX_LOG_UNLOCK();
+        return W25QXX_LOG_ERR_FLASH;
+    }
+    s_clear_sec++;
+
+    if (s_clear_sec >= (uint16_t)W25QXX_LOG_SECTORS) {
+        s_clearing = 0U;            /* 16 个扇区全擦完：解除"清理中" */
+        *done = 1U;
+    }
 
     W25QXX_LOG_UNLOCK();
     return W25QXX_LOG_OK;
+}
+
+/* 一次清完：内部就是反复调分步接口，每擦一个扇区放一次锁 */
+uint8_t W25QXX_LogClear(void)
+{
+    uint8_t done = 0U;
+    uint8_t ret;
+
+    if (s_inited == 0U) return W25QXX_LOG_ERR_NOT_INIT;
+
+    for (;;) {
+        ret = W25QXX_LogClearStep(&done);
+        if (ret != W25QXX_LOG_OK) return ret;
+        if (done != 0U) return W25QXX_LOG_OK;
+    }
 }
 
 
@@ -455,6 +550,7 @@ const char *W25QXX_LogErrStr(uint8_t err)
     case W25QXX_LOG_ERR_FLASH:    return "ERR: flash no answer or r/w failed";
     case W25QXX_LOG_ERR_EMPTY:    return "ERR: no such record";
     case W25QXX_LOG_ERR_CORRUPT:  return "ERR: checksum mismatch";
+    case W25QXX_LOG_ERR_BUSY:     return "ERR: log clearing, retry later";
     default:                      return "ERR: unknown";
     }
 }

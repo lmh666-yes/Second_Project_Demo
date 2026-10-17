@@ -8,7 +8,9 @@
 #include <stddef.h>
 
 /* sys_usart.c: 串口(USART)模块实现;基于标准外设库,引脚与参数取自 sys_usart.h 配置区
- * usart_cfg[] 为串口编号到硬件的映射表;rx_buf/rx_head/rx_tail 为中断接收环形缓冲,每路一套
+ * usart_cfg[] 为串口编号到硬件的映射表;rx_pool/rx_off/rx_size/rx_head/rx_tail 为中断接收
+ * 环形缓冲(rx_pool 是 6 路共用的连续池,每路大小与起始偏移由 sys_usart.h 区块 1 的
+ * SYS_USARTx_RX_BUF_SIZE 在编译期算出);rx_drop_full/rx_drop_ore 为丢字节计数
  * USART1/2/3_IRQHandler、UART4/5_IRQHandler、USART6_IRQHandler 在本文件已定义,
  * 应用代码不要重复定义,同名强定义会顶替本实现 */
 
@@ -48,10 +50,43 @@ static const UsartCfg_t usart_cfg[SYS_USART_COUNT] = {
 /* 编译期护栏：配置表项数必须与 SYS_USART_COUNT 一致 */
 typedef char usart_cfg_count_check[(sizeof(usart_cfg) / sizeof(usart_cfg[0]) == SYS_USART_COUNT) ? 1 : -1];
 
-/* 中断接收环形缓冲（每路独立；head 由中断推进，tail 由主循环推进） */
-static volatile uint8_t  rx_buf[SYS_USART_COUNT][SYS_USART_RX_BUF_SIZE];
+/* 中断接收环形缓冲: 6 路共用一个连续池，每路大小与起始偏移在编译期由 per-id 宏算出
+ * （大小见 sys_usart.h 区块 1，改哪一路只影响哪一路的 RAM）
+ * head 由中断推进，tail 由主循环推进；池内不预清零（只按 head 下标写，初值无意义） */
+#define SYS_USART_RX_OFF_1  0U
+#define SYS_USART_RX_OFF_2  (SYS_USART_RX_OFF_1 + SYS_USART1_RX_BUF_SIZE)
+#define SYS_USART_RX_OFF_3  (SYS_USART_RX_OFF_2 + SYS_USART2_RX_BUF_SIZE)
+#define SYS_USART_RX_OFF_4  (SYS_USART_RX_OFF_3 + SYS_USART3_RX_BUF_SIZE)
+#define SYS_USART_RX_OFF_5  (SYS_USART_RX_OFF_4 + SYS_UART4_RX_BUF_SIZE)
+#define SYS_USART_RX_OFF_6  (SYS_USART_RX_OFF_5 + SYS_UART5_RX_BUF_SIZE)
+#define SYS_USART_RX_POOL_SIZE  (SYS_USART_RX_OFF_6 + SYS_USART6_RX_BUF_SIZE)
+
+static volatile uint8_t  rx_pool[SYS_USART_RX_POOL_SIZE];
+static const uint16_t    rx_off[SYS_USART_COUNT] = {
+    SYS_USART_RX_OFF_1, SYS_USART_RX_OFF_2, SYS_USART_RX_OFF_3,
+    SYS_USART_RX_OFF_4, SYS_USART_RX_OFF_5, SYS_USART_RX_OFF_6 };
+static const uint16_t    rx_size[SYS_USART_COUNT] = {
+    SYS_USART1_RX_BUF_SIZE, SYS_USART2_RX_BUF_SIZE, SYS_USART3_RX_BUF_SIZE,
+    SYS_UART4_RX_BUF_SIZE,  SYS_UART5_RX_BUF_SIZE,  SYS_USART6_RX_BUF_SIZE };
 static volatile uint16_t rx_head[SYS_USART_COUNT];
 static volatile uint16_t rx_tail[SYS_USART_COUNT];
+
+/* 丢字节计数（中断里自增，主循环查询）:
+ * rx_drop_full = 缓冲满丢的（缓冲太小 / 主循环读得太慢）
+ * rx_drop_ore  = 硬件 ORE 溢出丢的（上一字节没读走又来新的） */
+static volatile uint16_t rx_drop_full[SYS_USART_COUNT];
+static volatile uint16_t rx_drop_ore[SYS_USART_COUNT];
+
+/* 编译期护栏: ①每路缓冲不得小于 32（115200 下 32 字节只有约 2.8ms 余量）
+ *             ②rx_off / rx_size 两项表的项数必须与 SYS_USART_COUNT 一致 */
+typedef char usart_rxbuf_size_check_1[(SYS_USART1_RX_BUF_SIZE >= 32) ? 1 : -1];
+typedef char usart_rxbuf_size_check_2[(SYS_USART2_RX_BUF_SIZE >= 32) ? 1 : -1];
+typedef char usart_rxbuf_size_check_3[(SYS_USART3_RX_BUF_SIZE >= 32) ? 1 : -1];
+typedef char usart_rxbuf_size_check_4[(SYS_UART4_RX_BUF_SIZE  >= 32) ? 1 : -1];
+typedef char usart_rxbuf_size_check_5[(SYS_UART5_RX_BUF_SIZE  >= 32) ? 1 : -1];
+typedef char usart_rxbuf_size_check_6[(SYS_USART6_RX_BUF_SIZE >= 32) ? 1 : -1];
+typedef char usart_rxbuf_off_count_check[(sizeof(rx_off) / sizeof(rx_off[0]) == SYS_USART_COUNT) ? 1 : -1];
+typedef char usart_rxbuf_size_count_check[(sizeof(rx_size) / sizeof(rx_size[0]) == SYS_USART_COUNT) ? 1 : -1];
 
 /* DMA 接收状态（每路一套）:
  * active=1 正在用 DMA 收;done=1 已测到一帧收完(空闲或收满)
@@ -104,9 +139,11 @@ void SYS_USART_Init(SysUsartId_t id, uint32_t baudrate)
     USART_Init(p->usart, &ui);
     USART_Cmd(p->usart, ENABLE);
 
-    /* 4) 清空接收缓冲 */
+    /* 4) 清空接收缓冲与丢字节计数（初始化视为新的一段链路，计数从 0 起） */
     rx_head[id] = 0;
     rx_tail[id] = 0;
+    rx_drop_full[id] = 0;
+    rx_drop_ore[id]  = 0;
 
     /* 5) 复位 DMA 接收状态 */
     rx_dma_active[id] = 0;
@@ -241,11 +278,14 @@ static void usart_isr(SysUsartId_t id)
 
     if (USART_GetITStatus(p->usart, USART_IT_RXNE) != RESET) {
         uint8_t  data = (uint8_t)(USART_ReceiveData(p->usart) & 0xFFU);
-        uint16_t next = (uint16_t)((rx_head[id] + 1U) % SYS_USART_RX_BUF_SIZE);
+        uint16_t sz   = rx_size[id];
+        uint16_t next = (uint16_t)((rx_head[id] + 1U) % sz);
 
         if (next != rx_tail[id]) {              /* 缓冲未满,存入 */
-            rx_buf[id][rx_head[id]] = data;
+            rx_pool[rx_off[id] + rx_head[id]] = data;
             rx_head[id] = next;
+        } else {
+            rx_drop_full[id]++;                 /* 缓冲满: 丢本字节并计数,可查询对账 */
         }
     }
 
@@ -265,10 +305,13 @@ static void usart_isr(SysUsartId_t id)
         USART_DMACmd(p->usart, USART_DMAReq_Rx, DISABLE);
     }
 
-    /* 溢出错误(ORE)处理：依次读 SR、DR 即可清除，防止中断反复触发 */
+    /* 溢出错误(ORE)处理：依次读 SR、DR 即可清除，防止中断反复触发
+     * ORE = 上一字节还没被读走又来新的（中断被长临界区 / 高优先级中断挡住），
+     * 硬件已经丢了一个字节，这里只记账（加大缓冲救不了，要看是谁挡了中断） */
     if (USART_GetFlagStatus(p->usart, USART_FLAG_ORE) != RESET) {
         (void)p->usart->SR;
         (void)p->usart->DR;
+        rx_drop_ore[id]++;
     }
 }
 
@@ -289,7 +332,7 @@ uint16_t SYS_USART_Available(SysUsartId_t id)
     if (rx_head[id] >= rx_tail[id]) {
         return (uint16_t)(rx_head[id] - rx_tail[id]);
     }
-    return (uint16_t)(rx_head[id] + SYS_USART_RX_BUF_SIZE - rx_tail[id]);
+    return (uint16_t)(rx_head[id] + rx_size[id] - rx_tail[id]);
 }
 
 /* 从缓冲读一个字节（非阻塞） */
@@ -300,8 +343,8 @@ int SYS_USART_RxRead(SysUsartId_t id)
     if (id >= SYS_USART_COUNT) return -1;
 
     if (rx_head[id] != rx_tail[id]) {
-        c = (int)rx_buf[id][rx_tail[id]];
-        rx_tail[id] = (uint16_t)((rx_tail[id] + 1U) % SYS_USART_RX_BUF_SIZE);
+        c = (int)rx_pool[rx_off[id] + rx_tail[id]];
+        rx_tail[id] = (uint16_t)((rx_tail[id] + 1U) % rx_size[id]);
     }
     return c;
 }
@@ -312,6 +355,39 @@ void SYS_USART_RxFlush(SysUsartId_t id)
     if (id >= SYS_USART_COUNT) return;
 
     rx_tail[id] = rx_head[id];
+}
+
+/* 累计丢字节数 = 缓冲满 + 硬件溢出 */
+uint16_t SYS_USART_RxDropCount(SysUsartId_t id)
+{
+    if (id >= SYS_USART_COUNT) return 0U;
+
+    return (uint16_t)(rx_drop_full[id] + rx_drop_ore[id]);
+}
+
+/* 其中: 缓冲满丢的字节数 */
+uint16_t SYS_USART_RxFullCount(SysUsartId_t id)
+{
+    if (id >= SYS_USART_COUNT) return 0U;
+
+    return rx_drop_full[id];
+}
+
+/* 其中: 硬件 ORE 溢出丢的字节数 */
+uint16_t SYS_USART_RxOverrunCount(SysUsartId_t id)
+{
+    if (id >= SYS_USART_COUNT) return 0U;
+
+    return rx_drop_ore[id];
+}
+
+/* 清零三个丢字节计数（主循环调用;中断同时自增最多丢 1 次计数,可接受） */
+void SYS_USART_RxDropReset(SysUsartId_t id)
+{
+    if (id >= SYS_USART_COUNT) return;
+
+    rx_drop_full[id] = 0;
+    rx_drop_ore[id]  = 0;
 }
 
 

@@ -33,7 +33,7 @@ if errorlevel 1 (
 
 echo [2/3] Build Debug APK with Gradle (first run may need network) ...
 cd /d "%~dp0android"
-call gradlew.bat assembleDebug --console=plain
+call gradlew.bat clean assembleDebug --console=plain
 if errorlevel 1 (
   echo     BUILD FAILED - see errors above.
   if not defined NOPAUSE pause & exit /b 1

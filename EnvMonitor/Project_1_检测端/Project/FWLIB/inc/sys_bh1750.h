@@ -1,8 +1,10 @@
 /* ============================================================================
  *  sys_bh1750.h — BH1750FVI 数字环境光强度传感器驱动
  *  器件 : BH1750FVI（ROHM），16 位串行输出，I2C 接口
- *  量程 : H 分辨率 1 lx，raw / 1.2 = lx，65535 / 1.2 ≈ 54612 lx
- *  供电 : 2.4V ~ 3.6V。GY-302 模块板载 3.3V LDO 与电平转换，可接 5V；裸芯片接 5V 会损坏。
+ *  量程 : H 分辨率 1 lx，raw / 1.2 = lx；默认 MTreg=69 时读数上限 65535 / 1.2 ≈ 54612 lx，
+ *         改 MTreg 后可达 0.11 lx ~ 100000 lx（手册；H 模式最小 0.23 lx）
+ *  供电 : 2.4V ~ 3.6V（手册绝对最大 VCC = 4.5V）。GY-302 模块是否板载 3.3V LDO 与电平
+ *         转换因批次而异、厂商手册未注明，接 5V 前须按实物确认；裸芯片接 5V 会损坏。
  *
  *  地址 : 7 位地址由 ADDR 脚决定，接 GND 为 0x23，接 VCC 为 0x5C；同总线其它器件
  *         0x50(24C02)/0x68(MPU6050)/0x38(AHT10)/0x44(SHT30)/0x3C(SSD1306) 与 0x23/0x5C 不冲突。
@@ -31,14 +33,15 @@
 #include "sys_i2c.h"
 
 /* ---------- 器件地址（7 位） ---------- */
-#define SYS_BH1750_ADDR_LOW       0x23U   /* ADDR 接 GND（模块默认） */
-#define SYS_BH1750_ADDR_HIGH      0x5CU   /* ADDR 接 VCC */
+/* 手册：ADDR 不要直接接 VCC/GND，应经约 100kΩ 上/下拉（GY-302 等模块通常板上已处理） */
+#define SYS_BH1750_ADDR_LOW       0x23U   /* ADDR 拉低 → 0x23（模块默认） */
+#define SYS_BH1750_ADDR_HIGH      0x5CU   /* ADDR 拉高 → 0x5C */
 #define SYS_BH1750_ADDR_DEFAULT   SYS_BH1750_ADDR_LOW
 
 /* ---------- 命令字（写进去就是命令） ---------- */
 #define SYS_BH1750_CMD_POWER_DOWN  0x00U  /* 掉电（等待电流最小） */
-#define SYS_BH1750_CMD_POWER_ON    0x01U  /* 上电（测量前必须先上电） */
-#define SYS_BH1750_CMD_RESET       0x07U  /* 复位数据寄存器（上电状态不变） */
+#define SYS_BH1750_CMD_POWER_ON    0x01U  /* 上电（手册：本命令可省略，但必须发过测量命令并等一次转换） */
+#define SYS_BH1750_CMD_RESET       0x07U  /* 复位照度数据寄存器；手册：掉电态不接受，须先发 0x01 */
 
 #define SYS_BH1750_CMD_CONT_H_RES  0x10U  /* 连续 H 分辨率，1 lx，约 120ms */
 #define SYS_BH1750_CMD_CONT_H_RES2 0x11U  /* 连续 H 分辨率2，0.5 lx，约 120ms */
@@ -112,7 +115,9 @@ int SYS_BH1750_ReadLux(SysI2cId_t bus, float *lux);
 /* 单次测量并读回（测完器件自动回到掉电状态）
  * 参数/返回 : 同 SYS_BH1750_ReadLux
  * 说明 : 序列为 0x01 上电、0x20 单次 H 分辨率、延时 SYS_BH1750_CONV_MS_H、读；每次调用
- *        阻塞约 180ms，不适合高频任务；不改器件长期状态。 */
+ *        阻塞约 180ms，不适合高频任务。副作用：若此前 SYS_BH1750_Init 已建连续 H 模式，
+ *        本函数会把器件切到单次模式并在测完自动掉电、连续测量被打断（之后 ReadLux 读到的
+ *        是这次单次结果，滞后变长）；连续与单次两条路径建议只用一种。 */
 int SYS_BH1750_ReadLuxOnce(SysI2cId_t bus, float *lux);
 
 /* 设置 MTreg（measurement time，积分时间）

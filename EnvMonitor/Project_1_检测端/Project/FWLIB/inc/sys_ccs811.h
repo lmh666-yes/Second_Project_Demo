@@ -9,16 +9,18 @@
  * ================================================================
  *  接线 : 外接模块挂 I2C1(PB8 = SCL / PB9 = SDA,与 24C02 同总线),
  *         7 位地址 0x5A(ADDR 接地)/ 0x5B(ADDR 接高),3.3V 供电,
- *         WAKE 引脚(若有)拉低才响应 I2C
+ *         nWAKE 引脚须在每次 I2C 事务前拉低、并保持到事务结束(手册 Table 2:
+ *         拉低后 ≥50us 才可开始事务);模块上已把 nWAKE 接地则无需软件干预,
+ *         悬空时器件完全不响应(连地址都扫不到)
  *  时序 : 等 20ms → 读 0x20 自检(0x81)→ 0xFF 写 4 字节软复位
  *         → 等 20ms → 轮询 0x00 等 APP_VALID(bit4)→ 查 ERROR(bit0)
- *         → 0xF4 只发命令(APP_START)→ 写 0x01 设测量模式 → 读 4 字节结果
+ *         → 0xF4 只发命令(APP_START)→ 复读 0x00 校验 FW_MODE(bit7)→ 写 0x01 设测量模式 → 读 4 字节结果
  *  约束 : eCO2 / TVOC 为厂商算法给出的等效值,非 NDIR 实测,只作同一环境内
- *         的相对趋势判断;有效范围 eCO2 400~8192 ppm、TVOC 0~1187 ppb;
- *         MOX 气敏需老化,建议连续运行 48h 后再看绝对值;器件稳定后读
+ *         的相对趋势判断;有效范围 eCO2 400~5000 ppm、TVOC 0~1000 ppb;
+ *         MOX 气敏需老化,建议连续运行 24~48h 后再看绝对值;器件稳定后读
  *         0x11 基线并由调用方保存,下次上电初始化后写回;0x05 ENV_DATA 外部
- *         温湿度用于修正算法,手册建议提供;STATUS(0x00) 无跨版本可靠的
- *         DRDY 位,DataReady 用时间判据。调用示例见区块 5
+ *         温湿度用于修正算法,手册建议提供;STATUS(0x00) bit3 = DATA_READY(手册 Table 7),
+ *         DataReady 用状态位 + 时间兜底双判据。调用示例见区块 5
  * ================================================================ */
 
 
@@ -35,11 +37,12 @@
 
 
 /* ========== 区块 2：初始化时序 / 测量模式宏 ========== */
-/* 上电后首次通信前等待(ms): 手册要求 SW_RESET 后 ≥20ms 才可再通信;
+/* 上电后首次通信前等待(ms): 手册 Table 2 给的是上电后 TSTART
+ * 18(min)/20(typ) ms 才可通信(软复位后同样是这段内部启动时间);
  * 器件未就绪时事务被 NACK,表现为"器件不在线" */
 #define SYS_CCS811_POWERON_DELAY_MS    20U
 
-/* 软复位后等待(ms): 手册要求 SW_RESET 后 ≥20ms 才可再通信 */
+/* 软复位后等待(ms): 手册未单独规定,按 TSTART 20(typ) ms 保守取值 */
 #define SYS_CCS811_RESET_DELAY_MS      20U
 
 /* 轮询 STATUS.APP_VALID(bit4) 变 1 的超时(ms): APP_VALID = 0 时片上应用
@@ -71,13 +74,16 @@
 #define SYS_CCS811_ERR_WRITE_CMD      5U    /* sys_i2c 缺少 SYS_I2C_WriteCmd 原语:
                                              * 只发一字节、后无数据的写,
                                              * 需在 sys_i2c 里补上 */
+#define SYS_CCS811_ERR_SW_RESET       6U    /* 0xFF 写软复位序列失败 */
+#define SYS_CCS811_ERR_MEAS_MODE      7U    /* 0x01 写测量模式失败 */
+#define SYS_CCS811_ERR_APP_START      8U    /* 0xF4 后 STATUS.bit7(FW_MODE) 仍为 0 */
 
 
 /* ========== 区块 4：数据结构 ========== */
 /* 一次空气质量读数 */
 typedef struct {
-    uint16_t eco2_ppm;   /* 等效二氧化碳,ppm(手册范围 400~8192) */
-    uint16_t tvoc_ppb;   /* 等效总挥发性有机物,ppb(手册范围 0~1187) */
+    uint16_t eco2_ppm;   /* 等效二氧化碳,ppm(手册范围 400~5000) */
+    uint16_t tvoc_ppb;   /* 等效总挥发性有机物,ppb(手册范围 0~1000) */
     uint8_t  status;     /* 读取时的 STATUS(0x00) 原始值(排错用) */
     uint8_t  error_id;   /* 读取时的 ERROR_ID(0xE0) 原始值(排错用,0 = 无错) */
     uint8_t  valid;      /* 1 = 本次读数有效;APP_VALID = 0 或 STATUS.ERROR = 1
@@ -91,7 +97,7 @@ typedef struct {
  * 手册顺序(经 sys_i2c 调用,不直调标准库):
  *        等 20ms → 读 0x20 自检(= 0x81)→ 0xFF 写 4 字节软复位
  *        → 等 20ms → 轮询 0x00 等 APP_VALID(bit4)→ 查 ERROR(bit0)
- *        → 0xF4 只发命令(APP_START)→ 写 0x01 设测量模式
+ *        → 0xF4 只发命令(APP_START)→ 复读 0x00 校验 FW_MODE(bit7)→ 写 0x01 设测量模式
  * 示例 : if (SYS_CCS811_Init(SYS_I2C_1) != 0) { printf("CCS811 启动失败\r\n"); } */
 uint8_t SYS_CCS811_Init(SysI2cId_t bus);
 
@@ -109,7 +115,7 @@ uint8_t SYS_CCS811_InitAddr(SysI2cId_t bus, uint8_t addr7);
 int SYS_CCS811_GetHWID(SysI2cId_t bus);
 
 /* 读状态寄存器(0x00)
- * 返回 : 原始字节(bit4 = APP_VALID,bit3 = 部分固件当 DRDY,bit0 = ERROR);
+ * 返回 : 原始字节(bit7 = FW_MODE,bit4 = APP_VALID,bit3 = DATA_READY(手册 Table 7),bit0 = ERROR);
  *        负数 = I2C 错误码 */
 int SYS_CCS811_GetStatus(SysI2cId_t bus);
 
@@ -117,7 +123,7 @@ int SYS_CCS811_GetStatus(SysI2cId_t bus);
  * 返回 : 原始字节(0 = 无错误);负数 = I2C 错误码
  * 说明 : 仅当 STATUS.ERROR(bit0) = 1 时读才有意义;手册错误码 0x01 写非法
  *        寄存器 / 0x02 读非法寄存器 / 0x04 测量模式非法 / 0x08 最大电阻检测
- *        错误 / 0x10 HEATER 故障 / 0x20 HEATER 供电故障 / 0x40 温湿度补偿无效 */
+ *        错误 / 0x10 HEATER 故障 / 0x20 HEATER 供电故障(bit6/bit7 保留,手册 Table 16 只定义 bit0~bit5) */
 int SYS_CCS811_GetErrorID(SysI2cId_t bus);
 
 /* 读一次算法结果(eCO2 + TVOC)
@@ -131,8 +137,8 @@ int SYS_CCS811_Read(SysI2cId_t bus, SYS_CCS811_Data_t *out);
 /* ========== 区块 6：扩展功能 ========== */
 /* 数据是否该读了(非阻塞,不访问器件数据寄存器)
  * 返回 : 1 = 距上次成功读取已过一个测量周期,可以读新数据;0 = 还没到
- * 说明 : STATUS(0x00) 无跨版本可靠的 DRDY 位(部分固件把 bit3 当 DRDY),
- *        故改用时间判据: 记录每条总线上次成功读取的时刻,与该测量模式的
+ * 说明 : STATUS(0x00) 的 bit3 = DATA_READY(手册 Table 7: 新数据就绪置 1、读 0x02 后清 0),
+ *        先查状态位,读不到或长时间不就绪再按时间兜底: 记录每条总线上次成功读取的时刻,与该测量模式的
  *        周期比较(mode1 1s / mode2 10s / mode3 60s / mode4 250ms);未初始化
  *        或读不到模式时按 SYS_CCS811_DRDY_FALLBACK_MS 兜底;表见 .c */
 uint8_t SYS_CCS811_DataReady(SysI2cId_t bus);
@@ -141,7 +147,7 @@ uint8_t SYS_CCS811_DataReady(SysI2cId_t bus);
  * 参数 : temp_c = 环境温度 ℃(有符号,约 -25 ~ 50);humi_rh = 相对湿度 %RH(0 ~ 100)
  * 返回 : 0 = 成功;正数 = 本模块错误码;负数 = I2C 错误码
  * 编码 : 湿度 = round(RH × 512),温度 = round((T + 25) × 512),各 2 字节大端;
- *        越界入参钳到边界;手册建议提供,不填也能运行但精度差 */
+ *        越界入参改写手册默认值 0x6400(50 %RH / 25 ℃),手册(AN-5)禁止往不支持的字段写 0;手册建议提供,不填也能运行但精度差 */
 int SYS_CCS811_SetEnvData(SysI2cId_t bus, float temp_c, float humi_rh);
 
 /* 读基线(0x11 BASELINE),用于断电保存、下次上电写回
@@ -153,7 +159,10 @@ int SYS_CCS811_GetBaseline(SysI2cId_t bus, uint16_t *out);
 
 /* 写基线(0x11 BASELINE),初始化完成后写回上次保存的值
  * 返回 : 0 = 成功;正数 = 本模块错误码;负数 = I2C 错误码
- * 说明 : 写回后不必重新老化 48 小时;基线取自未稳定的器件会使读数不准,
+ * 说明 : 写回不能替代老化,需满足同一器件 + 同一驱动模式 + 已在干净空气稳定运行;
+ *        手册(AN-2)建议早期(运行 ≤500h)每 24~48 小时重存一次、之后每 5~7 天;
+ *        运行不足 24 小时就写回反而会算出偏高的污染物浓度;BASELINE 只能在
+ *        DRIVE_MODE != Idle 时写(AN-5)。原表述:在未稳定的器件上写回等于写错,
  *        写入时机由调用方掌握 */
 int SYS_CCS811_SetBaseline(SysI2cId_t bus, uint16_t baseline);
 

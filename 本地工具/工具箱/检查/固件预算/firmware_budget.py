@@ -25,6 +25,7 @@ r"""固件预算检查（幂等，只读或只产出新文件，绝不改动既�
     python 本地工具\工具箱\检查\固件预算\firmware_budget.py --hex OTA\OTA1\Objects\app.hex --part app
     python 本地工具\工具箱\检查\固件预算\firmware_budget.py --selftest
 """
+import json
 import os
 import re
 import struct
@@ -551,6 +552,11 @@ def selftest():
            == os.path.normpath(os.path.join(tmp, 'ota', 'x.bin')))
         ck('路径解析：找不到就原样返回（供上层报错）',
            resolve_input('ota/none.bin', tmp) == 'ota/none.bin')
+
+        j = to_json('parts', load_parts(tmp), {'issues': [], 'notes': []})
+        ck('JSON 结构正确（工具名/mode/parts）',
+           j['tool'] == 'firmware_budget' and j['mode'] == 'parts'
+           and j['ok'] is True and 'app_addr' in j['parts'])
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -562,10 +568,25 @@ def selftest():
     return 1 if bad else 0
 
 
+def to_json(mode, parts, payload):
+    """结构化输出，供工具箱的可视化体检面板读取。"""
+    return {
+        'tool': 'firmware_budget',
+        'schema': 1,
+        'ok': not payload['issues'],
+        'mode': mode,
+        'parts': {k: v for k, v in parts.items()
+                  if isinstance(v, (int, float, bool, str)) or v is None},
+        'issues': payload['issues'],
+        'notes': payload['notes'],
+        'res': payload.get('res'),
+    }
+
+
 # ---------------- 入口 ----------------
 USAGE = ('可用参数：--map <x.map> | --bin <x.bin> [--ver N] [--out <包文件>] | '
          '--verify <包文件> | --hex <x.hex> | --part app|boot|dl | '
-         '--report <文件> | --quiet | --selftest')
+         '--report <文件> | --quiet | --json | --selftest')
 
 
 def main(argv):
@@ -573,7 +594,7 @@ def main(argv):
         return selftest()
 
     opts = {'map': None, 'bin': None, 'hex': None, 'verify': None, 'part': 'app',
-            'ver': 1, 'out': None, 'report': None, 'quiet': False}
+            'ver': 1, 'out': None, 'report': None, 'quiet': False, 'json': False}
     bad = []
     i = 1
     while i < len(argv):
@@ -601,6 +622,9 @@ def main(argv):
                 opts[a[2:]] = v
         elif a == '--quiet':
             opts['quiet'] = True
+            i += 1
+        elif a == '--json':
+            opts['json'] = True
             i += 1
         else:
             bad.append(a)
@@ -651,6 +675,11 @@ def main(argv):
         payload.update(res=info, issues=issues)
     else:
         payload['issues'] = check_parts(p)
+
+    # --json：结构化输出给可视化面板，不写 md 报告
+    if opts['json']:
+        print(json.dumps(to_json(mode, p, payload), ensure_ascii=False))
+        return 1 if payload['issues'] else 0
 
     report = render(mode, p, payload)
     report_path = opts['report'] or os.path.join(os.path.dirname(os.path.abspath(__file__)), '固件预算报告.md')

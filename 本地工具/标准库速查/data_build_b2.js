@@ -48,7 +48,7 @@ const STD_BUILD_B2 = [
       [
         "你的进度文档：板2进度文档.md 只由你写",
         "板2 调试会反复（网连不上、补传重复、触摸坐标反），记录能省下大量重复劳动。",
-        "在 D:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\板2进度文档.md 里自己记：今天做了什么、卡在哪、怎么解决的、下一步。每解决一个问题就补一行。",
+        "在 D:\\GitHub_Project\\EnvMonitor\\Project_2_数据通信端\\板2进度文档.md 里自己记：今天做了什么、卡在哪、怎么解决的、下一步。每解决一个问题就补一行。",
         "",
         "文档里有至少 3 条「问题 → 原因 → 解决」的记录。",
         "别只记结论不记原因。比如「MQTT 连不上」这件事，原因可能是 WiFi 名写错、可能是 broker 端口不对、也可能是 ESP8266 供电不足，三种原因的修法完全不同。",
@@ -69,8 +69,8 @@ const STD_BUILD_B2 = [
       [
         "打开工程并认准目录",
         "改错目录 = 编译过不了或下载了旧代码，是新手最常见的坑。",
-        "用 Keil 打开 D:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\Project\\000标准模板库.uvprojx；在左侧工程树里认出四类分组：main.c（你自己的代码，就在 Project 根目录下）、FWLIB\\src（驱动实现，只读不改）、Startup（启动文件与中断向量）、FreeRTOS（内核与 port）。FreeRTOSConfig.h 在 FreeRTOS\\port 下，不在 Project 根目录。",
-        "工程路径：D:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\Project\\000标准模板库.uvprojx\n待你写的文件：D:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\Project\\main.c\n内核配置：D:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\Project\\FreeRTOS\\port\\FreeRTOSConfig.h",
+        "用 Keil 打开 D:\\GitHub_Project\\EnvMonitor\\Project_2_数据通信端\\Project\\000标准模板库.uvprojx；在左侧工程树里认出四类分组：main.c（你自己的代码，就在 Project 根目录下）、FWLIB\\src（驱动实现，只读不改）、Startup（启动文件与中断向量）、FreeRTOS（内核与 port）。FreeRTOSConfig.h 在 FreeRTOS\\port 下，不在 Project 根目录。",
+        "工程路径：D:\\GitHub_Project\\EnvMonitor\\Project_2_数据通信端\\Project\\000标准模板库.uvprojx\n待你写的文件：D:\\GitHub_Project\\EnvMonitor\\Project_2_数据通信端\\Project\\main.c\n内核配置：D:\\GitHub_Project\\EnvMonitor\\Project_2_数据通信端\\Project\\FreeRTOS\\port\\FreeRTOSConfig.h",
         "Keil 打开后能展开分组看到 FWLIB\\src\\sys_usart.c、lora_e22.c、w25qxx_log.c、lcd.c 等；双击 main.c 能定位到 Project\\main.c。",
         "工程名是 000标准模板库.uvprojx，旁边还有一个 .uvoptx 存的是显示设置（断点、打开的窗口），两者别搞混；不要用批处理清理后就以为代码没了——那只删中间产物。",
         ""
@@ -237,7 +237,7 @@ const STD_BUILD_B2 = [
       [
         "打开板2 自己的 FreeRTOSConfig.h 核对，不要抄板1",
         "两块板的任务数、缓冲大小不一样，堆不够的现象是「程序不跑也没有报错」，非常迷惑人。",
-        "用 Keil 打开 D:\\GitHub_Project\\S_N_sys\\Project_2_数据通信端\\Project\\FreeRTOS\\port\\FreeRTOSConfig.h，逐条核对本工程真实取值：节拍 1000Hz、优先级档 8（0~7）、堆 30KB、只用动态分配、互斥量与计数信号量开着、栈溢出检查开着。核对完再写自己的任务。",
+        "用 Keil 打开 D:\\GitHub_Project\\EnvMonitor\\Project_2_数据通信端\\Project\\FreeRTOS\\port\\FreeRTOSConfig.h，逐条核对本工程真实取值：节拍 1000Hz、优先级档 8（0~7）、堆 30KB、只用动态分配、互斥量与计数信号量开着、栈溢出检查开着。核对完再写自己的任务。",
         "/* 板2 FreeRTOSConfig.h 里实际写着的值，照抄这一份，不要照抄板1 */\n#define configTICK_RATE_HZ      ((TickType_t)1000)\n#define configMAX_PRIORITIES    8\n#define configTOTAL_HEAP_SIZE   ((size_t)(30 * 1024))\n#define configSUPPORT_STATIC_ALLOCATION  0\n#define configCHECK_FOR_STACK_OVERFLOW   2",
         "你能在 FreeRTOSConfig.h 里指出这 5 行的位置，并算出 5 个任务的栈合计约 9KB（512×4 字 + 256×2 字 ≈ 8.5KB），30KB 堆有余量。",
         "configTOTAL_HEAP_SIZE 是「全部动态分配加起来」的上限，不是每个任务的；configCHECK_FOR_STACK_OVERFLOW 开着时栈溢出会走 configASSERT，别把它关掉来「解决」问题；堆不足时 vTaskStartScheduler 直接返回，你写在它后面的死循环会跑起来，看起来像「程序在跑但什么都没做」。",
@@ -294,10 +294,10 @@ const STD_BUILD_B2 = [
       [
         "收包：LORA_E22_Recv 的三个返回码",
         "收不到数据分「没数据」和「数据装不下」两种，分不清就会一直改错地方。",
-        "在任务里循环调 LORA_E22_Recv(buf, sizeof(buf), &n)：返回 LORA_E22_OK 表示收到 n 字节；返回 LORA_E22_ERR_NO_DATA 表示这轮没数据（正常，继续等）；返回 LORA_E22_ERR_OVERFLOW 表示调用方的缓冲装不下这一帧、帧已被丢弃 —— 这时要立刻调一次 LORA_E22_Flush() 清干净，否则残字节会污染下一帧。",
-        "static void vTaskLoraRx(void *pv)\n{\n    uint8_t buf[256];\n    uint16_t n;\n    uint8_t r;\n\n    for (;;) {\n        r = LORA_E22_Recv(buf, (uint16_t)sizeof(buf), &n);\n        if (r == LORA_E22_OK) {\n            /* 把 buf[0..n) 喂给帧解析 */\n        } else if (r == LORA_E22_ERR_OVERFLOW) {\n            LORA_E22_Flush();       /* 必须清，否则残字节污染下一帧 */\n        }\n        vTaskDelay(pdMS_TO_TICKS(10));\n    }\n}",
-        "板1 每发一帧，这里就进一次 LORA_E22_OK 分支；把 buf 加大到 512 后 overflow 计数归零。",
-        "LORA_E22_ERR_NO_DATA 不是错误，如果把它算进错帧计数，你的错误率永远是 100%；轮询周期 10ms 就够（板1 最快 20ms 一帧），周期太长会丢帧、太短纯浪费 CPU。",
+        "在任务里循环调 LORA_E22_Recv(buf, sizeof(buf), &n)：返回 LORA_E22_OK 表示收到 n 字节；返回 LORA_E22_ERR_NO_DATA 表示这轮没数据（正常，继续等）；返回 LORA_E22_ERR_OVERFLOW 表示收到的帧超过了调用方给的 max（整帧作废，驱动返回前已把内部计数清掉，不必再补一次 Flush）；正常 20 字节帧不该出现，出现了先查是不是两帧粘在了一起。",
+        "static void vTaskLoraRx(void *pv)\n{\n    uint8_t buf[256];\n    uint16_t n;\n    uint8_t r;\n\n    for (;;) {\n        r = LORA_E22_Recv(buf, (uint16_t)sizeof(buf), &n);\n        if (r == LORA_E22_OK) {\n            /* 把 buf[0..n) 喂给帧解析 */\n        } else if (r == LORA_E22_ERR_OVERFLOW) {\n            LORA_E22_Flush();       /* 可选：驱动已自清，这里只是显式复位 */\n        }\n        vTaskDelay(pdMS_TO_TICKS(10));\n    }\n}",
+        "板1 每发一帧，这里就进一次 LORA_E22_OK 分支；验收标准是 overflow 计数保持 0（一帧 20 字节远小于 buf[256]，出现 overflow 说明收到的是粘帧，先调 SYS_LORA_FRAME_GAP_MS，而不是加大调用方缓冲——驱动自己的环形缓冲只有 SYS_LORA_RX_BUF_SIZE = 256 字节）。",
+        "LORA_E22_ERR_NO_DATA 不是错误，如果把它算进错帧计数，你的错误率永远是 100%；轮询周期 10ms 就够（与驱动的 SYS_LORA_FRAME_GAP_MS = 10ms 对齐；本项目板1 每 2 秒才发一帧），周期太长会丢帧、太短纯浪费 CPU。",
         "LORA_E22_Recv / LORA_E22_Flush / LORA_E22_ERR_NO_DATA / LORA_E22_ERR_OVERFLOW / LORA_E22_OK / SYS_LORA_RX_BUF_SIZE"
       ],
       [
@@ -608,6 +608,88 @@ const STD_BUILD_B2 = [
         "跑一遍自测，每一项都是 [PASS]；拔掉 LoRa 天线重跑，只有 LoRa 那一项变 [FAIL]，其它项不受影响——这说明各项互相独立、清单可信。",
         "自测项之间要有依赖顺序（W25QXX_LogInit 必须在 W25QXX_Init 之后、MQTT_IsConnected 必须在一次成功的 Connect 之后），顺序错了会得到一堆假 FAIL；自测里不要用会阻塞十几秒的 ESP8266_JoinAP 反复跑，网络项只做一次、把结果缓存下来；清单只由你维护，界面与进度文档的排版由 AI 完成。",
         "LORA_E22_Init / LORA_E22_OK / W25QXX_Init / W25QXX_ReadID / W25QXX_LogInit / W25QXX_LOG_OK / ESP8266_TestAT / ESP8266_GetIP / MQTT_ConnectSimple / MQTT_IsConnected / LCD_GetWidth / LCD_GetHeight"
+      ]
+    ]
+  },
+  /* ======================= 板2 · 阶段 9 ======================= */
+  {
+    n: "🧭 板2 · 阶段 9｜双通道并行：ESP8266 上云与上位机串口同时跑",
+    m: "板2 项目引导",
+    _b: "板2",
+    d: "最后一段：让「云端」和「上位机」两条路同时活着。给 ESP8266 单开一个任务、定 30 秒上云节拍、给上行帧加去重序号，并按 2048 条约 34 分钟的真实容量做验收。FWLIB 侧的缺陷由 AI 修，你只写 main.c、任务划分与协议处理。",
+    k: "板2 双通道 上云 ESP8266 MQTT vTaskCloud 上云队列 30秒节拍 去重序号 断网缓存 2048条34分钟 死链重连 KeepAlive 验收场景",
+    f: [
+      [
+        "双通道同时「同时」在哪：三条链路与唯一争用点",
+        "三条链路一起跑时，谁都用 ESP8266 就会把它变成瓶颈；先把数据流画清，才不会再写出「两条都慢」的代码。",
+        "先画清三条链路再动手：1) LoRa(USART6，9600) 收板1 的 20 字节帧 → vTaskForward 原样发 USART2(上位机) → 同时加时间戳写 W25Q128；2) 上云端走 USART3 上的 ESP8266，只由 vTaskCloud 一个任务使用；3) 上位机下来的命令与历史补传仍走 USART2。三条链路真正共用的只有两样东西：W25QXX 缓存，和 USART2 的写权。",
+        "LoRa(USART6,9600) --20B帧--> vTaskLoraRx --队列--> vTaskForward --USART2--> 上位机\n                                             \\--> 时间戳+原帧 --> W25Q128 缓存\n缓存/最新帧 --s_q_cloud--> vTaskCloud --USART3--> ESP8266 --MQTT--> 云端\n上位机 --0x16/0x15--> vTaskCmdRx/vTaskReplay --USART2--> 上位机",
+        "拔掉 ESP8266 模块：LoRa → 上位机照常收帧、缓存照常写，只是云端没有数据；插回模块后上云自己恢复。这条现象就是「两条链路真的独立」的判据。",
+        "1) 不要为了少建一个任务把上云塞进 vTaskForward 或 vTaskReplay：ESP8266 的一次 AT 调用最长要等 900 ms 超时，转发一帧才 20 字节，优先级再高也救不回来；2) 上云不要另开一路串口，USART3 就是 ESP8266 的，PB10/PB11 与 I2C2 复用，用 ESP8266 就别再用 I2C2。",
+        "SYS_USART_Init / SYS_FRAME_Send / W25QXX_LogWrite / ESP8266_TestAT"
+      ],
+      [
+        "给 ESP8266 单开一个任务（vTaskCloud）",
+        "AT 指令是「一问一答」，两个任务同时发指令会把彼此的应答吃掉，这是双通道最容易踩的并发问题。",
+        "沿用阶段 3 的建法：用 xTaskCreate 建 vTaskCloud，栈 512 字、优先级取 4（低于 vTaskMonitor 的 5，不低于 vTaskCmdRx 的 3）；把 esp8266 与 mqtt 的所有调用都收在这一个任务里，其它任务一律不碰这两个模块。",
+        "static void vTaskCloud(void *pv)\n{\n    (void)pv;\n    for (;;) {\n        if (ESP8266_TestAT() != 0U) {\n            SYS_USART_SendLine(SYS_USART_1, \"esp lost\\r\\n\");\n        }\n        vTaskDelay(pdMS_TO_TICKS(30000));\n    }\n}\n\nxTaskCreate(vTaskCloud, \"Cloud\", 512, NULL, 4, NULL);",
+        "USART1 上能看到 Cloud 任务自己的打印；拔掉 ESP8266 后只有它报错，vTaskForward 的转发计数继续照涨。跑一小时后看 uxTaskGetStackHighWaterMark，剩余栈要大于 50 字。",
+        "1) 栈给 256 字会在解析 AT 应答时溢出，症状是「偶尔复位」，先按 512 字跑稳；2) 优先级不要高于 vTaskMonitor，否则监控任务报不上心跳，看门狗会把整板复位；3) 上 FreeRTOS 后不要再调 SYS_TICK_Init，滴答由内核接管。",
+        "xTaskCreate / ESP8266_TestAT / uxTaskGetStackHighWaterMark / SYS_WDG_Heartbeat"
+      ],
+      [
+        "一条上云队列 s_q_cloud（值拷贝，不是指针）",
+        "转发任务不能在网络上等；中间必须有一个定长队列把「要发的东西」存下来，否则上云一卡就丢数据。",
+        "1) 定义定长结构（时间戳 4 B + 20 字节原帧）；2) 用 xQueueCreate 建 8 个元素的队列；3) 转发任务用带超时的 xQueueSend 投递，返回不是 pdPASS 就累加丢弃计数；4) vTaskCloud 用 xQueueReceive 取，取到再发布。",
+        "typedef struct { uint32_t ts; uint8_t frame[20]; } CloudMsg_t;\nstatic QueueHandle_t s_q_cloud;\n\ns_q_cloud = xQueueCreate(8, sizeof(CloudMsg_t));\n\n/* 转发任务里投递 */\nCloudMsg_t m;\nm.ts = ts;\nmemcpy(m.frame, frame20, 20U);\nif (xQueueSend(s_q_cloud, &m, pdMS_TO_TICKS(5)) != pdPASS) { s_cloud_drop++; }\n\n/* vTaskCloud 里取用 */\nif (xQueueReceive(s_q_cloud, &m, pdMS_TO_TICKS(1000)) == pdPASS) { /* 发布这一条 */ }",
+        "队列满时 s_cloud_drop 增长而转发计数不受影响；临时把 vTaskCloud 的发布停掉，能看到队列很快满、丢弃计数上涨、缓存照常写。",
+        "1) 队列元素必须是定长值拷贝，传指针会指向被下一次接收复用的缓冲，症状是「云端收到的全是最后一条」；2) xQueueSend 不要用 portMAX_DELAY，队列满时无限等会反过来把转发任务拖死；3) 队列深度按「一次网络抖动最多积压几条」定，8 条够 30 秒节拍用。",
+        "xQueueCreate / xQueueSend / xQueueReceive / pdPASS / pdMS_TO_TICKS"
+      ],
+      [
+        "上云节拍：30 秒一帧，越限立刻插播",
+        "1 秒一帧对这个项目没意义：云端看不到更多信息，却把 MQTT 连接与 WiFi 占满，还让断网缓存的时间口径算不清。",
+        "在 vTaskCloud 里做一个 30 秒节拍：节拍到点且链路在线就发一条最新状态；阈值越限时不节日拍、立刻插一帧告警。发布内容先用 MQTT_PublishFloat 发温度这种单值 topic，等节拍稳定后再换成整帧上传。",
+        "TickType_t last = xTaskGetTickCount();\n\nfor (;;) {\n    if (MQTT_IsConnected() != 0U) {\n        (void)MQTT_PublishFloat(\"env/f407-002/temp\", (float)temp_x100 / 100.0f, 2U);\n    }\n    vTaskDelayUntil(&last, pdMS_TO_TICKS(30000));\n}",
+        "手机上装一个 MQTT 客户端订阅同一个 topic，每 30 秒收到一条；把温度推过阈值，立刻多收一条（不必等 30 秒）。",
+        "1) vTaskDelay 是「发完再睡 30 秒」，发布耗时会让周期越拖越长，要精确就用 xTaskDelayUntil 对齐固定节拍；2) 断网时不要继续调用发布，一次 AT 超时 900 ms 会把整个任务的节拍打乱，先判 MQTT_IsConnected 再发；3) 上报周期一旦改了，缓存能扛多久的口径要跟着改。",
+        "MQTT_PublishFloat / MQTT_IsConnected / vTaskDelay / pdMS_TO_TICKS"
+      ],
+      [
+        "去重键：给上行帧加 2 字节序号（先定协议再动手）",
+        "同一帧有两条路（实时上云 + 断网补传），云端与上位机都会收到重复；只靠时间戳去重，同一秒两帧会被误判成重复而丢掉一条。",
+        "1) 先把字段位置、字节序、复位规则定死并写进协议文档：序号加在板2 的「上行帧」里，板1 的 20 字节环境载荷不动，这样板1 固件不用改；2) 板2 侧每次组上行帧时自增序号并填入，再算 CRC；3) 补传时原样带出缓存里的序号，不重新编号。",
+        "static uint16_t s_up_seq = 0U;\nuint16_t seq = ++s_up_seq;\n\n/* 组上行帧时把 seq 写进协议约定的 2 字节位置，再算 CRC 后发送 */\n/* 实时帧与补传帧使用同一套序号规则，订阅端按序号去重 */",
+        "断网 2 分钟再补传：订阅端把实时帧与补传帧合起来按序号去重，总条数 = 实际帧数（不重不漏）；重启后序号从 1 重新开始，且订阅端能识别出「会话变了」。",
+        "1) 只改板2 不改上位机与订阅端，多出来的 2 字节会被当成 CRC 错，先定协议版本再动手；2) 序号复位（重启、0x16 重发补传）必须有明确规则并通知订阅端，否则会被判成「序号回退 = 重复」整段丢掉；3) 组帧与解析两侧要同时改，验收时用 W25QXX_LogRead 读出的原帧再走一次 SYS_FRAME_Verify 确认 CRC。",
+        "SYS_FRAME_Send / SYS_FRAME_Verify / SYS_FRAME_HISTORY_LEN / W25QXX_LogRead"
+      ],
+      [
+        "断网到底能扛多久：2048 条约 34 分钟，不是文档里写的 16 小时",
+        "容量口径错了，验收标准就是假的：按「16 小时」去测，测到一半一定对不上账。",
+        "自己算一遍并打印出来：用 W25QXX_LogStat 拿容量与当前条数，按板1 的实际帧率换算成时间；把这个数写进你自己的进度文档，并观察写满之后 W25QXX_LogLost 的增长（绕圈覆盖，不是卡死）。",
+        "uint16_t count, cap, head;\nW25QXX_LogStat(&count, &cap, &head);\nSYS_USART_Printf(SYS_USART_1, \"log %u/%u head=%u lost=%u\r\n\",\n                (unsigned)count, (unsigned)cap, (unsigned)head,\n                (unsigned)W25QXX_LogLost());\n/* 可扛时长 = cap x 帧周期秒数：2048 x 1 秒 约 34 分钟 */",
+        "拔网 10 分钟，条数约 600（板1 2 秒 1 帧）；写满 cap 之后 count 停住、LogLost 开始涨，重新联网补传能读到的仍是最近 cap 条。",
+        "1) 缓存写满后绕圈覆盖，补传上去的是一段「没有开头」的数据，对账必须按 cap 封顶算，不能按断网总时长算；2) LogLost 增长是正常的绕圈现象，不是故障；3) 缓存写入与擦除期间整机调度会被挂起（FWLIB 侧由 AI 改成不挂调度器的写法），在这之前别在写缓存的任务里做实时性要求高的事。",
+        "W25QXX_LogStat / W25QXX_LogLost / W25QXX_LogRead / SYS_FRAME_HISTORY_LEN"
+      ],
+      [
+        "死链判定与重连：60 秒心跳、120 秒无字节判死",
+        "TCP 已经断了、本地还以为在线，是上云最常见的「假在线」；不判死就只会一直发失败。",
+        "在 vTaskCloud 里维护三个状态：1) 在线：正常发布；2) 可疑：MQTT_IsAlive 为假，或 120 秒没有收到任何字节 → 先用 ESP8266_TestAT 确认模块还在；3) 重连：模块在就 ESP8266_ConnectTCP 后 MQTT_ConnectSimple，成功回在线，失败按 10 到 30 秒退避重试。",
+        "if ((MQTT_IsConnected() == 0U) || (MQTT_IsAlive() == 0U)) {\n    if (ESP8266_TestAT() == 0U) {\n        if (ESP8266_ConnectTCP(ST_MQTT_HOST, MQTT_DEFAULT_PORT) == 0U) {\n            uint8_t r = MQTT_ConnectSimple(ST_MQTT_HOST, ST_MQTT_CLIENT);\n            SYS_USART_Printf(SYS_USART_1, \"reconnect=%u connack=%u\r\n\",\n                (unsigned)r, (unsigned)MQTT_GetConnackCode());\n        }\n    }\n}",
+        "拔网 3 分钟后插回：USART1 上依次出现「判死 → AT 通过 → 重连 → connack=0」四行，期间缓存条数一直在涨；connack 不是 0 时用 MQTT_ErrStr 打出原因（4 多为用户名密码或 client id 被拒）。",
+        "1) 判死阈值不要小于 keepalive（60 秒），否则网络一抖动就反复重连，重连期间反而发不出数据；2) 重连要退避，不要连续猛打（每次 AT 最长 900 ms 忙等）；3) 模块自己掉线（AT 也没反应）时不能只重连 MQTT，要 ESP8266_Reset 之后重新 JoinAP 拿 IP。",
+        "MQTT_IsAlive / MQTT_IsConnected / MQTT_ConnectSimple / MQTT_GetConnackCode / ESP8266_ConnectTCP / ESP8266_TestAT"
+      ],
+      [
+        "双通道上板验收：四个场景一次跑齐",
+        "双通道的价值就在「同时」，两条路各测一遍不算通过；四个场景都留了证据，这一段才算做完。",
+        "一次跑四个场景：1) 正常：上位机与云端 30 秒内各自都收到，数值一致；2) 断网：缓存按帧率增长，插回后补传对账（条数、时间戳、CRC、去重）；3) 拔 LoRa：上云还在发，但发的是缓存里的旧帧（说明两条路独立，不是从 LoRa 现取的）；4) 复位：缓存不丢、序号规则正确、复位后不重复发布同一帧。",
+        "SYS_USART_Printf(SYS_USART_1, \"lora_ok=%u fwd=%u cache=%u cloud=%u online=%u\r\n\",\n    (unsigned)s_rx_ok, (unsigned)s_fwd_ok, (unsigned)s_cache_ok,\n    (unsigned)s_cloud_ok, (unsigned)MQTT_IsConnected());",
+        "四个场景各留一条证据（上位机截图、云端收到的报文、串口打印、你自己的进度文档一行）；场景 3 里 lora_ok 停止增长而 cloud 继续增长。",
+        "1) 场景 3 很容易被误读成「数据还是新的」，验收记录里必须写明「数据来自缓存」；2) 场景 4 要确认重启后序号规则生效，否则订阅端会把重启后的第一批判成重复；3) 场景 2 的补传期间必须停止写缓存，否则条数算不准。",
+        "MQTT_PublishFloat / MQTT_IsConnected / W25QXX_LogRead / SYS_FRAME_CMD_REPLAY / SYS_FRAME_CMD_HISTORY"
       ]
     ]
   }

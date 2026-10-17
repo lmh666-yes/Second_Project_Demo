@@ -114,6 +114,8 @@ static uint8_t lora_wait_idle(uint32_t timeout_ms)
             return 0U;              /* 一直忙：多半 M0/M1/AUX 接错 */
         }
     }
+    /* 手册：切模式后须等 AUX 上升沿 2ms，模块才真正进入新模式 */
+    delay_ms_dwt(2);
     return 1U;
 }
 
@@ -202,9 +204,8 @@ uint8_t LORA_E22_SetMode(LoraE22Mode_t mode)
     lora_mode_to_pins(mode, &m1, &m0);
     lora_set_pins(m1, m0);
 
-    /* 数据手册时序：透传/唤醒切进配置/休眠要等当前包发完，典型小于 5ms；
-     * 切回透传要重新初始化射频，典型小于 15ms。
-     * 统一按 AUX 等，AUX 没接时 wait_idle 内部给 2ms 固定延时兜底 */
+    /* 手册时序：AUX 变高即空闲；切模式后须等 AUX 上升沿 2ms 才真正生效，
+     * 2ms 的补时在 lora_wait_idle() 内完成 */
     if (lora_wait_idle(SYS_LORA_AUX_TIMEOUT_MS) == 0U) {
         return LORA_E22_ERR_AUX;
     }
@@ -227,6 +228,8 @@ uint8_t LORA_E22_WaitReady(uint32_t timeout_ms)
 uint8_t LORA_E22_Send(const uint8_t *data, uint16_t len)
 {
     if (data == 0 || len == 0U) return LORA_E22_ERR_PARAM;
+    /* 手册：单包发射长度上限 240 字节（分包可设 32/64/128/240） */
+    if (len > 240U) return LORA_E22_ERR_PARAM;
 
     /* 等模块把上一包发完再灌数据：E22 的 UART 接收缓冲有限，
      * 灌太快会丢字节；没接 AUX 时这里只是 2ms 延时 */

@@ -513,6 +513,28 @@ def render(root, markers, stubs, enc_count, file_count, cur=None, prev=None):
     return '\n'.join(out)
 
 
+def to_json(root, markers, stubs, enc_count, file_count, hist):
+    """结构化输出，供工具箱的可视化体检面板读取（只读，不写快照）。"""
+    todo = [s for s in stubs if not s[5]]
+    by_file = {}
+    for r, _, _, _, _, noop in stubs:
+        if not noop:
+            by_file[r] = by_file.get(r, 0) + 1
+    return {
+        'tool': 'progress_scan',
+        'schema': 1,
+        'ok': True,
+        'root': root,
+        'files': file_count,
+        'markers': len(markers),
+        'stubs': len(todo),
+        'noop': len(stubs) - len(todo),
+        'history': hist if isinstance(hist, list) else [],
+        'stub_files': by_file,
+        'enc_stat': enc_count,
+    }
+
+
 def selftest():
     """自检：在临时目录造一个合成工程，故意埋下"待办标记 / 空桩 / 有意留空 / 产物目录里的待办"
     四类样本，直接调 scan() 与 render() 核对判定确实命中。
@@ -570,6 +592,13 @@ def selftest():
            '## 2. 疑似桩函数（待实现）' in report and 'App_Sensor' in report
            and '## 3. 疑似有意留空' in report and 'App_Cb' in report)
         ck('自检未污染趋势快照', load_prev() == before)
+
+        j = to_json(tmp, markers, stubs, enc_count, file_count, [])
+        ck('JSON 结构正确（工具名/计数/stub_files）',
+           j['tool'] == 'progress_scan' and j['files'] == 3
+           and j['markers'] == 1 and j['stubs'] == 2 and j['noop'] == 1
+           and len(j['stub_files']) == 2,
+           str({k: j[k] for k in ('files', 'markers', 'stubs', 'noop')}))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -587,6 +616,7 @@ def main(argv):
 
     root = ROOT
     quiet = False
+    json_mode = False
     bad = []
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '进度报告.md')
     i = 1
@@ -605,13 +635,16 @@ def main(argv):
         elif a == '--quiet':
             quiet = True
             i += 1
+        elif a == '--json':
+            json_mode = True
+            i += 1
         else:
             bad.append(a)
             i += 1
 
     if bad:
         print('未知参数：%s' % ' '.join(bad))
-        print('可用参数：--root <目录> | --out <文件> | --quiet | --selftest')
+        print('可用参数：--root <目录> | --out <文件> | --quiet | --json | --selftest')
         return 2
 
     if not os.path.isdir(root):
@@ -619,6 +652,13 @@ def main(argv):
         return 2
 
     markers, stubs, enc_count, file_count = scan(root)
+
+    # --json：只读输出，不写趋势快照（面板会频繁调用，别污染基线）
+    if json_mode:
+        print(json.dumps(to_json(root, markers, stubs, enc_count, file_count, load_prev()),
+                         ensure_ascii=False))
+        return 0
+
     prev = load_prev()
     if isinstance(prev, list):
         prev = prev[-1] if prev else None

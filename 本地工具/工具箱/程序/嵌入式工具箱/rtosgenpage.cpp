@@ -28,7 +28,7 @@
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 
-#include "lookupdata.h"   /* 流程卡清单 / 整段参考代码，都取自「STM32 速查」dataset.json */
+#include "lookupdata.h"   /* 流程卡清单 / 整段参考代码，都取自「单片机手册」dataset.json */
 
 namespace {
 
@@ -171,10 +171,10 @@ RtosGenPage::RtosGenPage(QWidget *parent)
     lay->addWidget(rbox);
 
     /* ---- 参考代码段（勾选要并入的外设流程卡）----
-       数据来自「STM32 速查」的流程卡（引导教程板块），每张卡的正文就是一段可直接搬的
+       数据来自「单片机手册」的流程卡（引导教程板块），每张卡的正文就是一段可直接搬的
        初始化代码。首次显示本页时才去读那 4MB 数据（见 ensureFlowList）。 */
     QGroupBox *fbox = new QGroupBox(
-        QStringLiteral("参考代码段（勾选要并入的外设，整段代码取自「STM32 速查」流程卡）"), this);
+        QStringLiteral("参考代码段（勾选要并入的外设，整段代码取自「单片机手册」流程卡）"), this);
     QVBoxLayout *fl = new QVBoxLayout(fbox);
     m_flowNote = new QLabel(QStringLiteral("首次打开本页时载入清单……"), fbox);
     m_flowNote->setWordWrap(true);
@@ -415,7 +415,7 @@ void RtosGenPage::ensureFlowList()
 
     QString err;
     if (!LookupData::load(&err)) {
-        m_flowNote->setText(QStringLiteral("读不到「STM32 速查」的数据，本区不可用：%1").arg(err));
+        m_flowNote->setText(QStringLiteral("读不到「单片机手册」的数据，本区不可用：%1").arg(err));
         m_flowNote->setStyleSheet(QStringLiteral("color:#b4552d;"));
         m_flowList->setEnabled(false);
         return;

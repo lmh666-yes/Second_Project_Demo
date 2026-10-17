@@ -7,7 +7,7 @@
 
 
 /* sys_bmp280.c — 气压 + 温度传感器 BMP280 实现文件
- *  实现 : 0xD0 自检(= 0x58),读 0x88~0x9F 标定系数,写 0xF4/0xF5;
+ *  实现 : 0xD0 自检(0x58 = BMP280 / 0x60 = BME280),读 0x88~0x9F 标定系数,写 0xF4/0xF5;
  *         读数走 forced 模式一次完整事务(触发 0xF4,等转换,读 0xF7 起
  *         6 字节),6 字节取自同一采样时刻;补偿用 Bosch 定点参考实现。
  *  约束 : 需要 int64_t;海拔用国际气压高度公式,海平面气压为可改宏。
@@ -217,7 +217,7 @@ int SYS_BMP280_ReadRaw(SysI2cId_t bus, int32_t *temp_c100, uint32_t *press_pa)
     err = bmp280_write_ctrl_meas(bus, s_addr[bus], BMP280_MODE_FORCED);
     if (err != SYS_I2C_OK) return err;
 
-    /* 手册: 单次转换耗时随过采样上升,最高配置最坏约 43ms;
+    /* 手册 App.B 算例: T×1 + P×4 约 11.5ms;最高档最坏时间手册未注明,
      * 先等 SYS_BMP280_FORCED_DELAY_MS,再用 status 轮询兜底。 */
     delay_ms(SYS_BMP280_FORCED_DELAY_MS);
     err = bmp280_wait_ready(bus, s_addr[bus]);
@@ -288,23 +288,26 @@ uint8_t SYS_BMP280_InitAddr(SysI2cId_t bus, uint8_t addr7)
 
     if (bus >= SYS_I2C_COUNT) return SYS_BMP280_ERR_PARAM;
 
-    /* 初始化总线 400 kHz(与 sys_mpu6050 一致,调用方不必自行 Init) */
+    /* 初始化总线 400 kHz(与 sys_mpu6050 一致,调用方不必自行 Init)。
+     * 注意: I2C_DeInit 会打断同总线上的进行中事务,应在启动阶段统一初始化一次,
+     * 不要在并发使用中重复调用 */
     SYS_I2C_Init(bus, 400000);
 
     /* 记录本次使用的地址,后续读函数沿用(见 s_addr 说明) */
     s_addr[bus] = addr7;
 
-    /* 自检 0xD0: 须读到 0x58。0x60 = BME280、0x55 = BMP180,
-     * 后两者寄存器与标定系数不同,本驱动不适用,返回错误码 */
+    /* 自检 0xD0: 接受 0x58(BMP280) 与 0x60(BME280)。手册: BME280 向下寄存器兼容
+     * BMP280,压力/温度的控制与读出完全相同,只多出湿度通道(本驱动不用);
+     * 0x55 = BMP180,寄存器与标定系数均不同,本驱动不适用 */
     err = SYS_I2C_ReadByte(bus, addr7, BMP280_REG_ID, &id);
     if (err != SYS_I2C_OK) return SYS_BMP280_ERR_CHIP_ID;
-    if (id != BMP280_ID_VALUE) {
-        (void)BMP280_ID_BME280;
+    if ((id != BMP280_ID_VALUE) && (id != BMP280_ID_BME280)) {
         (void)BMP280_ID_BMP180;
         return SYS_BMP280_ERR_CHIP_ID;
     }
 
-    /* 软复位: 写 0xB6 回到已知初态;手册要求稍等后再读标定系数(复位期间不响应) */
+    /* 软复位: 写 0xB6 回到已知初态;手册 tstartup = 2ms(首次通信前),
+     * 这里取 5ms 余量再读标定系数 */
     if (SYS_I2C_WriteByte(bus, addr7, BMP280_REG_RESET, BMP280_RESET_CMD) == SYS_I2C_OK) {
         delay_ms(5);
     }
@@ -334,8 +337,8 @@ uint8_t SYS_BMP280_InitAddr(SysI2cId_t bus, uint8_t addr7)
         return SYS_BMP280_ERR_CALIB;
     }
 
-    /* 写 0xF4 CTRL_MEAS: forced 模式先写 sleep(清 mode),
-     * 之后每次读之前由 Trigger 触发;normal 模式此处直接进连续转换 */
+    /* 写 0xF4 CTRL_MEAS: forced 模式先写 sleep(清 mode),Read/ReadRaw 每次调用
+     * 内部自行触发转换(见 .h);Trigger 仅供上层自控采样节奏;normal 模式此处直接进连续转换 */
 #if (SYS_BMP280_USE_NORMAL_MODE != 0)
     err = bmp280_write_ctrl_meas(bus, addr7, BMP280_MODE_NORMAL);
 #else

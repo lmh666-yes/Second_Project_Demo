@@ -777,10 +777,13 @@ EXT_XXX_Init()       ← 第二层：专属覆盖（默认留空），在打底�
 | `SYS_USART_SendDMA(id, buf, len)` | DMA 发送（非阻塞；先 `TxDmaBusy` 查空闲再复用缓冲） |
 | `SYS_USART_TxDmaBusy(id)` | DMA 是否仍在发送（1 = 没发完） |
 | `SYS_USART_RecvDMA(id, buf, max)` | DMA + 空闲中断收不定长帧；配 `DmaRxLen` / `DmaRxDone` 使用 |
+| **`SYS_USART_RxDropCount(id)`** | **累计丢字节总数** = 缓冲满丢的 + 硬件溢出(ORE)丢的；**以前是静默的**，这个值持续增长就说明该路缓冲太小或中断被挡太久 |
+| **`SYS_USART_RxFullCount(id)` / `SYS_USART_RxOverrunCount(id)` / `SYS_USART_RxDropReset(id)`** | 其中"缓冲满"丢的 / 其中"ORE 硬件溢出"丢的 / 三个计数一起清零（链路对账：灌 N 字节前后各查一次） |
 
 - 开启 `SYS_USART_FPUTC_ENABLE` 后，`printf()` 直接输出到 `SYS_USART_1`；
 - DMA 数据流占用（硬件固定）：USART1 → DMA2_Stream7(TX)/DMA2_Stream5(RX)；USART2 → DMA1_Stream6/5；USART3 → DMA1_Stream3/1（通道均为 4）；
 - 本板 PA2/PA3 经跳线 P6 可选接 SP3485(RS485) 或 SP3232(RS232 DB9)——二者只能选一，由 P6 跳线决定。
+- **每路接收缓冲大小可单独改**：默认都是 `SYS_USART_RX_BUF_SIZE`(64)，哪一路数据量大就改对应的 `SYS_USART1..6_RX_BUF_SIZE`（如 USART3 收 ESP8266 的 AT 流改 256），RAM 只按改大的那几路增加；下限 32，写成更小会**编译期直接报错**（`usart_rxbuf_size_check_1..6` 护栏）
 
 ### 5.9 sys_tim —— 通用定时器
 
@@ -1447,6 +1450,10 @@ SYS_FLASH_SaveParams(&cfg, sizeof(cfg));      /* 掉电不丢 */
 | **`ESP8266_GetRawRx(&buf)`** | **二进制安全**取接收缓冲（MQTT 等二进制协议必需 —— 字符串接口会被 `0x00` 截断） |
 | `ESP8266_HasAsyncData()` | 最近有没有**模块主动上报**（对方发来的数据 / 断线提示） |
 
+- **多任务安全**：模块内一把**递归互斥量**，`SendCmd` / `Flush` / `GetRawRx` / `HasAsyncData` / `ServerHasClient` 进函数自动加锁，**多个任务可以同时调，不用自己加锁**；一条 AT 命令全程占锁（最长等一次 `timeout`），别的任务会等在锁上。中断里调用时不加锁（那时没有并发）；`SendCmd` 内部再调上面那些接口走的是同一把递归锁，不会自锁
+- **`GetLastReply()` / `GetRawRx()` 返回的是模块内部缓冲的指针**：函数返回时锁已经放开，下一条 AT 命令就会改写它 —— 要跨语句使用请先 `memcpy` 到自己数组（`GetRawRx` 会另回传本次长度）
+- **锁是模块内部私有的，没有对外暴露 `Lock/Unlock`**：只保证"单条命令"这一级原子。要把"多条命令 + 一路回复"绑成整体（如发完 MQTT 报文自己等 CONNACK），现在得由业务层自己约好"同一时刻只有一个任务碰 ESP8266"。本工程里读这块缓冲的只有 MQTT 层，所以够用；哪天真有两处并发读，我再补一对 `ESP8266_Lock/Unlock`（改动很小）
+
 > **客户端 / 服务器两种模式互斥**：客户端用单连接（`CIPMUX=0`），服务器用多连接（`CIPMUX=1`）。
 > 先 `ConnectTCP` 再 `StartServer`（或顺序颠倒）会失败 —— 要切换先把前一个关掉。
 
@@ -1917,6 +1924,9 @@ RGB5X5_Show();                     /* 不调这句不会亮 */
 | `MQTT_Ping() / MQTT_Disconnect()` | 手动心跳 / 主动断开 |
 | `MQTT_ErrStr(err)` | 返回码转文字 |
 
+- **`MQTT_Poll()` 内部的取值顺序不能改**（本轮修正）：它必须**先**做一次探活收包（这一步会把 ESP8266 接收缓冲里的字节搬走、必要时前移缓冲）**再**取缓冲指针和长度；反过来就变成"长度是搬之前的、内容是搬之后的"，解析出来是乱码。**别把这两句调回去**
+- **`MQTT_IsConnected()` 只表示本方认为已连上，TCP 半开时仍然返回 1**；判断链路到底还活着没有，请用 `MQTT_IsAlive()`（判据 = 距上次收到 broker 任何字节不超过 `MQTT_ALIVE_TIMEOUT_S` = 120 秒）
+
 **最小用法**（连 WiFi → 连 broker → 上报 → 收控制）：
 
 ```c
@@ -2005,37 +2015,38 @@ for (;;) {
 
 | 函数 | 说明 |
 |---|---|
-| `W25QXX_LogInit()` | 建日志：扫一遍找到该从哪继续写（1024 条约 11ms），**已有记录不会被清** |
+| `W25QXX_LogInit()` | 建日志：扫一遍找到该从哪继续写（2048 条；逐条只读 12 字节槽头），**已有记录不会被清** |
 | `W25QXX_LogWrite(ts, buf, len)` | 追加一条（载荷**可含 `0x00`**），~1ms |
 | `W25QXX_LogWriteStr(ts, "T=25.3,H=60")` | 追加一条文本记录 |
 | `W25QXX_LogRead(i, &ts, buf, &len)` | 读第 `i` 条（**0 = 最老的一条**） |
 | `W25QXX_LogTail(&ts, buf, &len)` | 读最新一条 |
-| `W25QXX_LogCount() / W25QXX_LogCapacity()` | 现有条数 / 总容量（默认 1024 条） |
+| `W25QXX_LogCount() / W25QXX_LogCapacity()` | 现有条数 / 总容量（默认 **2048 条** = 64KB ÷ 32B） |
 | `W25QXX_LogStat(&n, &cap, &head)` | 一次取全部内部状态 |
-| `W25QXX_LogClear()` | 全擦（16 个扇区约 0.8 秒），"恢复出厂"用 |
+| `W25QXX_LogClear()` | 全擦（16 个扇区约 0.8 秒），"恢复出厂"用；**内部按扇区放锁**，别的任务照常跑 |
+| **`W25QXX_LogClearStep(&done)`** | **分步清**：一次擦一个扇区、两次调用之间让出 CPU，`*done` 变 1 即清完；上位机"清缓存"命令用这个，不卡界面 |
 | `W25QXX_LogErrStr(err)` | 返回码转文字 |
 
-**一条记录 64 字节，4KB 扇区正好 64 条 —— 永远不跨页也不跨扇区**：
+**一条记录 32 字节，4KB 扇区正好 128 条 —— 永远不跨页也不跨扇区**：
 
 ```
 偏移  长度  内容
-0     4     状态：0xFFFFFFFF=空槽  0x5A5A5A5A=有效
-4     4     序号 seq（自增，用来找最新）
-8     4     时间戳 ts（RTC 秒数 / 开机秒数，你自己约定）
-12    2     数据长度 len
-14    2     校验和
-16    48    数据（W25QXX_LOG_PAYLOAD 由 SLOT_SIZE 自动算出）
+0     4     序号 seq：0xFFFFFFFF=空槽；**最后才写**，等于"提交标志"
+4     4     时间戳 ts（RTC 秒数 / 开机秒数，你自己约定）
+8     2     数据长度 len
+10    2     校验和 CRC16-MODBUS（范围 = ts + len + 数据段）
+12    20    数据（W25QXX_LOG_PAYLOAD，可含 0x00）
 ```
 
-- **写入顺序为"先写数据、最后写状态字"**，这是掉电安全的依据：
-  1) 擦 → 2) 写 `[4..64)` → 3) 写 `[0..4)` 状态字。在 2)3) 之间断电，状态位还是 `0xFFFFFFFF`，
+- **写入顺序为"先写数据、最后写 seq"**，这是掉电安全的依据：
+  1) 擦 → 2) 写 `[4..32)` → 3) 写 `[0..4)` 的 seq。在 2)3) 之间断电，seq 位还是 `0xFFFFFFFF`，
   会被当成**空槽**跳过，**不会把半截数据当作有效记录读出**
 - **使用 `W25QXX_Write` 而非 `W25QXX_WriteSafe`**：后者每次要读-擦-写整个扇区 ~50ms，写日志过慢；
   前者在槽位已擦好的前提下只需一次页编程，**~1ms/条**
-- 环形结构：写指针 `head` 从 0 加到 1023 再回 0，**写满自动覆盖最旧记录**，不会出现"写不进去"
+- 环形结构：写指针 `head` 从 0 加到 2047 再回 0，**写满自动覆盖最旧记录**，不会出现"写不进去"
 - `W25QXX_LogInit` 先 `ReadID()` 探一下 Flash 活没活 —— 可及时发现未调用 `W25QXX_Init()`
 - 编译期检查三项：槽长必须能整除扇区和页、日志区不能压到字库区（`W25QXX_ADDR_FONT`）、槽长要装得下头部 + 至少 8 字节数据
 - **必须先 `W25QXX_Init(0)`** 再 `W25QXX_LogInit()`
+- **多任务安全**：模块内一把互斥量保护，写入任务与补传任务可以并发调，**不再挂起调度器**（以前擦扇区时整个系统会停住，16 个扇区 0.5~1 秒）；代价是清日志期间写接口返回 `W25QXX_LOG_ERR_BUSY`、读接口返回 `W25QXX_LOG_ERR_EMPTY`，调用方重试即可。只能在**任务**里调（中断里不能拿互斥量）
 - 读回 `W25QXX_LOG_ERR_CORRUPT` = 校验和不对（数据写坏了），**别拿去用**
 - 序号回绕要 40 亿次写入，实际项目碰不到；真要碰就得换成"找空槽"的定位法
 

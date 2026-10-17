@@ -2,7 +2,7 @@
 #define LOOKUPDATA_H
 
 /* 给非界面代码（眼下是 RTOS 骨架生成器）用的只读查询层：
-   把「STM32 速查」的 dataset.json 当成一本函数手册来查，只回普通类型，不外泄 Dataset/Card。
+   把「单片机手册」的 dataset.json 当成一本函数手册来查，只回普通类型，不外泄 Dataset/Card。
  *
    数据只读一份：路径走 AppPaths::datasetPath()，与速查页读的是同一个文件；
    本层**惰性装载**，没人调用就不会碰那 4MB（工具箱启动要快）。

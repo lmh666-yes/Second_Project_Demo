@@ -9,7 +9,7 @@
 #include <QStringConverter>
 #include <QTextStream>
 
-/* 从原 STM32 速查独立程序（main.cpp）平移过来的命令行出口，逻辑一字未改，
+/* 从原 单片机手册独立程序（main.cpp）平移过来的命令行出口，逻辑一字未改，
    只把入口改成函数、把 --gui-smoke 摘出去（并入工具箱后由 Toolbox 的冒烟统一跑）。 */
 int runLookupCli(const QStringList &args, MainWindow *w)
 {

@@ -20,6 +20,7 @@ r"""引脚与资源规划器（幂等，只读源码，不改任何文件）。
     python 本地工具\工具箱\检查\引脚规划\pin_planner.py --selftest
 （--selftest 在临时目录造合成板核对判定，不写报告、不碰仓库。）
 """
+import json
 import os
 import re
 import sys
@@ -453,6 +454,17 @@ def render_board(title, inc_dir, use_list, result):
     if conflicts:
         for (port, bit), lst in conflicts:
             out.append('- %s ← %s' % (fmt_pin((port, bit)), ', '.join(sorted(set(lst)))))
+        out.append('')
+        # 修复建议：只给"库里没人认领"的脚当候选，并明确要求核对原理图。
+        # SWD/JTAG 调试口必须排除——改到那里就等于自断下载与调试通道。
+        SKIP_AS_CAND = {'PA13', 'PA14', 'PA15', 'PB3', 'PB4'}
+        cand = [fmt_pin(pb) for pb in free if fmt_pin(pb) not in SKIP_AS_CAND][:8]
+        out.append('> **下一步怎么做**：上面每个冲突脚都得有一个模块让出来，否则后 init 的会悄悄覆盖前一个。'
+                   '可选方向：① 把其中一个模块改到别的脚（库内当前无人认领的 %d 个脚里有 %s，'
+                   '但**必须对照原理图确认该脚在板上真的没接东西**——库里没人用不等于硬件空着）；'
+                   '② 两个模块本来就不会同时用（比如互斥的外设），在代码里加互斥判断；'
+                   '③ 确认是"声明了但没实际初始化"的僵尸宏，删掉即可。'
+                   % (len(free), '、'.join(cand) if cand else '（无）'))
     else:
         out.append('无。')
     out.append('')
@@ -495,6 +507,39 @@ def render_board(title, inc_dir, use_list, result):
 
     out.append(render_dma(os.path.dirname(os.path.dirname(inc_dir))))
     return '\n'.join(out)
+
+
+def to_json(results):
+    """结构化输出，供工具箱的可视化体检面板读取。
+    occupied / conflicts / free 的键都是 'PA2' 这种脚名，值为占用者模块基名列表。"""
+    boards = []
+    for title, inc, r in results:
+        bases, owners, unpaired, dup_base, nfiles = r
+        occupied = {}
+        conflicts = {}
+        for (port, bit), mods in sorted(owners.items(), key=lambda kv: (kv[0][0], kv[0][1])):
+            name = fmt_pin((port, bit))
+            uniq = sorted(set(mods))
+            occupied[name] = uniq
+            if len(uniq) > 1:
+                conflicts[name] = uniq
+        free = sorted(ALL_PINS - set(owners), key=lambda pb: (pb[0], pb[1]))
+        # 每个脚的具体出处（宏基名 + 文件:行），供面板点击查看
+        detail = {}
+        for base, info in bases.items():
+            for pb in info['pins']:
+                detail.setdefault(fmt_pin(pb), []).append(
+                    {'base': base, 'loc': info['loc']})
+        boards.append({
+            'title': title,
+            'files': nfiles,
+            'occupied': occupied,
+            'conflicts': conflicts,
+            'free': [fmt_pin(pb) for pb in free],
+            'pin_detail': detail,
+        })
+    ok = all(not b['conflicts'] for b in boards)
+    return {'tool': 'pin_planner', 'schema': 1, 'ok': ok, 'boards': boards}
 
 
 def selftest():
@@ -621,6 +666,19 @@ def selftest():
            any(m == 'BAR' for m, _, _ in unresolved))
         ck('形参传流的调用被列为无法静态解析',
            any('p->tx_stream' in w for _, _, w in unresolved))
+
+        j = to_json([('板X', inc, result)])
+        ck('JSON 结构正确（工具名/板数/ok）',
+           j['tool'] == 'pin_planner' and len(j['boards']) == 1 and j['ok'] is False)
+        ck('JSON 冲突与占用都在',
+           j['boards'][0]['conflicts'].get('PB5') == ['LORA_E22', 'W25QXX']
+           and 'PC7' in j['boards'][0]['occupied'],
+           str(j['boards'][0]['conflicts']))
+        ck('JSON 带引脚出处（pin_detail 含 base 与 loc）',
+           len(j['boards'][0]['pin_detail'].get('PB5', [])) == 2
+           and all('base' in d and 'loc' in d
+                   for d in j['boards'][0]['pin_detail']['PB5']),
+           str(j['boards'][0]['pin_detail'].get('PB5')))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -637,6 +695,7 @@ def main(argv):
         return selftest()
 
     quiet = False
+    json_mode = False
     only = None
     use_list = []
     bad = []
@@ -646,6 +705,9 @@ def main(argv):
         a = argv[i]
         if a == '--quiet':
             quiet = True
+            i += 1
+        elif a == '--json':
+            json_mode = True
             i += 1
         elif a in ('--board', '--use', '--out'):
             if i + 1 >= len(argv):
@@ -665,16 +727,12 @@ def main(argv):
 
     if bad:
         print('未知参数：%s' % ' '.join(bad))
-        print('可用参数：--board <1|2> | --use <模块,模块> | --out <文件> | --quiet | --selftest')
+        print('可用参数：--board <1|2> | --use <模块,模块> | --out <文件> | --quiet | --json | --selftest')
         return 2
 
-    out = ['# 引脚规划报告', '',
-           '来源：`本地工具/工具箱/检查/引脚规划/pin_planner.py`（只读扫描，可重复运行）', '']
-    out.append('## 总览')
-    out.append('')
-    out.append('| 板 | 头文件 | 占用脚 | 冲突 | 空闲 |')
-    out.append('|---|---|---|---|---|')
+    # 先收集结果，再决定出 md 报告还是结构化 JSON
     results = []
+    missing = []
     for title, proj in BOARDS:
         if only == '1' and '板1' not in title:
             continue
@@ -682,13 +740,26 @@ def main(argv):
             continue
         inc = os.path.join(ROOT, proj, 'FWLIB', 'inc')
         if not os.path.isdir(inc):
-            out.append('| %s | - | - | - | 目录不存在 |' % title)
+            missing.append(title)
             continue
-        r = scan_pins(inc)
-        results.append((title, inc, r))
+        results.append((title, inc, scan_pins(inc)))
+
+    if json_mode:
+        print(json.dumps(to_json(results), ensure_ascii=False))
+        return 0
+
+    out = ['# 引脚规划报告', '',
+           '来源：`本地工具/工具箱/检查/引脚规划/pin_planner.py`（只读扫描，可重复运行）', '']
+    out.append('## 总览')
+    out.append('')
+    out.append('| 板 | 头文件 | 占用脚 | 冲突 | 空闲 |')
+    out.append('|---|---|---|---|---|')
+    for title, inc, r in results:
         conflicts = sum(1 for v in r[1].values() if len(v) > 1)
         free = len(ALL_PINS - set(r[1]))
         out.append('| %s | %d | %d | %d | %d |' % (title, r[4], len(r[1]), conflicts, free))
+    for title in missing:
+        out.append('| %s | - | - | - | 目录不存在 |' % title)
     out.append('')
     for title, inc, r in results:
         out.append(render_board(title, inc, use_list, r))

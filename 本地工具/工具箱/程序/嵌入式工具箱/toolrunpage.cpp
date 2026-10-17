@@ -25,30 +25,9 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
-/* 依次尝试常见的 Python 启动方式。返回可用的程序名与固定前置参数。
-   顺序：python（PATH 中的通用名）→ py -3（Windows 官方启动器）→ python3。 */
-static QStringList detectPython()
-{
-    const struct { const char *prog; QStringList pre; } cands[] = {
-        { "python",  {} },
-        { "py",      { QStringLiteral("-3") } },
-        { "python3", {} },
-    };
-    for (const auto &c : cands) {
-        QProcess probe;
-        QStringList a = c.pre;
-        a << QStringLiteral("-c") << QStringLiteral("print(1)");
-        probe.start(QString::fromLatin1(c.prog), a);
-        if (probe.waitForStarted(3000) && probe.waitForFinished(4000)
-            && probe.exitStatus() == QProcess::NormalExit && probe.exitCode() == 0) {
-            QStringList r;
-            r << QString::fromLatin1(c.prog);
-            r += c.pre;
-            return r;
-        }
-    }
-    return {};
-}
+#include <climits>
+
+#include "pyfind.h"
 
 ToolRunPage::ToolRunPage(const QString &title, const QString &desc, QWidget *parent)
     : QWidget(parent)
@@ -161,12 +140,16 @@ ToolRunPage::ToolRunPage(const QString &title, const QString &desc, QWidget *par
     m_watchdog->setSingleShot(true);
     m_watchdog->setInterval(120000);
     connect(m_watchdog, &QTimer::timeout, this, [this]() {
-        if (m_proc->state() != QProcess::NotRunning) {
+        if (m_parallel) {
+            for (QProcess *p : m_parallelProcs)
+                if (p && p->state() != QProcess::NotRunning)
+                    p->kill();
+        } else if (m_proc->state() != QProcess::NotRunning) {
             m_proc->kill();
-            append(QStringLiteral("\n[超时] 单步运行超过 %1 秒，已终止。"
-                                  "长任务请改用该工具自己的 bat 入口。\n")
-                       .arg(m_watchdog->interval() / 1000));
         }
+        append(QStringLiteral("\n[超时] 单步运行超过 %1 秒，已终止。"
+                              "长任务请改用该工具自己的 bat 入口。\n")
+                   .arg(m_watchdog->interval() / 1000));
         m_running = false;
         m_btnRun->setEnabled(true);
         m_btnStop->setEnabled(false);
@@ -258,12 +241,41 @@ void ToolRunPage::run()
     m_btnRun->setEnabled(false);
     m_btnStop->setEnabled(true);
     m_btnReport->setEnabled(false);
+
+    /* 并行模式下先统一探测一次解释器，再一次性拉起全部步骤 */
+    if (m_parallel) {
+        m_python = PyFind::detect();
+        if (m_python.isEmpty()) {
+            append(QStringLiteral("未找到可用的 Python（已尝试 python、py -3、python3）。\n"
+                                  "请装一个 Python 并加入 PATH（安装时勾选 Add to PATH），重开本程序即可。\n"));
+            m_running = false;
+            m_btnRun->setEnabled(true);
+            m_btnStop->setEnabled(false);
+            m_status->setText(QStringLiteral("缺少 Python"));
+            return;
+        }
+        startAllParallel();
+        return;
+    }
+
     startStep(0);
 }
 
 void ToolRunPage::stop()
 {
-    if (m_proc->state() != QProcess::NotRunning) {
+    if (m_parallel) {
+        /* 先断连接再 kill：否则各进程的 finished 回调会继续跑汇总逻辑 */
+        for (QProcess *p : m_parallelProcs) {
+            if (!p)
+                continue;
+            p->disconnect(this);
+            if (p->state() != QProcess::NotRunning)
+                p->kill();
+            p->deleteLater();
+        }
+        m_parallelProcs.clear();
+        append(QStringLiteral("\n[已停止]\n"));
+    } else if (m_proc->state() != QProcess::NotRunning) {
         m_proc->kill();
         append(QStringLiteral("\n[已停止]\n"));
     }
@@ -292,7 +304,7 @@ void ToolRunPage::startStep(int index)
     append(QStringLiteral("==== %1 ====\n").arg(s.label));
 
     /* 每次运行都重新探测解释器：换了机器或改了 PATH 不用重启程序 */
-    m_python = detectPython();
+    m_python = PyFind::detect();
     if (m_python.isEmpty()) {
         append(QStringLiteral("未找到可用的 Python（已尝试 python、py -3、python3）。\n"
                               "请装一个 Python 并加入 PATH（安装时勾选 Add to PATH），重开本程序即可。\n"));
@@ -323,6 +335,82 @@ void ToolRunPage::startStep(int index)
         m_btnStop->setEnabled(false);
         m_status->setText(QStringLiteral("启动失败"));
     }
+}
+
+/* 并行模式：全部步骤同时启动。输出按 `[步骤名]` 前缀区分，免得交错看不懂。
+   用 m_stepCodes 里的 INT_MIN 表示"还没回来"，全部替换完才算整轮结束。 */
+void ToolRunPage::startAllParallel()
+{
+    m_parallelProcs.clear();
+    m_stepCodes = QVector<int>(m_steps.size(), INT_MIN);
+
+    append(QStringLiteral("并行执行 %1 个步骤…\n\n").arg(m_steps.size()));
+
+    for (int i = 0; i < m_steps.size(); ++i) {
+        const RunStep &s = m_steps[i];
+        const QString label = s.label;
+
+        QProcess *p = new QProcess(this);
+        p->setProcessChannelMode(QProcess::MergedChannels);
+
+        connect(p, &QProcess::readyReadStandardOutput, this, [this, p, label]() {
+            append(QStringLiteral("[%1] ").arg(label) + decode(p->readAllStandardOutput()));
+        });
+
+        connect(p, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+                this, [this, i, p](int code, QProcess::ExitStatus) {
+            m_stepCodes[i] = code;
+            /* 先摘出跟踪表再销毁：否则「停止」/ 看门狗遍历时会摸到已释放的对象 */
+            m_parallelProcs.removeAll(p);
+            p->deleteLater();
+            checkParallelDone();
+        });
+
+        /* 启动失败不会触发 finished：这里也记一笔并检查收尾，
+           否则某一项路径写错就会永远停在"并行运行中"。 */
+        connect(p, &QProcess::errorOccurred, this, [this, i, p](QProcess::ProcessError e) {
+            if (e != QProcess::FailedToStart)
+                return;
+            append(QStringLiteral("无法启动：%1\n").arg(p->errorString()));
+            m_stepCodes[i] = -1;
+            m_parallelProcs.removeAll(p);   /* 同上：别在跟踪表里留已销毁对象的指针 */
+            p->deleteLater();
+            checkParallelDone();
+        });
+
+        /* 并行步骤的进程也要设工作目录：原写法只设了 m_proc（串行那条），
+           并行进程 p 会用 exe 所在目录跑 —— 脚本按相对路径取数就会错位。 */
+        p->setWorkingDirectory(QFileInfo(s.script).absolutePath());
+        m_lastWorkDir = QFileInfo(s.script).absolutePath();
+
+        QStringList a = m_python.mid(1);
+        a << s.script;
+        if (s.args)
+            a += s.args();
+        p->setProgram(m_python.value(0));
+        p->setArguments(a);
+        p->start();
+        m_parallelProcs.append(p);
+    }
+
+    m_status->setText(QStringLiteral("并行运行中…"));
+    m_watchdog->start();
+}
+
+void ToolRunPage::checkParallelDone()
+{
+    for (int c : m_stepCodes)
+        if (c == INT_MIN)
+            return;                 /* 还有没跑完的 */
+    if (!m_running)
+        return;
+    m_running = false;
+    m_watchdog->stop();
+    m_btnRun->setEnabled(true);
+    m_btnStop->setEnabled(false);
+    printSummary();
+    m_status->setText(QStringLiteral("完成"));
+    refreshReportButton();
 }
 
 void ToolRunPage::onFinished(int exitCode, int status)

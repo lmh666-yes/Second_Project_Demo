@@ -4,6 +4,7 @@
 #include "mainwindow.h"
 #include "overviewpage.h"
 #include "rtosgenpage.h"
+#include "scaffoldpage.h"
 #include "settings.h"
 #include "theme.h"
 #include "workbenchwindow.h"
@@ -115,7 +116,7 @@ ToolboxWindow::ToolboxWindow(QWidget *parent)
 
     struct Item { const char *name; QWidget *page; };
     const Item lookup[] = {
-        {"STM32 速查",   buildLookupPage()},
+        {"单片机手册",   buildLookupPage()},
     };
     const Item design[] = {
         {"项目起手助手",  buildKickstartPage()},
@@ -131,6 +132,7 @@ ToolboxWindow::ToolboxWindow(QWidget *parent)
         {"LoRa 检查",    buildLoraPage()},
         {"OTA 台架",     buildOtaPage()},
         {"固件预算",     buildFirmwareBudgetPage()},
+        {"工程模板",     buildScaffoldPage()},
     };
     const Item wrap[] = {
         {"工程体检总览", buildOverviewPage()},
@@ -286,7 +288,7 @@ QWidget *ToolboxWindow::buildWorkbenchPage()
     return m_workbench;
 }
 
-/* STM32 速查（原独立程序，现并入本工具箱）。
+/* 单片机手册（原独立程序，现并入本工具箱）。
    数据是「工具箱\速查数据\data\dataset.json」，由网页版那条链导出，这里只读不写。
    构造时**不装载数据**（4MB + 建索引，会让工具箱启动变慢），首次切到本页才装载。 */
 QWidget *ToolboxWindow::buildLookupPage()
@@ -327,6 +329,17 @@ void ToolboxWindow::jumpToWorkbench(const QString &hex)
         }
     }
     m_pages->setCurrentIndex(m_workbenchPage);
+}
+
+/* 按页面标题跳到对应页：体检面板点健康度卡片时用（标题与侧栏列表项一致）。 */
+void ToolboxWindow::jumpToPage(const QString &title)
+{
+    for (int row = 0; row < m_list->count(); ++row) {
+        if (m_list->item(row)->text() == title) {
+            m_list->setCurrentRow(row);
+            return;
+        }
+    }
 }
 
 QWidget *ToolboxWindow::buildProgressPage()
@@ -583,7 +596,10 @@ QWidget *ToolboxWindow::buildOtaPage()
 
 QWidget *ToolboxWindow::buildOverviewPage()
 {
-    return new OverviewPage(m_toolsDir, this);
+    OverviewPage *p = new OverviewPage(m_toolsDir, this);
+    /* 点面板上的健康度卡片 → 跳到对应工具页 */
+    connect(p, &OverviewPage::requestPage, this, &ToolboxWindow::jumpToPage);
+    return p;
 }
 
 /* 固件预算：把 检查/固件预算/firmware_budget.py 包成界面。
@@ -647,6 +663,13 @@ QWidget *ToolboxWindow::buildFirmwareBudgetPage()
     return p;
 }
 
+QWidget *ToolboxWindow::buildScaffoldPage()
+{
+    ScaffoldPage *p = new ScaffoldPage(m_toolsDir, this);
+    m_warnTargets.append(p);
+    return p;
+}
+
 QWidget *ToolboxWindow::buildFullCheckPage()
 {
     ToolRunPage *p = new ToolRunPage(
@@ -663,6 +686,8 @@ QWidget *ToolboxWindow::buildFullCheckPage()
                      py(m_toolsDir, QStringLiteral("检查/引脚规划/pin_planner.py")), nullptr};
     steps << RunStep{QStringLiteral("LoRa 检查"),
                      py(m_toolsDir, QStringLiteral("检查/LoRa检查/lora_check.py")), nullptr};
+    steps << RunStep{QStringLiteral("协议校验"),
+                     py(m_toolsDir, QStringLiteral("检查/协议校验/protocol_check.py")), nullptr};
     /* 固件预算不带参数 = 只做分区表自检（无输入也能跑，成果照样落报告） */
     steps << RunStep{QStringLiteral("固件预算"),
                      py(m_toolsDir, QStringLiteral("检查/固件预算/firmware_budget.py")), nullptr};
@@ -673,6 +698,7 @@ QWidget *ToolboxWindow::buildFullCheckPage()
                      py(m_toolsDir, QStringLiteral("检查/链路仿真/link_sim.py")),
                      []() { return QStringList{QStringLiteral("--selftest")}; }};
     p->setSteps(steps);
+    p->setParallel(true);   /* 八个检查器互不依赖：并行跑，总耗时 ≈ 最慢一个 */
     m_warnTargets.append(p);
     return p;
 }
@@ -812,7 +838,7 @@ QWidget *ToolboxWindow::buildSettingsPage()
     QVBoxLayout *v4 = new QVBoxLayout(g4);
     QLabel *help = new QLabel(QStringLiteral(
         "<b>建议顺序</b><br>"
-        "0) STM32 速查：写代码时随手查函数 / 流程 / 引导（首次进页才装载数据）<br>"
+        "0) 单片机手册：写代码时随手查函数 / 流程 / 引导（首次进页才装载数据）<br>"
         "1) 项目起手助手：先想清要做什么<br>"
         "2) RTOS 骨架生成：读配置 → 选场景 → 生成 .h/.c<br>"
         "3) 写代码时随时点各项检查<br>"

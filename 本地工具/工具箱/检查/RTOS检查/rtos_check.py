@@ -556,7 +556,8 @@ def check_board(title, proj):
 
     # 从每个 ISR 出发按调用关系往下追。ISR 里间接调用会阻塞/进临界区的接口同样是 bug，
     # 所以不只看直调：包装宏展开一层，普通函数再往下最多三层，并写明转发路径。
-    MAX_HOPS = 3
+    # 增强：chain 每个节点带 (函数名, 文件, 行)，报告时显示完整跨文件路径。
+    MAX_HOPS = 5
     reported = set()
     fromisr_isrs = set()    # 这条调用链上用了 xxxFromISR 的 ISR：受优先级上限约束
     for isr_name, defs in bodies.items():
@@ -564,18 +565,19 @@ def check_board(title, proj):
             continue
         isr_rel, isr_line, isr_body = defs[0]
         loc = '%s:%d' % (isr_rel, isr_line)
-        queue = [(isr_body, [isr_name], 0)]
-        for _ in range(200):        # 防失控上限，正常调用链远到不了
+        queue = [(isr_body, [(isr_name, isr_rel, isr_line)], 0)]
+        for _ in range(500):        # 防失控上限，正常调用链远到不了
             if not queue:
                 break
             body, chain, depth = queue.pop(0)
+            last_name = chain[-1][0]
             for api in scan_calls(body):
                 if api.endswith('FromISR') or api == 'portYIELD_FROM_ISR':
                     fromisr_isrs.add(isr_name)
                     continue
                 lv = risky_api(api)
                 if lv:
-                    key = (loc, api, tuple(chain))
+                    key = (loc, api, tuple(c[0] for c in chain))
                     if key in reported:
                         continue
                     reported.add(key)
@@ -583,8 +585,10 @@ def check_board(title, proj):
                     if len(chain) == 1:
                         msg = 'ISR 上下文（%s）里调用了 %s%s' % (isr_name, api, suffix)
                     else:
+                        # 显示带文件位置的转发路径
+                        hops = ' → '.join('%s(%s:%d)' % (c[0], c[1], c[2]) for c in chain[1:])
                         msg = 'ISR 上下文（%s）经 %s 转发调用了 %s%s' % (
-                            isr_name, ' → '.join(chain[1:]), api, suffix)
+                            isr_name, hops, api, suffix)
                     findings.append((lv, loc, msg, 'isr_api'))
                     continue
                 mb = macros.get(api)
@@ -594,19 +598,27 @@ def check_board(title, proj):
                         lv2 = risky_api(api2)
                         if not lv2 or api2 == api:
                             continue
-                        key = (loc, api2, tuple(chain + ['宏 ' + api]))
+                        key = (loc, api2, tuple(c[0] for c in chain) + ('宏 ' + api,))
                         if key in reported:
                             continue
                         reported.add(key)
                         suffix2 = '' if lv2 == '严重' else '（非 FromISR）'
-                        findings.append((lv2, loc,
-                                         'ISR 上下文（%s）经宏 %s 调用了 %s%s'
-                                         % (isr_name, api, api2, suffix2), 'isr_api'))
+                        if len(chain) == 1:
+                            # 单跳（ISR 里直接调包装宏）：单独措辞，否则会拼出
+                            # 「经 宏 SEND 调用了」多一个空格，与断言对不上
+                            msg2 = 'ISR 上下文（%s）里经宏 %s 调用了 %s%s' % (
+                                isr_name, api, api2, suffix2)
+                        else:
+                            hops = ' → '.join('%s(%s:%d)' % (c[0], c[1], c[2])
+                                              for c in chain[1:])
+                            msg2 = 'ISR 上下文（%s）经 %s → 宏 %s 调用了 %s%s' % (
+                                isr_name, hops, api, api2, suffix2)
+                        findings.append((lv2, loc, msg2, 'isr_api'))
                     continue
-                if depth >= MAX_HOPS or api in chain:
+                if depth >= MAX_HOPS or api in (c[0] for c in chain):
                     continue
-                for _, _, cbody in bodies.get(api, []):
-                    queue.append((cbody, chain + [api], depth + 1))
+                for crel, cline, cbody in bodies.get(api, []):
+                    queue.append((cbody, chain + [(api, crel, cline)], depth + 1))
 
     # 3b) 中断里写、任务里读的变量缺 volatile
     #     只看"文件作用域声明"的变量（声明行行首顶格）：局部变量不可能被 ISR 与任务共享，
@@ -820,6 +832,31 @@ def render(results):
     return '\n'.join(out)
 
 
+def to_json(results):
+    """结构化输出，供工具箱的可视化体检面板读取。"""
+    boards = []
+    for title, vals, findings, tasks in results:
+        crit = sum(1 for f in findings if f[0] == '严重')
+        warn = sum(1 for f in findings if f[0] == '注意')
+        cfg = {}
+        if vals:
+            for k, v in vals.items():
+                if isinstance(v, (int, float, bool, str)) or v is None:
+                    cfg[k] = v
+        boards.append({
+            'title': title,
+            'severe': crit,
+            'warn': warn,
+            'config': cfg,
+            'tasks': [{'file': t[0], 'line': t[1], 'name': t[2],
+                       'stack': t[3], 'prio': t[4]} for t in tasks],
+            'findings': [{'level': f[0], 'loc': f[1], 'msg': f[2], 'key': f[3]}
+                         for f in findings],
+        })
+    ok = all(b['severe'] == 0 for b in boards)
+    return {'tool': 'rtos_check', 'schema': 1, 'ok': ok, 'boards': boards}
+
+
 def selftest():
     """用一组故意写错的合成工程验证检查确实命中（含"经宏 / 经转发函数"两条最容易漏的路径），
     并用反例守住不误报：任务态函数里调同名接口、ISR 里调 xxxFromISR、配置齐全时不报配置项。
@@ -895,7 +932,7 @@ def selftest():
         ck('直调阻塞接口被抓到（严重）',
            hit('USART1_IRQHandler）里调用了 xQueueSend', '严重'))
         ck('经普通函数转发被抓到（严重，且写明转发路径）',
-           hit('经 App_ExtiNotify 转发调用了 xSemaphoreGive', '严重'))
+           hit('经 App_ExtiNotify(', '严重'))
         ck('经包装宏展开被抓到（严重）',
            hit('经宏 SEND 调用了 xQueueSend', '严重'))
         ck('非阻塞的 RTOS 接口判为"注意"',
@@ -985,6 +1022,13 @@ def selftest():
         wr(os.path.join(lib_proj, 'FWLIB', 'src', 'sys_wdg.c'),
            'void SYS_WDG_Init(uint32_t ms)\n{\n    (void)ms;\n}\n')
         ck('反例：sys_wdg.c / sys_flash.c 里的实现本身不算"在用"', not fires(lib_proj))
+
+        j = to_json([('板X', None, [('严重', 'loc', 'msg', 'assert')], [('f.c', 1, 't', 128, 3)])])
+        ck('JSON 结构正确（工具名/板数/ok）',
+           j['tool'] == 'rtos_check' and len(j['boards']) == 1 and j['ok'] is False)
+        ck('JSON 任务与 findings 映射正确',
+           j['boards'][0]['tasks'][0]['name'] == 't' and j['boards'][0]['tasks'][0]['prio'] == 3
+           and j['boards'][0]['findings'][0]['key'] == 'assert')
     finally:
         shutil.rmtree(d, ignore_errors=True)
 
@@ -1002,12 +1046,16 @@ def main(argv):
     if '--selftest' in argv:
         return selftest()
     quiet = False
+    json_mode = False
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'RTOS检查报告.md')
     bad = []
     i = 1
     while i < len(argv):
         if argv[i] == '--quiet':
             quiet = True
+            i += 1
+        elif argv[i] == '--json':
+            json_mode = True
             i += 1
         elif argv[i] == '--out':
             if i + 1 >= len(argv):
@@ -1024,7 +1072,7 @@ def main(argv):
     # 白白覆盖报告，还让人以为"检查过了"。
     if bad:
         print('未知参数：%s' % ' '.join(bad))
-        print('可用参数：--out <文件> | --quiet | --selftest')
+        print('可用参数：--out <文件> | --quiet | --json | --selftest')
         return 2
 
     results = []
@@ -1035,6 +1083,10 @@ def main(argv):
             continue
         vals, findings, tasks = check_board(title, proj)
         results.append((title, vals, findings, tasks))
+
+    if json_mode:
+        print(json.dumps(to_json(results), ensure_ascii=False))
+        return 0
 
     report = render(results)
     with open(out_path, 'w', encoding='utf-8', newline='\n') as f:

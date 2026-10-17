@@ -471,8 +471,15 @@ uint8_t MQTT_Poll(MqttMsg_t *msg)
     msg->qos          = 0U;
     msg->retain       = 0U;
 
+    /* 顺序很关键：mqtt_alive_check_rx() 内部会 esp_pump()，把串口里的字节搬进 AT 缓冲，
+     * 缓冲将满时还会把前半段挤掉（只保留最新尾部）。必须先"搬完"再取长度和指针：
+     * 否则 rlen 是搬之前的值、读到的却是搬之后（可能已前移）的内容，
+     * 解析边界和数据对不上，会解出垃圾或漏掉整条报文。
+     * 原来的写法正是先 GetRawRx 取长度、后判活，顺序反了。
+     * 另注：本函数（以及所有 MQTT_*）必须由同一个任务串行调用，不要在别的任务里
+     * 同时发 AT 命令 —— 这里拿到 rx 后锁已放开，别的任务再动 ESP8266 就会改写这段缓冲 */
+    (void)mqtt_alive_check_rx();                    /* 链路只要收到过字节就算活着（已搬完） */
     rlen = ESP8266_GetRawRx(&rx);
-    if (rlen > 0U) (void)mqtt_alive_check_rx();     /* 有数据 = 链路活着 */
     if (rlen < 8U) return MQTT_ERR_TIMEOUT;
 
     /* 缓冲被 AT 命令冲过 → 游标复位，从头找 */

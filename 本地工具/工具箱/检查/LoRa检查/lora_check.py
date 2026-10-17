@@ -23,6 +23,7 @@ r"""LoRa 模块配置检查（幂等，只读源码，不改任何文件）。
     python 本地工具\工具箱\检查\LoRa检查\lora_check.py --quiet
     python 本地工具\工具箱\检查\LoRa检查\lora_check.py --selftest
 """
+import json
 import os
 import re
 import sys
@@ -268,6 +269,33 @@ def render(results, cross_issues):
     return '\n'.join(out)
 
 
+def to_json(results, cross_issues):
+    """结构化输出，供工具箱的可视化体检面板读取。"""
+    boards = []
+    for r in results:
+        bases = sorted(set(r['ports']) | set(r['pins']))
+        pins = {}
+        for b in bases:
+            port = r['ports'].get(b, ('', ''))[0]
+            pin = r['pins'].get(b, ('', ''))[0]
+            if port and pin:
+                pins[b] = [port, pin]
+        boards.append({
+            'title': r['title'],
+            'issues': [{'kind': k, 'detail': d} for k, d in r['issues']],
+            'nums': {k: v for k, v in r['nums'].items()},
+            'pins': pins,
+        })
+    ok = (not cross_issues) and all(not r['issues'] for r in results)
+    return {
+        'tool': 'lora_check',
+        'schema': 1,
+        'ok': ok,
+        'boards': boards,
+        'cross': [{'kind': k, 'detail': d} for k, d in cross_issues],
+    }
+
+
 def selftest():
     import shutil
     import tempfile
@@ -323,6 +351,14 @@ def selftest():
         ck('板2帧间隔偏小被命中', any('帧间隔偏小' in i[0] for i in r2['issues']))
         ck('两板波特率不一致被命中', any('两板不一致' in i[0] and 'SYS_LORA_BAUD' in i[1] for i in cross))
         ck('报告渲染不炸', 'LoRa 配置检查报告' in render([r1, r2], cross))
+
+        j = to_json([r1, r2], cross)
+        ck('JSON 结构正确（工具名/板数/ok/交叉）',
+           j['tool'] == 'lora_check' and len(j['boards']) == 2
+           and j['ok'] is False and len(j['cross']) >= 1)
+        ck('JSON 含引脚对与数值宏',
+           j['boards'][0]['pins'].get('SYS_LORA_M0') == ['GPIOB', 'GPIO_Pin_0']
+           and j['boards'][0]['nums'].get('SYS_LORA_BAUD') == 9600)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -339,6 +375,7 @@ def main(argv):
         return selftest()
 
     quiet = False
+    json_mode = False
     bad = []
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'LoRa检查报告.md')
     i = 1
@@ -346,6 +383,9 @@ def main(argv):
         a = argv[i]
         if a == '--quiet':
             quiet = True
+            i += 1
+        elif a == '--json':
+            json_mode = True
             i += 1
         elif a == '--out':
             if i + 1 >= len(argv):
@@ -360,7 +400,7 @@ def main(argv):
 
     if bad:
         print('未知参数：%s' % ' '.join(bad))
-        print('可用参数：--out <文件> | --quiet | --selftest')
+        print('可用参数：--out <文件> | --quiet | --json | --selftest')
         return 2
 
     results = []
@@ -370,6 +410,11 @@ def main(argv):
         results.append(check_board(title, h_path, c_path))
 
     cross_issues = cross_check(results)
+
+    # --json：结构化输出给可视化面板，不写 md 报告（避免只读调用产生副作用）
+    if json_mode:
+        print(json.dumps(to_json(results, cross_issues), ensure_ascii=False))
+        return 1 if (cross_issues or any(r['issues'] for r in results)) else 0
 
     report = render(results, cross_issues)
     with open(out_path, 'w', encoding='utf-8', newline='\n') as f:

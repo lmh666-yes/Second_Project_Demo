@@ -31,6 +31,7 @@ r"""编码与仓库守卫（只读源码，不改任何文件）。
     python 本地工具\工具箱\检查\编码守卫\encoding_guard.py
     python 本地工具\工具箱\检查\编码守卫\encoding_guard.py --eol
 """
+import json
 import os
 import re
 import subprocess
@@ -87,9 +88,11 @@ EXCLUDE_FILE = re.compile(r'(^qcustomplot\.|^moc_|^ui_|^rcc_|Makefile$)')
 
 # Keil 复编日志（内存快照来源）。路径相对脚本自身定位，工具箱整体挪动后仍然有效；
 # 找不到时会在报告里显式提示，而不是静默留空。
+# (标题, 日志文件名候选, 芯片 Flash KB, 芯片 RAM KB)
+# F407ZE = 512KB Flash；F407ZG = 1MB Flash；两者 SRAM 均 192KB（112+16+64）。
 KEIL_LOG_CANDIDATES = [
-    ('板1 检测端 (F407ZE)', ['keil_板1.log', 'keil_板1.txt'], 512),
-    ('板2 通信端 (F407ZG)', ['keil_板2.log', 'keil_板2.txt'], 1024),
+    ('板1 检测端 (F407ZE)', ['keil_板1.log', 'keil_板1.txt'], 512, 192),
+    ('板2 通信端 (F407ZG)', ['keil_板2.log', 'keil_板2.txt'], 1024, 192),
 ]
 KEIL_LOG_HINTS = [
     os.path.join('仓库巡检', '验证日志'),
@@ -99,7 +102,7 @@ KEIL_LOG_HINTS = [
 
 
 def locate_keil_logs():
-    """在候选目录里找 Keil 复编日志，返回 (title, 绝对路径, flash_kb) 列表与缺失提示。"""
+    """在候选目录里找 Keil 复编日志，返回 (title, 绝对路径, flash_kb, ram_kb) 列表与缺失提示。"""
     tool_dir = os.path.dirname(os.path.abspath(__file__))
     roots = []
     d = os.path.abspath(os.path.dirname(tool_dir))
@@ -110,7 +113,7 @@ def locate_keil_logs():
             break
         d = p
     found, missing = [], []
-    for title, names, flash_kb in KEIL_LOG_CANDIDATES:
+    for title, names, flash_kb, ram_kb in KEIL_LOG_CANDIDATES:
         hit = None
         for base in roots:
             for hint in KEIL_LOG_HINTS:
@@ -124,7 +127,7 @@ def locate_keil_logs():
             if hit:
                 break
         if hit:
-            found.append((title, hit, flash_kb))
+            found.append((title, hit, flash_kb, ram_kb))
         else:
             missing.append(title)
     return found, missing
@@ -215,13 +218,13 @@ def check_file(path, index_eol, do_eol):
 def keil_snapshot():
     rows = []
     logs, missing = locate_keil_logs()
-    for title, path, flash_kb in logs:
+    for title, path, flash_kb, ram_kb in logs:
         with open(path, 'rb') as f:
             text = f.read().decode('gbk', 'replace')
         m = re.search(r'Program Size:\s*Code=(\d+)\s+RO-data=(\d+)\s+RW-data=(\d+)\s+ZI-data=(\d+)', text)
         if m:
             code, ro, rw, zi = (int(x) for x in m.groups())
-            rows.append((title, code, ro, rw, zi, flash_kb, code + ro, rw + zi))
+            rows.append((title, code, ro, rw, zi, flash_kb, ram_kb, code + ro, rw + zi))
         else:
             missing.append('%s（日志存在但未匹配到 Program Size，可能复编未成功）' % title)
     return rows, missing
@@ -262,11 +265,12 @@ def render(scanned, bad_files, enc_stat, do_eol):
         out.append('未找到 Keil 构建日志，或日志中没有 Program Size 行。')
         out.append('')
     else:
-        out.append('| 板 | Code | RO-data | RW-data | ZI-data | Flash(Code+RO) | RAM(RW+ZI) | 芯片 Flash |')
-        out.append('|---|---|---|---|---|---|---|---|')
-        for title, code, ro, rw, zi, fkb, flash, ram in rows:
-            out.append('| %s | %d | %d | %d | %d | %d 字节（%.1f%% / %d KB） | %d 字节 | %d KB |'
-                       % (title, code, ro, rw, zi, flash, 100.0 * flash / (fkb * 1024), fkb, ram, fkb))
+        out.append('| 板 | Code | RO-data | RW-data | ZI-data | Flash(Code+RO) | RAM(RW+ZI) |')
+        out.append('|---|---|---|---|---|---|---|')
+        for title, code, ro, rw, zi, fkb, rkb, flash, ram in rows:
+            out.append('| %s | %d | %d | %d | %d | %d 字节（%.1f%% / %d KB） | %d 字节（%.1f%% / %d KB） |'
+                       % (title, code, ro, rw, zi, flash, 100.0 * flash / (fkb * 1024), fkb,
+                          ram, 100.0 * ram / (rkb * 1024), rkb))
         out.append('')
         out.append('注：日志为上一次 Keil 复编的结果，改代码后需重编才会更新。')
         out.append('')
@@ -297,6 +301,29 @@ def render(scanned, bad_files, enc_stat, do_eol):
     return '\n'.join(out)
 
 
+def to_json(scanned, bad_files, enc_stat, do_eol):
+    """结构化输出，供工具箱的可视化体检面板读取。"""
+    rows, missing = keil_snapshot()
+    memory = []
+    for title, code, ro, rw, zi, fkb, rkb, flash, ram in rows:
+        memory.append({'title': title, 'code': code, 'ro': ro, 'rw': rw, 'zi': zi,
+                       'flash_kb': fkb, 'ram_kb': rkb, 'flash_used': flash, 'ram_used': ram})
+    return {
+        'tool': 'encoding_guard',
+        'schema': 1,
+        'ok': len(bad_files) == 0,
+        'scanned': scanned,
+        'violations': len(bad_files),
+        'violations_list': [
+            {'file': rel, 'issues': [{'kind': k, 'detail': d} for k, d in iss]}
+            for rel, iss in bad_files],
+        'encoding_stat': enc_stat,
+        'memory': memory,
+        'memory_missing': missing,
+        'eol_checked': bool(do_eol),
+    }
+
+
 def selftest():
     """用几个故意写坏的文件验证检查确实命中。"""
     import shutil
@@ -325,6 +352,11 @@ def selftest():
     results.append(('UTF-8 BOM 应报 BOM',
                     any(k == 'BOM' for k, _ in check_file(p3, {}, False))))
 
+    j = to_json(3, [(p1, [('编码', 'x')])], {'utf-8': 2}, False)
+    results.append(('JSON 输出结构正确',
+                    j['tool'] == 'encoding_guard' and j['scanned'] == 3
+                    and j['violations'] == 1 and j['ok'] is False))
+
     ok = all(r[1] for r in results)
     print('编码守卫自检：%s' % ('PASS' if ok else 'FAIL'))
     for what, good in results:
@@ -338,6 +370,7 @@ def main(argv):
         return selftest()
     quiet = False
     do_eol = False
+    json_mode = False
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '编码守卫报告.md')
     bad = []
     i = 1
@@ -348,6 +381,9 @@ def main(argv):
             i += 1
         elif a == '--eol':
             do_eol = True
+            i += 1
+        elif a == '--json':
+            json_mode = True
             i += 1
         elif a == '--out':
             if i + 1 >= len(argv):
@@ -363,11 +399,11 @@ def main(argv):
     # 参数写错要报错退出，不能静默忽略（否则会跑成一次全量真实扫描并覆盖报告）
     if bad:
         print('未知参数：%s' % ' '.join(bad))
-        print('可用参数：--out <文件> | --quiet | --eol | --selftest')
+        print('可用参数：--out <文件> | --quiet | --eol | --json | --selftest')
         return 2
 
     index_eol, ok = git_index_eol() if do_eol else ({}, False)
-    if do_eol and not ok:
+    if do_eol and not ok and not json_mode:
         print('提示：无法读取 git 索引，换行检查跳过（可能不在 git 仓库或未装 git）。')
 
     scanned = 0
@@ -380,6 +416,10 @@ def main(argv):
         issues = check_file(path, index_eol, do_eol)
         if issues:
             bad_files.append((os.path.relpath(path, ROOT), issues))
+
+    if json_mode:
+        print(json.dumps(to_json(scanned, bad_files, enc_stat, do_eol), ensure_ascii=False))
+        return 1 if bad_files else 0
 
     report = render(scanned, bad_files, enc_stat, do_eol)
     with open(out_path, 'w', encoding='utf-8', newline='\n') as f:

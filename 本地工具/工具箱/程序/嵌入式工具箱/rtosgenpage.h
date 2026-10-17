@@ -54,7 +54,7 @@ private:
     RtosGen::GenOptions        readOptions() const;
     bool    writeGenerated(const QString &path, const QString &text) const;
     void    showConfig();
-    void    ensureFlowList();   /* 懒装载「STM32 速查」的流程卡清单（4MB，别在启动时读） */
+    void    ensureFlowList();   /* 懒装载「单片机手册」的流程卡清单（4MB，别在启动时读） */
 
 protected:
     void showEvent(QShowEvent *e) override;   /* 首次显示本页时才去读速查数据 */

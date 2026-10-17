@@ -38,6 +38,10 @@ public:
     explicit ToolRunPage(const QString &title, const QString &desc, QWidget *parent = nullptr);
 
     void setSteps(const QVector<RunStep> &steps);
+
+    /* 并行模式：多步同时跑（「全量检查」用），输出按 `[步骤名]` 前缀区分。
+       默认串行。并行时总耗时 ≈ 最慢的那一步，而不是各步相加。 */
+    void setParallel(bool on) { m_parallel = on; }
     /* 报告产物的路径。有的是 .md 文件（进度/引脚/RTOS/编码），有的只有产物目录
        （链路仿真只出 hex/log，没有 md），所以允许每页改按钮文字。 */
     void setReportPath(const QString &path);
@@ -61,6 +65,8 @@ private slots:
 
 private:
     void startStep(int index);
+    void startAllParallel();    /* 并行模式：一次把全部步骤拉起来 */
+    void checkParallelDone();   /* 并行模式：全部回来才收尾（含启动失败的情形） */
     void onFinished(int exitCode, int status);
     void append(const QString &text);
     void refreshReportButton();
@@ -75,6 +81,8 @@ private:
     QString              m_lastWorkDir; /* 最后一步运行的工作目录 */
     int                  m_index = 0;
     bool                 m_running = false;
+    bool                 m_parallel = false;                 /* 并行模式（全量检查） */
+    QVector<QProcess *>  m_parallelProcs;                    /* 并行模式下的各步进程 */
     QVector<int>         m_stepCodes;   /* 每步退出码，用于末尾汇总 */
 
     QLabel         *m_alert   = nullptr;

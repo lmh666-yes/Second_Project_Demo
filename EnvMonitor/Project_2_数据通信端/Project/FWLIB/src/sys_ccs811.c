@@ -10,14 +10,14 @@
  *  初始化顺序(手册要求,顺序错器件不出数且不报错):
  *      等 20ms → 读 0x20 HW_ID 自检 → 0xFF 写 4 字节软复位 → 等 20ms
  *      → 轮询 0x00 等 APP_VALID(bit4)= 1 → 查 ERROR(bit0)
- *      → 0xF4 只发命令(APP_START)→ 写 0x01 设测量模式
+ *      → 0xF4 只发命令(APP_START)→ 复读 STATUS 校验 FW_MODE(bit7)→ 写 0x01 设测量模式
  *  APP_START 只发寄存器号、不带数据,必须用 SYS_I2C_WriteCmd();
  *  SYS_I2C_WriteBytes(..., NULL, 0) 在 len == 0 时返回 SYS_I2C_ERR_PARAM。
- *  数据就绪用时间判据,不用状态位,见 ccs811_meas_period_ms()。
+ *  数据就绪先读 STATUS.bit3 DATA_READY,再以时间兜底,见 ccs811_meas_period_ms()。
  *  静态表按总线 SYS_I2C_1/SYS_I2C_2/SYS_I2C_3 各存一份。
  *
  *  寄存器速查(手册寄存器映射):
- *     0x00 STATUS         bit4 APP_VALID / bit3 FW_MODE(部分固件当 DRDY)
+ *     0x00 STATUS         bit7 FW_MODE / bit4 APP_VALID / bit3 DATA_READY
  *                         / bit0 ERROR
  *     0x01 MEAS_MODE      bit6:4 驱动模式(0 idle / 1 1s / 2 10s / 3 60s
  *                         / 4 250ms),bit3 中断使能
@@ -26,7 +26,7 @@
  *                         + 温度 大端 u16(/512 ℃,偏移 +25)
  *     0x11 BASELINE      2 字节,断电保存 / 上电写回
  *     0x20 HW_ID         固定 0x81
- *     0x23 FW_APP_VERSION
+ *     0x23 FW_BOOT_VERSION / 0x24 FW_APP_VERSION
  *     0xE0 ERROR_ID      错误码(0 = 无错)
  *     0xF4 APP_START     只发寄存器号,无数据
  *     0xFF SW_RESET      必须写 4 字节序列 0x11 0xE5 0x72 0x8A
@@ -40,16 +40,20 @@
 #define CCS811_REG_ENV_DATA     0x05
 #define CCS811_REG_BASELINE     0x11
 #define CCS811_REG_HW_ID        0x20
+#define CCS811_REG_FW_BOOT_VER  0x23
+#define CCS811_REG_FW_APP_VER   0x24
 #define CCS811_REG_ERROR_ID     0xE0
 #define CCS811_REG_APP_START    0xF4
 #define CCS811_REG_SW_RESET     0xFF
 
 #define CCS811_STATUS_APP_VALID 0x10U   /* bit4: 片上应用固件已加载 */
 #define CCS811_STATUS_ERROR     0x01U   /* bit0: 器件报错 */
+#define CCS811_STATUS_DATA_READY 0x08U  /* bit3: 新数据就绪(读 0x02 后清 0) */
+#define CCS811_STATUS_FW_MODE   0x80U   /* bit7: 1 = 已进入应用模式 */
 
 /* 数据就绪只看时间
- * CCS811 没有可靠的 DRDY: 部分固件把 STATUS 的 bit3 当 DRDY,并非所有版本都支持。
- * 这里不读 bit3,改用"距上次成功读取的时间 ≥ 当前模式周期"作判据,见 ccs811_meas_period_ms()。 */
+ * CCS811 的 STATUS.bit3 = DATA_READY(手册 Table 7): 新数据就绪置 1、读 0x02 后清 0;手册未承诺它一定在整周期后才置位。
+ * 这里先读 bit3,读不到再改用"距上次成功读取的时间 ≥ 当前模式周期"作判据,见 ccs811_meas_period_ms()。 */
 
 /* 按测量模式给出数据更新周期(ms)
  * MEAS_MODE 的 bit6:4 = 驱动模式,bit3 是中断使能,取值前先掩掉。
@@ -155,14 +159,14 @@ uint8_t SYS_CCS811_InitAddr(SysI2cId_t bus, uint8_t addr7)
      *    不等于 0x81 说明接的不是 CCS811、ADDR 接反或器件未供电,
      *    返回专门错误码,不往下跑。 */
     err = SYS_I2C_ReadByte(bus, addr7, CCS811_REG_HW_ID, &hw);
-    if (err != SYS_I2C_OK) return SYS_CCS811_ERR_HW_ID;
+    if (err != SYS_I2C_OK) return (uint8_t)SYS_CCS811_ERR_HW_ID;
     if (hw != SYS_CCS811_HW_ID_VALUE) return SYS_CCS811_ERR_HW_ID;
 
     /* 3) 软复位 SW_RESET(0xFF ← 0x11 0xE5 0x72 0x8A)
      *    复位后回到确定的初始状态,避免上次运行留下的测量模式。
      *    这是写寄存器号 + 4 字节数据,用 WriteBytes。 */
     err = SYS_I2C_WriteBytes(bus, addr7, CCS811_REG_SW_RESET, sw_reset_seq, 4U);
-    if (err != SYS_I2C_OK) return SYS_CCS811_ERR_HW_ID;
+    if (err != SYS_I2C_OK) return (uint8_t)SYS_CCS811_ERR_SW_RESET;
 
     /* 软复位后必须等 ≥20ms 才能再通信 */
     delay_ms(SYS_CCS811_RESET_DELAY_MS);
@@ -172,12 +176,14 @@ uint8_t SYS_CCS811_InitAddr(SysI2cId_t bus, uint8_t addr7)
      *    提前读 0x02 不报错但会读到全 0 或脏数据,所以宁可超时报错。 */
     t0 = SYS_TICK_GetTick();
     for (;;) {
-        if (SYS_I2C_ReadByte(bus, addr7, CCS811_REG_STATUS, &st) != SYS_I2C_OK) {
-            return SYS_CCS811_ERR_APP_INVALID;
-        }
-        if ((st & CCS811_STATUS_APP_VALID) != 0U) {
+        if (SYS_I2C_ReadByte(bus, addr7, CCS811_REG_STATUS, &st) == SYS_I2C_OK &&
+            (st & CCS811_STATUS_APP_VALID) != 0U) {
             break;                          /* 固件就绪,可以继续 */
         }
+        /* 一次读失败不代表器件不在: 手册 Table 2 Note 2 指出"首次下载新固件后
+         * 第一次复位最长 70ms 内器件可能 NACK"(AN-5 p16 同样警告)。把失败也
+         * 算在超时窗口内,只有真等满 SYS_CCS811_APP_VALID_TIMEOUT_MS 才报错,
+         * 否则 1000ms 的等待窗口形同虚设 */
         if (SYS_TICK_Elapsed(t0) >= SYS_CCS811_APP_VALID_TIMEOUT_MS) {
             return SYS_CCS811_ERR_APP_INVALID;
         }
@@ -199,11 +205,19 @@ uint8_t SYS_CCS811_InitAddr(SysI2cId_t bus, uint8_t addr7)
     err = ccs811_write_cmd(bus, addr7, CCS811_REG_APP_START);
     if (err != SYS_I2C_OK) return (uint8_t)SYS_CCS811_ERR_WRITE_CMD;
 
+    /* 复读 STATUS 确认真的进了应用模式: 手册 AN-5 p10-11 的范例在 APP_START
+     * 之后读回 0x90(bit7 FW_MODE | bit4 APP_VALID);bit7 仍为 0 说明器件还停在
+     * bootloader,此时写 MEAS_MODE 不会出数 */
+    if (SYS_I2C_ReadByte(bus, addr7, CCS811_REG_STATUS, &st) == SYS_I2C_OK &&
+        (st & CCS811_STATUS_FW_MODE) == 0U) {
+        return (uint8_t)SYS_CCS811_ERR_APP_START;
+    }
+
     /* 7) 设测量模式 MEAS_MODE(0x01)
      *    默认 0x10 = 恒供电 + 每 1 秒一次测量(mode 1),可选值见 .h。 */
     err = SYS_I2C_WriteByte(bus, addr7, CCS811_REG_MEAS_MODE,
                             (uint8_t)SYS_CCS811_MEAS_MODE_DEFAULT);
-    if (err != SYS_I2C_OK) return (uint8_t)SYS_CCS811_ERR_PARAM;
+    if (err != SYS_I2C_OK) return (uint8_t)SYS_CCS811_ERR_MEAS_MODE;
 
     /* 启动成功: 把上次读取时间设为当前时刻,
      * 首次 DataReady 会等满一个测量周期再返回 1,避免刚启动就读到旧数据。 */
@@ -223,7 +237,7 @@ int SYS_CCS811_Read(SysI2cId_t bus, SYS_CCS811_Data_t *out)
 
     if (bus >= SYS_I2C_COUNT || out == 0) return SYS_CCS811_ERR_PARAM;
 
-    /* 一次突发读 4 字节(0x02~0x05,寄存器地址自增):
+    /* 一次读 0x02 起连续 4 字节(CCS811 连续读不回地址自增,4 字节来自 0x02 的结果 FIFO):
      * eCO2 与 TVOC 取自同一次算法输出,分开读会得到不同时刻的值。 */
     err = SYS_I2C_ReadBytes(bus, s_addr[bus], CCS811_REG_ALG_RESULT, d, 4U);
     if (err != SYS_I2C_OK) return err;
@@ -259,11 +273,18 @@ int SYS_CCS811_Read(SysI2cId_t bus, SYS_CCS811_Data_t *out)
 uint8_t SYS_CCS811_DataReady(SysI2cId_t bus)
 {
     uint8_t mode = 0U;
+    uint8_t st = 0U;
     uint32_t period;
 
     if (bus >= SYS_I2C_COUNT) return 0U;
 
-    /* 读当前测量模式,换算成数据更新周期
+    /* 主判据: STATUS.bit3 DATA_READY(手册 Table 7,读 0x02 后器件自动清 0) */
+    if (SYS_I2C_ReadByte(bus, s_addr[bus], CCS811_REG_STATUS, &st) == SYS_I2C_OK &&
+        (st & CCS811_STATUS_DATA_READY) != 0U) {
+        return 1U;
+    }
+
+    /* 兜底: 读当前测量模式,换算成数据更新周期
      * 读不到模式时按兜底周期算。 */
     if (SYS_I2C_ReadByte(bus, s_addr[bus], CCS811_REG_MEAS_MODE, &mode) != SYS_I2C_OK) {
         period = SYS_CCS811_DRDY_FALLBACK_MS;
@@ -274,7 +295,7 @@ uint8_t SYS_CCS811_DataReady(SysI2cId_t bus)
         }
     }
 
-    /* 时间判据: 距上次成功读取是否已过一个测量周期
+    /* 时间兜底: 距上次成功读取是否已过一个测量周期
      * 用无符号差值计算,计数器回绕(约 49.7 天)时结果依然正确。 */
     return (SYS_TICK_Elapsed(s_last_read_ms[bus]) >= period) ? 1U : 0U;
 }
@@ -286,12 +307,13 @@ int SYS_CCS811_SetEnvData(SysI2cId_t bus, float temp_c, float humi_rh)
 
     if (bus >= SYS_I2C_COUNT) return SYS_CCS811_ERR_PARAM;
 
-    /* 钳位到手册允许范围: 湿度 0 ~ 100 %RH;温度 -25 ~ 50 ℃
-     * (编码时温度加 25 偏移后为 0 ~ 75)。 */
-    if (humi_rh > 100.0f) humi_rh = 100.0f;
-    if (humi_rh < 0.0f)    humi_rh = 0.0f;
+    /* 手册 AN-5 p18-19 明确禁止往不支持的温湿度字段写 0(编码即 0x0000),
+     * 因此下边界不取 0、取手册默认值 50 %RH / 25 ℃(编码 0x6400);
+     * 上边界按手册量程钳位: 湿度 100 %RH、温度 50 ℃。 */
+    if (humi_rh > 100.0f)  humi_rh = 100.0f;
+    if (humi_rh < 0.5f)    humi_rh = 50.0f;
     if (temp_c > 50.0f)    temp_c = 50.0f;
-    if (temp_c < -25.0f)   temp_c = -25.0f;
+    if (temp_c < -24.5f)   temp_c = 25.0f;
 
     /* 编码: 湿度 = RH × 512;温度 = (T + 25) × 512;各 2 字节大端。
      * 加 0.5f 作整数四舍五入。 */

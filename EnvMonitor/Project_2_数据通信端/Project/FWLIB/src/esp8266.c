@@ -7,12 +7,22 @@
  * 收：把串口环形缓冲里的字节搬进本地回复缓冲；找：esp_find 匹配期望字符串
  * SendCmd 即发送后反复执行收与找，直到命中或超时
  * 采用环形缓冲加字符串查找，不用 DMA/IDLE：AT 回显长度不定，且可能夹杂异步提示
- * 缓冲满后停止接收，需要时先 ESP8266_Flush()；SendCmd 会先清空缓冲 */
+ * 缓冲满后停止接收，需要时先 ESP8266_Flush()；SendCmd 会先清空缓冲
+ *
+ * 并发：AT 交互是"一条命令 + 一段回复"的有状态过程（esp_rx / esp_rx_len /
+ * esp_async 都是模块级共享状态），两个任务同时进来会互相清缓冲、互相匹配到
+ * 对方的关键词。这里用一把递归互斥量把整条命令过程锁住：
+ *   递归   —— SendCmd 内部会调 ESP8266_Flush()，SendData 又会先调 SendCmd，
+ *             同一任务重入不会自锁（照 sys_i2c.c 的做法）
+ *   任务外空操作 —— 中断里、调度器未启动时直接跳过加锁（那时本来也没有并发）
+ * 约定：esp_find / esp_pump / esp_has 是"必须在持锁时调"的内部工具，
+ *       对外接口进入函数就加锁、返回前解锁。 */
 
 
 /* 回复缓冲（ASCII，末尾强制补 '\0'）
- * volatile：Flush / GetRawRx / GetLastReply 与轮询状态机可能在不同任务中调用，
- * 不加限定符时编译器会缓存本函数内未改动的读，读到旧内容 */
+ * 并发：本文件会动这块缓冲的函数都先拿 esp_lock()（见下面），但
+ * GetLastReply 是直接把缓冲当 C 字符串返回，调用方读的时候锁已经放开，
+ * volatile 仍然保留：防止编译器在循环里把 esp_rx 的值缓存成旧内容 */
 static volatile char     esp_rx[ESP8266_RX_BUF_SIZE];
 static volatile uint16_t esp_rx_len = 0;
 static volatile uint8_t  esp_async = 0;      /* 1 = 缓冲里有"主动上报"的数据 */
@@ -22,7 +32,54 @@ static volatile uint8_t  s_cli_online = 0;   /* 1 = 有上位机连进来 */
 static volatile uint8_t  s_cli_link   = 0;   /* 该上位机的连接号（0~4） */
 
 
-/* 内部小工具 */
+/* 并发保护：一把递归互斥量罩住"一条命令一段回复"的整个过程
+ * 用互斥量而不是挂起调度器 / 关中断：SendCmd 最长要等 timeout_ms
+ * （JoinAP 给到 15 秒），挂调度器会把心跳、采集、界面全停掉；
+ * 互斥量只挡住同样用 ESP8266 的任务，等待期间出让 CPU。
+ * 建锁是惰性的，失败（堆不够）时退化成无锁，不会卡死。 */
+#if (defined(__CORTEX_M) || defined(__ARM_ARCH)) && defined(configUSE_PREEMPTION)
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+static SemaphoreHandle_t s_esp_mtx = 0;      /* 惰性创建，第一次加锁时建 */
+
+static void esp_lock(void)
+{
+    BaseType_t sched;
+
+    if (__get_IPSR() != 0U) return;                 /* 中断里不锁：互斥量不能在 ISR 等 */
+
+    sched = xTaskGetSchedulerState();
+    if (sched != taskSCHEDULER_RUNNING) return;     /* 调度器没跑：单线程，无并发 */
+
+    if (s_esp_mtx == 0) {                           /* 临界区保护"判空 + 创建" */
+        taskENTER_CRITICAL();
+        if (s_esp_mtx == 0) {
+            s_esp_mtx = xSemaphoreCreateRecursiveMutex();
+        }
+        taskEXIT_CRITICAL();
+    }
+    if (s_esp_mtx == 0) return;                     /* 建锁失败：退化为无锁 */
+
+    (void)xSemaphoreTakeRecursive(s_esp_mtx, portMAX_DELAY);
+}
+
+static void esp_unlock(void)
+{
+    if (__get_IPSR() != 0U) return;
+    if (xTaskGetSchedulerState() != taskSCHEDULER_RUNNING) return;
+    if (s_esp_mtx == 0) return;
+
+    (void)xSemaphoreGiveRecursive(s_esp_mtx);
+}
+#else
+#define esp_lock()    do { } while (0)
+#define esp_unlock()  do { } while (0)
+#endif
+
+
+/* 内部小工具（调用前必须已持有 esp_lock） */
 
 /* 在缓冲里找关键词，返回其首次出现的下标，找不到返回 -1
  * 返回下标而非存在性：期望词与 ERROR 同时出现时，先出现的才是本命令的结果 */
@@ -84,7 +141,9 @@ static uint8_t esp_has(const char *token)
 
 
 /* 区块 2：基础功能 */
-uint8_t ESP8266_SendCmd(const char *cmd, const char *expect, uint32_t timeout_ms)
+
+/* SendCmd 的本体：调用前必须已持锁，外面由 ESP8266_SendCmd 包装 */
+static uint8_t esp_send_cmd_locked(const char *cmd, const char *expect, uint32_t timeout_ms)
 {
     uint32_t t0;
 
@@ -122,6 +181,18 @@ uint8_t ESP8266_SendCmd(const char *cmd, const char *expect, uint32_t timeout_ms
     return 1U;
 }
 
+/* 发一条 AT 命令 + 等期望回复（多任务安全：整个过程独占模块） */
+uint8_t ESP8266_SendCmd(const char *cmd, const char *expect, uint32_t timeout_ms)
+{
+    uint8_t r;
+
+    esp_lock();
+    r = esp_send_cmd_locked(cmd, expect, timeout_ms);
+    esp_unlock();
+
+    return r;
+}
+
 /* 返回码含义（本文件 SendCmd 一致）：
  *   0 = 命中期望词（成功）
  *   1 = 超时，模块无回复（未接好 / 波特率不对 / 未上电）
@@ -137,18 +208,26 @@ const char *ESP8266_GetLastReply(void)
  * 与 GetLastReply 是同一块缓冲，仅不当 C 字符串看待 */
 uint16_t ESP8266_GetRawRx(const uint8_t **buf)
 {
-    (void)esp_pump();
+    uint16_t n;
 
+    esp_lock();                 /* 与 SendCmd 互斥：不让别的任务在搬移缓冲时插进来 */
+    (void)esp_pump();
+    n = esp_rx_len;
     if (buf != 0) *buf = (const uint8_t *)esp_rx;
-    return esp_rx_len;
+    esp_unlock();
+
+    /* 返回时锁已放开，缓冲随时可能被下一条命令改写，调用方须立刻用完 */
+    return n;
 }
 
 void ESP8266_Flush(void)
 {
+    esp_lock();                 /* 可能被别的任务在解析到一半时调用，必须互斥 */
     SYS_USART_RxFlush(ESP8266_USART);
     esp_rx_len = 0;
     esp_rx[0]  = '\0';
     esp_async  = 0;
+    esp_unlock();
 }
 
 uint8_t ESP8266_Init(uint32_t baudrate)
@@ -348,6 +427,9 @@ uint8_t ESP8266_SendString(const char *str)
 
 uint8_t ESP8266_HasAsyncData(void)
 {
+    uint8_t r;
+
+    esp_lock();
     (void)esp_pump();
 
     /* 出现这些关键词说明模块主动上报，而不是对本条命令的回显 */
@@ -357,7 +439,10 @@ uint8_t ESP8266_HasAsyncData(void)
         esp_has("CLOSED")) {
         esp_async = 1U;
     }
-    return esp_async;
+    r = esp_async;
+    esp_unlock();
+
+    return r;
 }
 
 
@@ -416,6 +501,11 @@ uint8_t ESP8266_ServerHasClient(uint8_t *link_id)
     const uint8_t *rx = 0;
     uint16_t n;
     uint16_t i;
+    uint8_t  r;
+
+    /* 整段扫描都在锁里：GetRawRx 会在锁内再搬一次缓冲（递归锁，同任务可重入），
+     * 保证这一遍扫到的缓冲不会被别的任务的 SendCmd 清掉 */
+    esp_lock();
 
     /* 用二进制安全的取缓冲接口：上位机可能发任意字节，按 C 字符串读会被 0x00 截断 */
     n = ESP8266_GetRawRx(&rx);
@@ -443,7 +533,10 @@ uint8_t ESP8266_ServerHasClient(uint8_t *link_id)
     }
 
     if (link_id != 0) *link_id = s_cli_link;
-    return s_cli_online;
+    r = s_cli_online;
+    esp_unlock();
+
+    return r;
 }
 
 uint8_t ESP8266_SendDataTo(uint8_t link_id, const uint8_t *data, uint16_t len)

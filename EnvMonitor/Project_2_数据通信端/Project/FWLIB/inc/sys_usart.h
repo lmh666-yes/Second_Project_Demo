@@ -71,8 +71,26 @@
 #define SYS_USART_DEFAULT_BAUD     115200
 
 /* -------------------- 中断接收缓冲 -------------------- */
-/* 每路串口的接收环形缓冲大小（字节），仅"中断接收"模式使用 */
-#define SYS_USART_RX_BUF_SIZE      64
+/* 每路串口的接收环形缓冲大小（字节），仅"中断接收"模式使用。
+ *
+ * 下面 6 个 SYS_USARTx_RX_BUF_SIZE 是各路的最终大小，按串口可覆盖:
+ * 哪一路数据量大就把哪一路的宏改大，其余保持默认值，RAM 只按改大的那几路增加。
+ * 例: 只有 USART2(上位机)、USART3(ESP8266) 两路要 256 字节，其余不动:
+ *     #define SYS_USART2_RX_BUF_SIZE   256
+ *     #define SYS_USART3_RX_BUF_SIZE   256
+ *
+ * 代价 : 每改大一路就多占 (新值 - 原值) 字节 RAM（64 改 256 即 +192 字节/路）
+ * 下限 : 不得小于 32（115200bps 下 32 字节只有约 2.8ms 余量，再小必丢字节；
+ *        库内有编译期护栏，写成小于 32 会直接编译报错）
+ * 丢字节 : 缓冲满时丢的是"新来的"字节（不覆盖没读走的旧数据）并计数，
+ *        用 SYS_USART_RxDropCount 查；计数到 65535 后回绕 */
+#define SYS_USART_RX_BUF_SIZE      64      /* 默认值: 下面没单独改的路都用它 */
+#define SYS_USART1_RX_BUF_SIZE     SYS_USART_RX_BUF_SIZE
+#define SYS_USART2_RX_BUF_SIZE     SYS_USART_RX_BUF_SIZE
+#define SYS_USART3_RX_BUF_SIZE     SYS_USART_RX_BUF_SIZE
+#define SYS_UART4_RX_BUF_SIZE      SYS_USART_RX_BUF_SIZE
+#define SYS_UART5_RX_BUF_SIZE      SYS_USART_RX_BUF_SIZE
+#define SYS_USART6_RX_BUF_SIZE     SYS_USART_RX_BUF_SIZE
 
 /* -------------------- 发送等待超时 -------------------- */
 /* 等 TXE / TC 标志的最大循环次数，跑满即放弃本次发送，防止死等卡死任务
@@ -177,7 +195,7 @@ int SYS_USART_ReadByte(SysUsartId_t id);
  *        同一串口的"轮询 / 中断"两种方式只用一种
  * 标准库 : USART_ITConfig(USART_IT_RXNE) + NVIC_Init（中断内 USART_GetITStatus +
  *          USART_ReceiveData，ISR 在库内实现）
- * 中断缓冲大小 : SYS_USART_RX_BUF_SIZE */
+ * 中断缓冲大小 : 每路独立，见区块 1 的 SYS_USARTx_RX_BUF_SIZE（默认 SYS_USART_RX_BUF_SIZE） */
 void SYS_USART_InitRxIT(SysUsartId_t id, uint32_t baudrate);
 
 /* 缓冲区中还有多少字节未读 */
@@ -187,8 +205,26 @@ uint16_t SYS_USART_Available(SysUsartId_t id);
  * 返回 : 0~255 = 读到的字节；-1 = 缓冲区为空 / 参数非法 */
 int SYS_USART_RxRead(SysUsartId_t id);
 
-/* 清空接收缓冲区，丢弃积压数据 */
+/* 清空接收缓冲区，丢弃积压数据
+ * 注意 : 只丢缓冲里的积压数据，不动下面三个丢字节计数（那三个是累计值） */
 void SYS_USART_RxFlush(SysUsartId_t id);
+
+/* 累计丢字节数 = 缓冲满丢的 + 硬件溢出(ORE)丢的
+ * 用途 : 链路对账（发出字节数 - 收到字节数）、运行中看缓冲够不够大
+ * 说明 : 只增不减，到 65535 后回绕；上电、以及每次 SYS_USART_Init 后为 0
+ * 标准库 : USART_GetFlagStatus(USART_FLAG_ORE)（硬件溢出标志，中断里记账） */
+uint16_t SYS_USART_RxDropCount(SysUsartId_t id);
+
+/* 其中"缓冲满"丢掉的字节数（缓冲太小 / 主循环读得太慢）
+ * 用途 : 这个值持续增长就说明要改大本路 SYS_USARTx_RX_BUF_SIZE */
+uint16_t SYS_USART_RxFullCount(SysUsartId_t id);
+
+/* 其中"硬件溢出(ORE)"丢掉的字节数（上一字节还没读走又来新的）
+ * 用途 : 这个值增长说明中断被挡太久（长临界区 / 高优先级中断），加大缓冲无用 */
+uint16_t SYS_USART_RxOverrunCount(SysUsartId_t id);
+
+/* 清零上面三个计数（一般上电后、或每开始一段链路测试前调一次） */
+void SYS_USART_RxDropReset(SysUsartId_t id);
 
 /* ---- 按结束符接收（不定长字符串 / 命令帧） ---- */
 /* 收以 end_ch 结尾的不定长字符串，收帧、拼接、超时、越界保护都在库内

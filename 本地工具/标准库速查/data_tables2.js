@@ -4,7 +4,7 @@
  *  载入时把 STD_TABLES2 追加进 data_tables.js 的 STD_TABLES，
  *  并给“复用功能表”补上“对应外设”列（DFP 只能提取到 AF 宏本身）。
  *  数据以 STM32F407（RM0090 / DS8626）为准；表中“本项目”列指
- *  本仓库 S_N_sys 的两块板（板1 检测端 ZET6、板2 数据通信端 ZGT6）。
+ *  本仓库 EnvMonitor 的两块板（板1 检测端 ZET6、板2 数据通信端 ZGT6）。
  * ============================================================= */
 
 /* ---------------- 1) 结构体成员速查表 ---------------- */
@@ -241,7 +241,7 @@ const T_I2CADDR = {
         ["AT24C02 / 24C02（EEPROM）", "0x50", "0x50 ~ 0x57（A0~A2）", "板1、板2 都使用（I2C1 / I2C2）"],
         ["MPU6050（六轴）", "0x68", "0x68 / 0x69（AD0）", "库内有驱动，未接实物"],
         ["BMP280（气压）", "0x76", "0x76 / 0x77（SDO）", "计划补装；芯片 ID 读 0xD0 = 0x58，BME280 是 0x60"],
-        ["BH1750（光照）", "0x23", "0x23 / 0x5C（ADDR）", "计划补装"],
+        ["BH1750（光照）", "0x23", "0x23 / 0x5C（ADDR）", "计划补装；手册建议 ADDR 经约 100 kΩ 电阻上/下拉，不要直接硬接 VCC/GND（GY-302 模块一般已处理，按实物确认）"],
         ["CCS811（TVOC / eCO2）", "0x5A", "0x5A / 0x5B（ADDR）", "计划补装；只用 3.3 V，WAKE 脚要拉低"],
         ["SHT30（温湿度）", "0x44", "0x44 / 0x45（ADDR）", "计划补装；驱动待补"],
         ["PCF8574（IO 扩展）", "0x20", "0x20 ~ 0x27", "通用器件，本项目未使用"],
@@ -506,24 +506,24 @@ const T_SENSOR = {
     h: ["器件", "接口 / 地址", "寄存器 / 命令 / 函数", "作用", "换算公式与要点"],
     a: [
         ["SHT30 温湿度", "I2C1 · 0x44", "写 0x24 0x00", "单次测量，高重复性，不拉伸", "发完等 15 ms 再读 6 字节"],
-        ["SHT30 温湿度", "I2C1 · 0x44", "写 0x2C 0x06", "单次测量，高重复性，时钟拉伸", "芯片自己把 SCL 拉低到出数，主机不必延时"],
+        ["SHT30 温湿度", "I2C1 · 0x44", "写 0x2C 0x06", "单次测量，高重复性，时钟拉伸", "时钟拉伸：从机把 SCL 拉低直到转换完（tMEAS,h 典型 12.5 ms、最长 15 ms）；板1 的 I2C 超时较短，用 0x2C06 容易先报超时，板1 建议改用 0x2400 并自己等 15 ms"],
         ["SHT30 温湿度", "I2C1 · 0x44", "写 0x30 0xA2", "软复位", "I2C 异常或读数明显不对时先发，等 1.5 ms"],
-        ["SHT30 温湿度", "I2C1 · 0x44", "读 6 字节（无寄存器号）", "温度 2 + CRC 1 + 湿度 2 + CRC 1", "T = -45 + 175×t/65535；RH = 100×h/65535；协议 ×100"],
+        ["SHT30 温湿度", "I2C1 · 0x44", "读 6 字节（无寄存器号）", "温度 2 + CRC 1 + 湿度 2 + CRC 1", "T = -45 + 175×t/65535；RH = 100×h/65535；协议 ×100；每 2 字节数据后跟 1 字节 CRC-8（poly 0x31 = x8+x5+x4+1、初值 0xFF、不反转、末异或 0；手册 Table 19 例：CRC(0xBEEF) = 0x92）"],
         ["BMP280 气压", "I2C1 · 0x76", "读 0xD0", "型号判别", "0x58 = BMP280；0x60 = BME280（寄存器不兼容）"],
         ["BMP280 气压", "I2C1 · 0x76", "读 0x88 ~ 0x9F", "24 字节出厂校准系数", "上电读一次；不读就套公式，气压偏差可达数倍"],
-        ["BMP280 气压", "I2C1 · 0x76", "写 0xF4 CTRL_MEAS", "温度/气压过采样 + 模式", "(osrs_t<<5)|(osrs_p<<2)|mode；驱动默认 (2<<5)|(3<<2)|0x01 = 0x4D"],
-        ["BMP280 气压", "I2C1 · 0x76", "写 0xF5 CONFIG", "待机时间 / IIR 滤波 / SPI3W", "驱动 IIR = 2（系数 4）；0x27 是 ×1/×1/正常，别照抄"],
+        ["BMP280 气压", "I2C1 · 0x76", "写 0xF4 CTRL_MEAS", "温度/气压过采样 + 模式", "(osrs_t<<5)|(osrs_p<<2)|mode；驱动默认 (2<<5)|(3<<2)|0x01 = 0x4D；例：0x27 = osrs_t ×1 / osrs_p ×1 / 正常模式，别照抄"],
+        ["BMP280 气压", "I2C1 · 0x76", "写 0xF5 CONFIG", "待机时间 / IIR 滤波 / SPI3W", "驱动 IIR = 2（系数 4）；本寄存器是 t_sb[7:5] / filter[4:2] / spi3w_en[0]，与过采样无关"],
         ["BMP280 气压", "I2C1 · 0x76", "读 0xF7 ~ 0xFC", "气压 3 字节 + 温度 3 字节", "adc = (b0<<12)|(b1<<4)|(b2>>4)；先算温度 t_fine 再算气压；协议 ×10"],
         ["BMP280 气压", "I2C1 · 0x76", "SYS_BMP280_Read(bus, &d)", "驱动一次读全", "d.temp_c / press_hpa / altitude_m；SYS_BMP280_Init() 先调用"],
-        ["BH1750 光照", "I2C1 · 0x23", "写 0x01 再写 0x10", "上电 + 连续 H 分辨率", "不发 0x01 时读回恒为 0（能扫到地址但没数据）"],
-        ["BH1750 光照", "I2C1 · 0x23", "读 2 字节（无寄存器号）", "照度原始值（高字节在前）", "lux = raw ÷ 1.2；0xFFFF = 过饱和（54612 lx 是下限）"],
+        ["BH1750 光照", "I2C1 · 0x23", "写 0x10", "连续 H 分辨率（0x01 上电可省）", "0x01 上电命令可省略（手册原话 Power On Command is possible to omit）；真正必须的是 0x10/0x20 等测量命令，发完要等一次转换（H 分辨率约 120 ms）才有有效值"],
+        ["BH1750 光照", "I2C1 · 0x23", "读 2 字节（无寄存器号）", "照度原始值（高字节在前）", "lux = raw ÷ 1.2（默认 MTreg = 69，上限约 54612 lx）；0xFFFF = 过饱和；改 MTreg（31~254）后可测 0.11 lx ~ 100000 lx"],
         ["BH1750 光照", "I2C1 · 0x23", "写 0x13", "连续 L 分辨率，量程 ×4", "强光过饱和时换；分辨率降到 4 lx、约 16 ms"],
         ["BH1750 光照", "I2C1 · 0x23", "写 0x40|(mt>>5) 与 0x60|(mt&31)", "改积分时间 MTreg", "出厂 69，有效 31~254；换算 lux = raw/1.2×(69/MTreg)"],
         ["CCS811 空气", "I2C1 · 0x5A", "读 0x20", "HW_ID 自检", "须为 0x81；先拉低 WAKE 脚，否则地址都扫不到"],
         ["CCS811 空气", "I2C1 · 0x5A", "写 0xF4（只发命令）", "APP_START 进应用模式", "用 SYS_I2C_WriteCmd；不发则结果寄存器全 0"],
         ["CCS811 空气", "I2C1 · 0x5A", "写 0x01 = 0x10", "MEAS_MODE：恒供电每秒一次", "0x00 空闲 / 0x20 脉冲 10 s / 0x30 60 s / 0x40 250 ms"],
         ["CCS811 空气", "I2C1 · 0x5A", "读 0x02（4 字节）", "eCO2 2 字节 + TVOC 2 字节（大端）", "TVOC 原值进协议；eCO2 只在界面显示"],
-        ["CCS811 空气", "I2C1 · 0x5A", "读 / 写 0x11", "BASELINE 基线（2 字节）", "存 Flash，下次上电写回可跳过 48 h 老化"],
+        ["CCS811 空气", "I2C1 · 0x5A", "读 / 写 0x11", "BASELINE 基线（2 字节）", "存 Flash，下次上电等读数稳定后再写回（须同器件、同模式）；不能替代老化，且要周期性重存：前 500 小时每 24~48 h 一次，之后每 5~7 天"],
         ["CCS811 空气", "I2C1 · 0x5A", "读 0xE0", "ERROR_ID 错误码", "0x01 写非法 / 0x02 读非法 / 0x04 模式非法 / 0x08 超量程 / 0x10 加热器 / 0x20 加热电压"],
         ["MQ-135 空气", "ADC 通道", "SYS_ADC_ReadAvg(ADCx, ch, 8)", "读原始 ADC（8 次平均）", "5 V 供电；AO 可能接近 5 V，须分压到 ≤ 3.3 V"],
         ["MQ-135 空气", "ADC 通道", "Rs = (VCC − Vout) / Vout × RL", "敏感体电阻", "ratio = Rs/R0，洁净空气 ≈ 1；ppm 需先标定 R0，个体差异大"],
@@ -558,7 +558,7 @@ const T_DRIVER = {
        "外设驱动速查：搜 驱动一览 头文件 引脚 API 板1 板2 各模块名。",
     h: ["模块 / 器件", "所属板", "头文件", "关键 API（真实存在的）", "引脚 / 地址 / 总线", "备注 / 易错点"],
     a: [
-        ["ADC 采集", "板1", "sys_adc.h", "SYS_ADC_Read / SYS_ADC_ReadAvg / SYS_ADC_DmaScanInit / SYS_ADC_ReadMilliVolt", "ADC3_IN5 · PF7（光敏）；VREF 宏 SYS_ADC_VREF_MV = 3300", "采样 480 周期、SYS_ADC_AVG_TIMES = 8；换算用 SYS_ADC_ReadMilliVolt 而不是手写 4096 比例"],
+        ["ADC 采集", "板1", "sys_adc.h", "SYS_ADC_Read / SYS_ADC_ReadAvg / SYS_ADC_DmaScanInit / SYS_ADC_ReadMilliVolt", "ADC3_IN5 · PF7（光敏 / MQ-135 共用同一根脚，库里有 SYS_ADC_LIGHT_* 与 SYS_ADC_MQ135_* 两套宏，二选一）；VREF 宏 SYS_ADC_VREF_MV = 3300", "采样 480 周期、SYS_ADC_AVG_TIMES = 8；换算用 SYS_ADC_ReadMilliVolt 而不是手写 4096 比例"],
         ["位带操作", "板1", "sys_bitband.h", "PAout / PAin / BITBAND_PERIPH / GPIO_BB_OUT", "地址区 0x42000000（外设）/ 0x22000000（SRAM）", "单独写一个位不影响同端口其它位；只对 SRAM 与外设区有效，不能指向任意变量"],
         ["时钟配置", "板1", "sys_clock.h", "SYS_CLK_GetFreq / SYS_CLK_GetBusFreq / SYS_CLK_Switch / SYS_CLK_ToHighSpeed", "HCLK ≤ SYS_CLK_MAX_HCLK = 168000000；PCLK1 ≤ 42 MHz、PCLK2 ≤ 84 MHz", "改总线分频后 USART/CAN 的波特率跟着变，必须重新算"],
         ["DMA", "板1", "sys_dma.h", "SYS_DMA_PeriphToMem / SYS_DMA_MemToPeriph / SYS_DMA_SetCallback / SYS_DMA_WaitDone", "流由调用方传入（DMA_Stream_TypeDef *）", "外设与流要一一对应（ADC1 只能用 DMA2_Stream0/4），传错流不会报错只是不动"],
@@ -571,7 +571,7 @@ const T_DRIVER = {
         ["LED", "板1", "led.h", "LED_Init / LED_On / LED_Toggle / LED_Marquee / LED_ShowHex", "LED0 = PF9、LED1 = PF10、LED2 = PE13、LED3 = PE14（LED_COUNT = 4）", "板2 只有 LED0 / LED1 两个，LED_COUNT = 2；低电平点亮 LED_ACTIVE_LOW = 1"],
         ["蜂鸣器", "板1", "beep.h", "BEEP_Init / BEEP_Beep / BEEP_SOS / BEEP_AsyncStart / BEEP_Update", "PF8（顶到 3.3 V 才响，BEEP_ACTIVE_LOW = 0）", "异步模式必须周期性调 BEEP_Update；改用 SYS_TIM_Tone* 时就不要用这里的 GPIO 版本"],
         ["延时", "板1", "delay.h", "delay_ms / delay_us / delay_ns / delay_ms_dwt", "无独立引脚（走 SYSTICK / DWT）", "中断里不要用长延时；板2 的同名头文件多了 DWT_GetUs / DWT_ElapsedUs 两个测时函数"],
-        ["LoRa E22 模块", "板1", "lora_e22.h", "LORA_E22_Init / LORA_E22_Send / LORA_E22_Recv / LORA_E22_SetMode / LORA_E22_SetBaud", "命令行走 SYS_USART_3；M0 = PB0、M1 = PB1、AUX = PB2 · 默认 9600", "板2 走 SYS_USART_6 且 M0/M1/AUX 换成 PE5/PE6/PE7；M0/M1 切换后再发 AT 要等 AUX 拉低"],
+        ["LoRa E22 模块", "板1", "lora_e22.h", "LORA_E22_Init / LORA_E22_Send / LORA_E22_Recv / LORA_E22_SetMode / LORA_E22_SetBaud", "命令行走 SYS_USART_3；M0 = PB0、M1 = PB1、AUX = PB2 · 默认 9600", "板2 走 SYS_USART_6 且 M0/M1/AUX 换成 PE5/PE6/PE7；M0/M1 切换要等 AUX 变高、再过 2 ms 才发 AT（手册：模式切换只在 AUX 高电平时有效，切换后至少 2 ms 才真正生效）"],
         ["以太网 MAC", "板1", "sys_eth.h", "SYS_ETH_Init / SYS_ETH_SendFrame / SYS_ETH_RecvFrame / SYS_ETH_LinkUp", "RMII：REF_CLK PA1、MDIO PA2、MDC PC1、CRS_DV PA7、TXD0 PG13、TXD1 PG14、TX_EN PG11", "SYS_ETH_ENABLE = 0 时后面的 PHY 函数整个不编译，链接报未定义先看这个宏"],
         ["Modbus RTU 从机", "板1", "sys_modbus.h", "SYS_MODBUS_Init / SYS_MODBUS_Poll / SYS_MODBUS_SetTxHook / SYS_MODBUS_Counters", "串口由调用方传（SYS_MODBUS_Init(uart, addr, baud, ...)）", "用 RS485 时必须在 TxHook 里翻 DE 脚；不做 3.5 字符静默间隔判断会把两帧粘成一帧"],
         ["MPU6050 六轴", "板1", "sys_mpu6050.h", "SYS_MPU6050_Init / SYS_MPU6050_Read / SYS_MPU6050_ReadPitchRoll / SYS_MPU6050_GetID", "I2C · 地址 0x68（SYS_I2C_ADDR_MPU6050）", "每个 API 第一个参数都是 SysI2cId_t 总线号，切总线不用改宏；量程宏 SYS_MPU6050_GYRO_FS / ACCEL_FS 都为 0（±250 dps / ±2 g）"],
@@ -606,11 +606,11 @@ const T_DRIVER = {
         ["PID 闭环", "板2", "pid.h", "PID_Init / PID_Update / PID_SetOutputLimit / PID_GetTerms", "无独立引脚（纯软件模块）", "输出默认限幅 −100~+100；只有在输出饱和时才需要抗积分饱和，阈值用 PID_SetSeparateThreshold 设"],
         ["RGB 5×5 灯板", "板2", "rgb5x5.h", "RGB5X5_SetPixel / RGB5X5_SetPixelHSV / RGB5X5_Show / RGB5X5_SetBrightness", "数据线 PC5（RGB5X5_DATA_PIN）· 25 颗灯", "GRB 顺序（RGB5X5_COLOR_ORDER_GRB = 1）；改完颜色必须调 RGB5X5_Show，复位低电平要 ≥ 300 µs"],
         ["外扩 SRAM", "板2", "sram.h", "SRAM_Init / SRAM_ReadWords / SRAM_WriteBytes / SRAM_SpeedTestUs / SRAM_Test", "FSMC Bank1 NORSRAM3 · 基址 0x68000000 · 1 MB（512 K 字）", "地址建立 0 / 数据建立 12 个 HCLK；直接当普通数组用之前先调 SRAM_Init，否则一读就硬件错误"],
-        ["ADC 采集（板2）", "板2", "sys_adc.h", "SYS_ADC_Read / SYS_ADC_ReadAvg / SYS_ADC_DmaScanInit / SYS_ADC_ReadMilliVolt", "ADC3_IN5 · PF7（光敏）、ADC1_IN5 · PA5（MQ-135）", "比板1 多一组 ADC1 通道宏；SYS_ADC_CONFLICT 在同一个 ADC 被两处初始化时计数"],
+        ["ADC 采集（板2）", "板2", "sys_adc.h", "SYS_ADC_Read / SYS_ADC_ReadAvg / SYS_ADC_DmaScanInit / SYS_ADC_ReadMilliVolt", "ADC3_IN5 · PF7（光敏）、ADC1_IN5 · PA5（J8 跳线共享：R_ADC 电位器 / P_TOUCH 触摸 / TAD1 = NTC-PT100）", "比板1 多一组 ADC1 通道宏；SYS_ADC_CONFLICT 在同一个 ADC 被两处初始化时计数"],
         ["位带操作（板2）", "板2", "sys_bitband.h", "PAout / PGin / BITBAND_SRAM / GPIO_BB_OUT", "地址区 0x42000000（外设）/ 0x22000000（SRAM）", "与板1 同名同实现；位带别名区对 DWT、FSMC 等区不生效"],
-        ["气压温度 BMP280", "板2", "sys_bmp280.h", "SYS_BMP280_Read / SYS_BMP280_ReadRaw / SYS_BMP280_Trigger / SYS_BMP280_AltitudeM", "I2C1 · 0x76（SDO 接地）/ 0x77（接 VDD）", "0xD0 芯片 ID 必须为 0x58；驱动默认 osrs_t=2、osrs_p=3、IIR=2，强制定时模式延时 15 ms"],
+        ["气压温度 BMP280", "板2", "sys_bmp280.h", "SYS_BMP280_Read / SYS_BMP280_ReadRaw / SYS_BMP280_Trigger / SYS_BMP280_AltitudeM", "I2C1 · 0x76（SDO 接地）/ 0x77（接 VDD）", "0xD0 芯片 ID 必须为 0x58；驱动默认 osrs_t=2、osrs_p=3、IIR=2，强制定时模式延时 15 ms；板1 也是同一套驱动，引导教程以板1 为例"],
         ["CAN 总线", "板2", "sys_can.h", "SYS_CAN_Init / SYS_CAN_Transmit / SYS_CAN_Receive / SYS_CAN_FilterById / SYS_CAN_GetErrors", "CAN1 · TX = PA12、RX = PA11 · APB1 42 MHz", "没有 120 Ω 终端电阻时收发全错；滤波器不放行就一条都收不到；接收队列 8 帧，满了丢帧计数在 SYS_CAN_DropCount"],
-        ["空气质量 CCS811", "板2", "sys_ccs811.h", "SYS_CCS811_Read / SYS_CCS811_DataReady / SYS_CCS811_SetEnvData / SYS_CCS811_GetBaseline", "I2C1 · 0x5A（ADDR 接地）/ 0x5B", "HW_ID 必须 0x81，之后要发 APP_START 才出数据；基线存起来下次写回可跳过 48 小时老化"],
+        ["空气质量 CCS811", "板2", "sys_ccs811.h", "SYS_CCS811_Read / SYS_CCS811_DataReady / SYS_CCS811_SetEnvData / SYS_CCS811_GetBaseline", "I2C1 · 0x5A（ADDR 接地）/ 0x5B", "HW_ID 必须 0x81，之后要发 APP_START 才出数据；基线可存 Flash，但要等读数稳定后写回、按模式分别存，且不能替代老化（手册 AN-2：前 500 小时每 24~48 h 重存一次，之后每 5~7 天）"],
         ["时钟配置（板2）", "板2", "sys_clock.h", "SYS_CLK_GetFreq / SYS_CLK_GetBusFreq / SYS_CLK_Switch / SYS_CLK_SetBusDiv", "HCLK ≤ 168 MHz、PCLK1 ≤ 42 MHz、PCLK2 ≤ 84 MHz", "和板1 同一套 API；切 HSE 失败会返回 SYS_CLK_ERR_HSE 并停在 HSI，串口波特率会整体偏掉"],
         ["DAC 模拟输出", "板2", "sys_dac.h", "SYS_DAC_SetValue / SYS_DAC_SetMilliVolt / SYS_DAC_SineInit / SYS_DAC_DmaInit", "DAC1 = PA4、DAC2 = PA5（SYS_DAC2_ENABLE = 0 默认关闭）", "PA5 同时是 SPI1_SCK 和 ADC1_IN5，三者只能留一个；正弦表 32 点，定时器 TIM6 触发"],
         ["DMA（板2）", "板2", "sys_dma.h", "SYS_DMA_PeriphToMem / SYS_DMA_SetCallback / SYS_DMA_Remain / SYS_DMA_GetError", "流由调用方传入（DMA_Stream_TypeDef *）", "和板1 同名同实现；错误统计用 SYS_DMA_ErrCount / SYS_DMA_LastErrStream 定位"],

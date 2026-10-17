@@ -23,6 +23,13 @@
  *
  * 调用顺序：W25QXX_Init(0) 成功后再 W25QXX_LogInit()，之后才能读写。
  *
+ * 并发：写任务（缓存）与读任务（补传）可以并发调用，模块内用一把互斥量保护，
+ * 调用方不用自己加锁；但只能在**任务**里调（中断里不能拿互斥量），
+ * 读接口要能容忍 ERR_EMPTY / ERR_CORRUPT（重试或跳过这一条）。
+ * 早先用挂起调度器（vTaskSuspendAll）保护，擦一个扇区最坏 400ms、
+ * 清日志 16 个扇区更久，会把整个系统停住；现在只挡住同样用本模块的任务，
+ * 心跳 / 采集 / 界面等无关任务照常跑。
+ *
  * 移植：Flash 型号改 w25qxx.h；日志区大小改 W25QXX_LOG_SECTORS；
  * 单条容量改 W25QXX_LOG_SLOT_SIZE；起始地址改 w25qxx.h 分区表中的 W25QXX_ADDR_LOG。
  */
@@ -53,6 +60,7 @@
 #define W25QXX_LOG_ERR_FLASH    4U      /* Flash 没应答 / 读改写失败 */
 #define W25QXX_LOG_ERR_EMPTY    5U      /* 里面还没东西，或序号超出范围 */
 #define W25QXX_LOG_ERR_CORRUPT  6U      /* 校验和不对，这条数据坏了 */
+#define W25QXX_LOG_ERR_BUSY     7U      /* 正在分步清日志，本条没写，稍后重试 */
 
 
 /* 区块 2：基础功能 */
@@ -67,7 +75,7 @@ uint8_t W25QXX_LogInit(void);
  * 参数：ts   时间戳，单位由调用方约定，仅原样保存
  *       data 数据首地址，数据可含 0x00
  *       len  数据字节数，范围 0 ~ W25QXX_LOG_PAYLOAD(20)
- * 返回：W25QXX_LOG_OK / W25QXX_LOG_ERR_*
+ * 返回：W25QXX_LOG_OK / W25QXX_LOG_ERR_*（含 ERR_BUSY：正在分步清日志）
  * 单条耗时约 1ms；写满一圈自动覆盖最旧的一条 */
 uint8_t W25QXX_LogWrite(uint32_t ts, const uint8_t *data, uint16_t len);
 
@@ -79,8 +87,19 @@ uint8_t W25QXX_LogWriteStr(uint32_t ts, const char *text);
 uint16_t W25QXX_LogCount(void);
 
 /* 全部清除：16 个扇区各擦一次，约 0.8 秒，不宜频繁调用
- * 返回：W25QXX_LOG_OK / W25QXX_LOG_ERR_FLASH */
+ * 说明：内部就是反复调 W25QXX_LogClearStep()，每擦一个扇区放一次锁，
+ *       无关任务照常跑；期间要写日志的任务拿到 ERR_BUSY，读接口拿到 ERR_EMPTY
+ * 返回：W25QXX_LOG_OK / W25QXX_LOG_ERR_* */
 uint8_t W25QXX_LogClear(void);
+
+/* 分步清日志（上位机"清缓存"命令用这个，不长时间占着本模块）
+ * 用法：反复调用直到 *done 变成 1；两次调用之间可以去做别的事（刷界面、喂心跳）
+ * 参数：done 出参，1 = 全部清完；0 = 还没清完，接着调
+ * 返回：W25QXX_LOG_OK / W25QXX_LOG_ERR_PARAM（done 传 0）
+ *       / W25QXX_LOG_ERR_NOT_INIT / W25QXX_LOG_ERR_FLASH
+ * 说明：第一次调用就把条数 / 写指针 / 序号 / 丢失计数归零（读接口立刻变空），
+ *       并置"清理中"标记；中途失败会解除标记，已擦的扇区保持全空 */
+uint8_t W25QXX_LogClearStep(uint8_t *done);
 
 
 /* 区块 3：扩展功能 */

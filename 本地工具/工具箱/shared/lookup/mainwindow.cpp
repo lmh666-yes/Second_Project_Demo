@@ -70,7 +70,7 @@ const int kHotTopicN  = int(sizeof(kHotTopics)  / sizeof(kHotTopics[0]));
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
 {
-    setWindowTitle(QStringLiteral("STM32 速查"));
+    setWindowTitle(QStringLiteral("单片机手册"));
     buildUi();
 
     /* 恢复上次板块 */

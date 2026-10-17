@@ -13,7 +13,7 @@
 #include <functional>
 
 #include "apppaths.h"     /* 与检查器共读同一份规则表：速查数据/rules/ */
-#include "lookupdata.h"   /* 从「STM32 速查」的 dataset.json 取补全素材 */
+#include "lookupdata.h"   /* 从「单片机手册」的 dataset.json 取补全素材 */
 
 namespace RtosGen {
 
@@ -481,7 +481,7 @@ QStringList flowConflicts(const QStringList &flowPicks)
         return out;   /* 没勾卡就不碰速查数据 */
     QString err;
     if (!LookupData::load(&err)) {
-        out << QStringLiteral("[参考卡] 勾了 %1 张卡，但读不到「STM32 速查」数据，跨卡冲突检查做不了：%2")
+        out << QStringLiteral("[参考卡] 勾了 %1 张卡，但读不到「单片机手册」数据，跨卡冲突检查做不了：%2")
                    .arg(flowPicks.size()).arg(err);
         return out;
     }
@@ -681,7 +681,7 @@ static QString upperIdent(const QString &name)
     return s.toUpper();
 }
 
-/* ---------------- 补全素材：都来自「STM32 速查」的 dataset.json ---------------- */
+/* ---------------- 补全素材：都来自「单片机手册」的 dataset.json ---------------- */
 
 /* 符号级补全：把速查里查到的函数原型与用途，做成一撮注释，贴在任务桩里。
    查不到就明说查不到（不要静默留白，否则用户以为功能没生效）。 */
@@ -691,14 +691,14 @@ static QStringList apiHintLines(const QString &hint, const QString &indent)
     QString err;
     if (!LookupData::load(&err)) {
         /* 数据读不到要明说，别报成"没查到"——那是两回事 */
-        L << QStringLiteral("%1/* 速查提示[%2]：读不到「STM32 速查」数据，未取原型").arg(indent, hint);
+        L << QStringLiteral("%1/* 速查提示[%2]：读不到「单片机手册」数据，未取原型").arg(indent, hint);
         L << QStringLiteral("%1   %2 */").arg(indent, err);
         return L;
     }
     const QVector<LookupData::FuncHit> hits = LookupData::findFuncs(hint, 6);
-    L << QStringLiteral("%1/* 速查提示[%2]：STM32 速查里可查到的相关函数").arg(indent, hint);
+    L << QStringLiteral("%1/* 速查提示[%2]：单片机手册里可查到的相关函数").arg(indent, hint);
     if (hits.isEmpty()) {
-        L << QStringLiteral("%1   —— 没查到（换个关键词，或在速查页里搜一下） */").arg(indent);
+        L << QStringLiteral("%1   —— 没查到（换个关键词，或在手册页里搜一下） */").arg(indent);
         return L;
     }
     for (const LookupData::FuncHit &h : hits) {
@@ -722,7 +722,7 @@ static QString flowCodeSection(const QStringList &picks, QStringList *initCalls,
     QString err;
     if (!LookupData::load(&err)) {
         /* 勾了卡却取不到数据 → 明写一条，别让用户以为勾选没生效 */
-        return QStringLiteral("/* 参考代码段：读不到「STM32 速查」数据，勾选的卡未并入\n   %1 */")
+        return QStringLiteral("/* 参考代码段：读不到「单片机手册」数据，勾选的卡未并入\n   %1 */")
             .arg(err);
     }
 
@@ -735,7 +735,7 @@ static QString flowCodeSection(const QStringList &picks, QStringList *initCalls,
 
     QStringList L;
     L << QStringLiteral("/* =============== 外设初始化参考代码"
-                        "（整段取自「STM32 速查」流程卡） ===============");
+                        "（整段取自「单片机手册」流程卡） ===============");
     L << QStringLiteral("   每块都是流程卡里可直接搬用的代码，已去掉 #include 与其中的 main()；");
     L << QStringLiteral("   请按需裁剪，并在 main() 里调用其中的初始化函数。 */");
 
@@ -1444,7 +1444,7 @@ int selftest(QStringList &log, const QString &envMonitorRoot)
            QStringLiteral("解析任务行：周期 0 判为事件"));
     expect(pt[2].name == QStringLiteral("Comm"), QStringLiteral("解析任务行：去掉序号前缀"));
 
-    /* ---------------- 补全素材（取自「STM32 速查」dataset.json） ----------------
+    /* ---------------- 补全素材（取自「单片机手册」dataset.json） ----------------
        两条都要同时验"数据找得到"和"生成物真的含预期片段"：
        只断言数据装了，数据一挪窝功能就静默失效；只断言生成物含片段，又测不到数据来源。 */
     {
@@ -1453,7 +1453,7 @@ int selftest(QStringList &log, const QString &envMonitorRoot)
         expect(lok, QStringLiteral("速查数据可定位并装载（%1）")
                         .arg(lok ? LookupData::path() : lerr));
         expect(LookupData::size() > 900,
-               QStringLiteral("速查条目数 > 900（实际 %1）").arg(LookupData::size()));
+               QStringLiteral("手册条目数 > 900（实际 %1）").arg(LookupData::size()));
 
         /* 符号级：按前缀查 xQueueCreate，要回"带原型"的条目 */
         const QVector<LookupData::FuncHit> fh =

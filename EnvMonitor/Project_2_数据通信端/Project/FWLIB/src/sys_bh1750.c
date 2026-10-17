@@ -53,7 +53,7 @@ uint8_t SYS_BH1750_InitAddr(SysI2cId_t bus, uint8_t addr7)
     if (SYS_I2C_WriteCmd(bus, addr7, SYS_BH1750_CMD_POWER_ON) != SYS_I2C_OK) {
         return SYS_BH1750_ERR_NO_DEVICE;
     }
-    delay_ms(1U);                       /* 手册：上电后等 1ms 才能发下一条命令 */
+    delay_ms(1U);                       /* 上电后留 1ms 余量（手册未规定此值；上电序列只要求 VCC/DVI 复位段 ≥1µs） */
 
     /* 启动连续 H 分辨率测量并等首次转换完成，返回时读数有效 */
     if (SYS_I2C_WriteCmd(bus, addr7, SYS_BH1750_CMD_CONT_H_RES) != SYS_I2C_OK) {

@@ -858,7 +858,7 @@ GPIO_OutSet(GPIOB, GPIO_Pin_14);              /* 释放 */
 
 ### 5.16 sys_adc —— ADC（单次 / 连续 / 扫描 + DMA）
 
-> 文件：`sys_adc.h / sys_adc.c` ｜ 本板光敏：PF7 = ADC3_IN5（`SYS_ADC_LIGHT_*` 宏）
+> 文件：`sys_adc.h / sys_adc.c` ｜ 本板 ADC：PF7 = ADC3_IN5（光敏 `SYS_ADC_LIGHT_*` 与 MQ-135 `SYS_ADC_MQ135_*` 两套宏指向同一根脚，接哪个器件用哪套）
 
 | 函数 | 说明 |
 |---|---|

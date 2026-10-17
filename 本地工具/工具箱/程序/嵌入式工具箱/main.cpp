@@ -1,6 +1,8 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QHash>
 #include <QString>
@@ -8,9 +10,11 @@
 #include <QStringList>
 #include <QTextStream>
 
+#include "dashboardcanvas.h"
 #include "docbuilder.h"
 #include "lookupcli.h"
 #include "mainwindow.h"
+#include "overviewpage.h"
 #include "protocol.h"
 #include "rtosgen.h"
 #include "theme.h"
@@ -78,9 +82,15 @@ static int runCli(const QStringList &args)
     const QString tdir = ToolboxWindow::toolsDirPath();
     bool dirOk = !tdir.isEmpty();
     if (dirOk) {
+        /* 抽查每个运行器页真正要用的脚本：漏一个就等于"该页点了运行才发现脚本不在"。
+           新增工具时这里要同步补上（LoRa 检查 / 固件预算 就是这么补进来的）。 */
         dirOk = QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/进度跟踪/progress_scan.py")))
              && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/链路仿真/link_sim.py")))
              && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/编码守卫/encoding_guard.py")))
+             && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/RTOS检查/rtos_check.py")))
+             && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/引脚规划/pin_planner.py")))
+             && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/LoRa检查/lora_check.py")))
+             && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/固件预算/firmware_budget.py")))
              && QDir(tdir).exists(QStringLiteral("shared"));
     }
     out << QString::fromUtf8("工具箱目录解析：")
@@ -104,16 +114,16 @@ static int runCli(const QStringList &args)
             ++fail;
     }
 
-    /* STM32 速查（原独立程序，已并入本工具箱）：数据装载、条目计数、
+    /* 单片机手册（原独立程序，已并入本工具箱）：数据装载、条目计数、
        6 例搜索、28 例基线逐行回归——这些断言原样平移过来，作为回归闸门。
        数据在「工具箱/速查数据/data/dataset.json」，由网页版那条链导出；
        这里顺带测了 AppPaths 能不能按工具箱结构把这份数据定位出来（挪窝会直接 FAIL）。 */
-    out << QString::fromUtf8("\n── STM32 速查（数据与搜索基线）──\n");
-    out.flush();          /* 速查 CLI 用自己的 QTextStream(stdout)，不先冲会在输出里串行 */
+    out << QString::fromUtf8("\n── 单片机手册（数据与搜索基线）──\n");
+    out.flush();          /* 手册 CLI 用自己的 QTextStream(stdout)，不先冲会在输出里串行 */
     MainWindow lw;
     const int lfail = runLookupCli(args, &lw);
     if (lfail < 0) {
-        out << QString::fromUtf8("FAIL 速查 CLI 未识别 --selftest\n");
+        out << QString::fromUtf8("FAIL 手册 CLI 未识别 --selftest\n");
         ++fail;
     } else {
         fail += lfail;
@@ -138,6 +148,43 @@ int main(int argc, char *argv[])
     if (args.contains(QStringLiteral("--gui-smoke"))) {
         ToolboxWindow w;
         return uiSmoke::run(&w, args);
+    }
+
+    /* 体检面板截图：直接构造总览页、同步取数、渲染成 PNG。
+       用途：验证可视化面板真的画出了东西（GUI 冒烟只证明"没崩"，看不到画没画）。
+       用法：Toolbox.exe --shot-overview <输出.png> */
+    if (args.contains(QStringLiteral("--shot-overview"))) {
+        QString path = QStringLiteral("overview.png");
+        for (int i = 0; i + 1 < args.size(); ++i) {
+            if (args[i] == QStringLiteral("--shot-overview"))
+                path = args[i + 1];
+        }
+        OverviewPage page(ToolboxWindow::toolsDirPath());
+        page.resize(1180, 960);
+        page.show();
+        QMetaObject::invokeMethod(&page, "refresh", Qt::DirectConnection);
+
+        /* refresh 是异步的（各检查器并行跑）：跑事件循环等它们回来，最多 25s，
+           以画布命中区被填充作为完成判据。 */
+        DashboardCanvas *canvas = page.findChild<DashboardCanvas *>();
+        QElapsedTimer et;
+        et.start();
+        while (et.elapsed() < 25000) {
+            QApplication::processEvents(QEventLoop::AllEvents, 50);
+            if (canvas && canvas->hitCount() > 0)
+                break;
+        }
+        QApplication::processEvents();
+
+        /* 断言交互区域已登记：卡片 6 张 + 两板热力图格，取数成功时必然 > 6。
+           命中区一旦变空，悬停与点击都会失灵，所以在这里兜住。 */
+        if (canvas) {
+            const int n = canvas->hitCount();
+            QTextStream(stdout) << QString::fromUtf8("交互命中区: ") << n << "\n";
+            if (n < 6)
+                return 2;
+        }
+        return page.grab().save(path) ? 0 : 1;
     }
 
     if (!args.isEmpty()) {

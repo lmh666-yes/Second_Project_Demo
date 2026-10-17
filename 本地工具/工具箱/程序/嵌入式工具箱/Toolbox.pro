@@ -10,11 +10,14 @@ SOURCES += \
     main.cpp \
     toolboxwindow.cpp \
     toolrunpage.cpp \
+    scaffoldpage.cpp \
     rtosgen.cpp \
     rtosgenpage.cpp \
     overviewpage.cpp \
+    dashboardcanvas.cpp \
     ../../shared/common/settings.cpp \
     ../../shared/common/theme.cpp \
+    ../../shared/common/pyfind.cpp \
     ../../shared/kickstart/docbuilder.cpp \
     ../../shared/kickstart/kickstartwindow.cpp \
     ../../shared/protocol/protocol.cpp \
@@ -32,11 +35,14 @@ SOURCES += \
 HEADERS += \
     toolboxwindow.h \
     toolrunpage.h \
+    scaffoldpage.h \
     rtosgen.h \
     rtosgenpage.h \
     overviewpage.h \
+    dashboardcanvas.h \
     ../../shared/common/settings.h \
     ../../shared/common/theme.h \
+    ../../shared/common/pyfind.h \
     ../../shared/kickstart/docbuilder.h \
     ../../shared/kickstart/kickstartwindow.h \
     ../../shared/protocol/protocol.h \

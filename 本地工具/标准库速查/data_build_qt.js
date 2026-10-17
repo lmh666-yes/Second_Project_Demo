@@ -53,7 +53,7 @@ const STD_BUILD_QT = [
       [
         "先把工程源码读一遍（按文件，别按目录）",
         "知道每个文件负责什么，出问题时能在 10 秒内定位到该开哪个文件，这是后面 7 个阶段的地基。",
-        "打开 D:\\GitHub_Project\\S_N_sys\\QT_project\\SerialMonitor\\，按这个顺序读：SerialMonitor.pro（依赖哪些 Qt 模块）→ main.cpp（命令行开关与启动流程）→ frameparser.h/.cpp（协议常量与解析）→ datamodel.h/.cpp（数据与 CSV）→ statcalc.h/.cpp（窗口统计）→ alarmmanager.h/.cpp（告警）→ devctl.h/.cpp（下发命令）→ mainwindow.h/.cpp/.ui（界面与定时器）。",
+        "打开 D:\\GitHub_Project\\EnvMonitor\\QT_project\\SerialMonitor\\，按这个顺序读：SerialMonitor.pro（依赖哪些 Qt 模块）→ main.cpp（命令行开关与启动流程）→ frameparser.h/.cpp（协议常量与解析）→ datamodel.h/.cpp（数据与 CSV）→ statcalc.h/.cpp（窗口统计）→ alarmmanager.h/.cpp（告警）→ devctl.h/.cpp（下发命令）→ mainwindow.h/.cpp/.ui（界面与定时器）。",
         "/* 只看依赖关系，不改代码：在 .pro 里确认串口模块 */\nQT += widgets serialport printsupport\nCONFIG += c++17\nFORMS += mainwindow.ui",
         "你能不看目录、直接说出「CRC 校验在 frameparser.cpp、阈值判定在 alarmmanager.cpp、下发命令在 devctl.cpp」。",
         "别把 20 字节帧的长度记成 20 就以为 frame 里存了整帧字节——EnvFrame 存的是解析后的字段，原始字节在 HistoryFrame::rawFrame 里。",
@@ -72,7 +72,7 @@ const STD_BUILD_QT = [
         "自检习惯：改完先跑 --selftest，跑通再插串口",
         "串口上出问题时你分不清是「解析写错」还是「线接错」；自检把这两类问题彻底分开。",
         "命令行进到 exe 所在目录（例如 build_verify\\release\\），依次跑三个开关：--selftest（帧解析 + 统计，18 个用例）、--rangecheck（物理量边界，5 个用例）、--cmdselftest（下发命令字节，22 个用例）。三份报告都写在当前工作目录，退出码 0 = 全通过。",
-        "cd /d D:\\GitHub_Project\\S_N_sys\\QT_project\\SerialMonitor\\build_verify\\release\r\nSerialMonitor.exe --selftest\r\necho %ERRORLEVEL%",
+        "cd /d D:\\GitHub_Project\\EnvMonitor\\QT_project\\SerialMonitor\\build_verify\\release\r\nSerialMonitor.exe --selftest\r\necho %ERRORLEVEL%",
         "目录里出现 自检报告.txt，最后一行是「通过 18 / 18    帧解析正确率 = 100.0%」，echo 打印 0。",
         "程序是 -subsystem,windows 编译的，双击看不到任何输出——结果只在 txt 文件与退出码里，必须用 cmd 跑并 echo %ERRORLEVEL%。",
         "--selftest --rangecheck --cmdselftest 自检报告.txt"

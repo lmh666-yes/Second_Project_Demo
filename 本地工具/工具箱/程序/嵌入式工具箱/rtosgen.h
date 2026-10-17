@@ -51,7 +51,7 @@ struct GenOptions {
     bool    splitHeader = true;   /* 生成 .h + .c 两件套 */
     QString baseName = QStringLiteral("app_tasks");  /* 文件名基名，用 ASCII */
     bool    crlf = false;         /* 用 CRLF 换行（默认 LF） */
-    /* 勾选的流程卡（名称，取自「STM32 速查」引导教程板块）。
+    /* 勾选的流程卡（名称，取自「单片机手册」引导教程板块）。
        生成时按卡片自带圈码序号排序后，把整段可复用代码拼进 .c 的参考区。 */
     QStringList flowPicks;
 };

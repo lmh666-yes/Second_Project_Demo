@@ -5,7 +5,7 @@
 #include "sys_i2c.h"
 
 /* sys_bmp280.h: Bosch BMP280(气压 + 温度,绝对气压精度 ±1 hPa)驱动
- * 流程：chip id 自检(0x58)、读标定系数、forced 单次转换、读原始值、
+ * 流程：chip id 自检(0x58/0x60)、读标定系数、forced 单次转换、读原始值、
  *       Bosch 官方定点补偿、海拔换算。
  * 接线：I2C1 的 PB8 = SCL、PB9 = SDA，与 24C02 同总线；
  *       器件地址 0x76(SDO 接地)或 0x77(SDO 接 VDDIO)。
@@ -34,11 +34,12 @@
 
 /* 温度过采样 osrs_t: 0=跳过 1=×1 2=×2 3=×4 4=×8 5=×16
  * 取值越大噪声越低，单次转换时间与功耗线性增加。
- * ×2 时温度噪声约 0.0058 ℃。 */
+ * ×2 时 RMS 温度噪声约 0.004 ℃(手册 Table 14)。 */
 #define SYS_BMP280_OSRS_T         2U
 
 /* 气压过采样 osrs_p: 同上,0=跳过 1=×1 2=×2 3=×4 4=×8 5=×16
- * ×1 时气压 RMS 噪声约 3.3 Pa,×16 约 0.2 Pa。 */
+ * 气压噪声比温度大，×4 起步才稳定。手册 Table 12 是二维表:3.3 Pa 仅出现在 ×1/×1 且
+ * IIR 关时，0.2 Pa 须 ×16/×2 且 IIR=16(系数 16);本驱动默认 ×2/×4 + IIR 系数 4，约 1 Pa 量级。 */
 #define SYS_BMP280_OSRS_P         3U
 
 /* IIR 低通滤波系数(0xF5 的 filter[4:2]): 0=关 1=2 2=4 3=8 4=16
@@ -55,8 +56,8 @@
 #define SYS_BMP280_USE_NORMAL_MODE   0
 
 /* forced 模式下"触发转换后固定等待"的毫秒数
- * 说明 : 手册单次转换最晚 43ms(最高过采样 ×16 + ×16);
- *        本配置(×2 / ×4)约 10ms 量级,给 15ms 余量后再轮询 status 兜底。 */
+ * 说明 : 手册 App.B 算例 T×1 + P×4 约 11.5ms;最高档的最坏时间手册未注明(BMP280 单独
+ *        手册不在本资料目录);本配置(×2 / ×4)给 15ms 余量后再轮询 status 兜底。 */
 #define SYS_BMP280_FORCED_DELAY_MS   15U
 
 /* 等待 STATUS.measuring 变 0 的超时(ms)
@@ -90,9 +91,9 @@
  *         正数 = 本模块错误码(含义见下)。 */
 #define SYS_BMP280_OK                0U    /* 成功 */
 #define SYS_BMP280_ERR_PARAM         1U    /* 入参非法(bus 越界 / 输出指针为空) */
-#define SYS_BMP280_ERR_CHIP_ID       2U    /* chip id 不是 0x58,不是 BMP280
-                                            * (读 0x60 = BME280,读 0x55 = BMP180;
-                                            *  这两个器件寄存器不同,本驱动不适用) */
+#define SYS_BMP280_ERR_CHIP_ID       2U    /* chip id 既不是 0x58(BMP280)也不是
+                                            * 0x60(BME280);0x55 = BMP180,寄存器与
+                                            * 标定系数不同,本驱动不适用 */
 #define SYS_BMP280_ERR_CALIB         3U    /* 标定系数(0x88~0x9F)读取/写入失败 */
 #define SYS_BMP280_ERR_TIMEOUT       4U    /* 等待转换完成超时(器件没接好/总线异常) */
 
@@ -114,7 +115,8 @@ typedef struct {
 uint8_t SYS_BMP280_Init(SysI2cId_t bus);
 
 /* 初始化(指定 7 位地址)
- * 参数 : bus   = 总线,只完成该总线的 I2C_Init
+ * 参数 : bus   = 总线(内部会调 SYS_I2C_Init(bus,400000) 重配该总线为 400kHz;I2C_DeInit
+ *                会打断同总线上的进行中事务,应在启动阶段统一初始化一次,不要在并发使用中调用)
  *        addr7 = 器件 7 位地址(0x76 或 0x77)
  * 返回 : 同 SYS_BMP280_Init
  * 说明 : addr7 按总线下标记录,后续 ReadRaw / Read / Trigger / GetID 都用同一

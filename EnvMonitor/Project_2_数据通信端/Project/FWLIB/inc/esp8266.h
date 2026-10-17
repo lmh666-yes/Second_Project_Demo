@@ -15,7 +15,14 @@
  *            本板 WiFi 接口有独立供电；共地必须接
  *      ESP8266 为 3.3V 电平，默认波特率常见 115200，旧固件 9600
  *
- * 移植 : 换串口改 ESP8266_USART；换波特率改 ESP8266_DEFAULT_BAUD */
+ * 移植 : 换串口改 ESP8266_USART；换波特率改 ESP8266_DEFAULT_BAUD
+ *
+ * 并发 : 本模块内部用一把递归互斥量保护"一条命令一段回复"的整个过程，
+ *        多个任务可以各自调 SendCmd / SendData / GetRawRx，调用方不用自己加锁；
+ *        但只能在任务里调（中断里不能拿互斥量），也不能在调度器启动前抢。
+ *        唯一要注意的是 GetLastReply / GetRawRx 返回的是模块内部缓冲的指针，
+ *        函数返回时锁已经放开，下一条命令就会改写它：
+ *        要跨语句用就先 memcpy 到自己数组里。 */
 
 
 /* 区块 1：定义与宏定义区（换板子只改这里） */
@@ -47,7 +54,9 @@ uint8_t ESP8266_Init(uint32_t baudrate);
  *        expect，期望字符串（如 "OK" / ">" / "CONNECT"），传 0 或 "" 只发不等
  *        timeout_ms，超时（0 = ESP8266_CMD_TIMEOUT_MS）
  * 返回 : 0 = 收到期望字符串；1 = 超时；2 = 参数非法
- * 说明 : 收到的内容可用 ESP8266_GetLastReply() 取回打印 */
+ * 说明 : 收到的内容可用 ESP8266_GetLastReply() 取回打印；
+ *        整条命令（清缓冲 → 发送 → 等回复）一直占着模块的锁，
+ *        其间别的任务调本模块任何接口都会等在锁上，最长等一次 timeout_ms */
 uint8_t ESP8266_SendCmd(const char *cmd, const char *expect, uint32_t timeout_ms);
 
 /* 取回上一次命令的完整回复（ASCII，以 '\0' 结尾），便于打印排错 */
@@ -58,6 +67,8 @@ const char *ESP8266_GetLastReply(void);
  * 说明 : 与 ESP8266_GetLastReply() 为同一块缓冲，只是不作 C 字符串看待：
  *        MQTT 报文含 0x00（主题长度高字节），用字符串接口会被截断；
  *        指针在下一条 AT 命令后失效，须立即解析，不可保存；
+ *        本函数返回时锁已放开，别的任务的命令可以马上改写这块缓冲：
+ *        要完整解析这一段就先 memcpy 到自己的数组，再慢慢解析；
  *        缓冲上限 ESP8266_RX_BUF_SIZE，超长时前半段被挤掉 */
 uint16_t ESP8266_GetRawRx(const uint8_t **buf);
 

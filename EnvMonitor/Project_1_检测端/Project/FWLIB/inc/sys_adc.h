@@ -7,7 +7,7 @@
 /* ================================================================
  *  sys_adc.h — ADC 模数转换模块 头文件
  *  用法: SYS_ADC_Read 单次 / SYS_ADC_ContInit 连续 / SYS_ADC_DmaInit、DmaScanInit DMA 采集
- *  本板: 光敏分压 → PF7 = ADC3_IN5;DHT11 为单总线器件,不经 ADC
+ *  本板: PF7 = ADC3_IN5 一路（原光敏分压;光照改走 BH1750 后接 MQ-135 AO）;DHT11 为单总线器件,不经 ADC
  *  12 位 0~4095;mV = 读数 × SYS_ADC_VREF_MV / 4095;引脚须配模拟输入(AIN)
  *  换算、采样时间与接线细节见 检测数据端设计.md
  * ================================================================ */
@@ -36,11 +36,20 @@
 /* SYS_ADC_Read 超时返回值;12 位读数上限 4095,0xFFFF 不与真实值冲突,由 SYS_ADC_ReadOK() 判定 */
 #define SYS_ADC_RAW_INVALID     0xFFFFU
 
-/* -------------------- 板载光敏（示例） -------------------- */
+/* ---------------- 板载光敏 / MQ-135（同一根引脚，示例） ----------------
+ * PF7 = ADC3_IN5。设计定案:光照改用 BH1750（I2C）后这路空出来接 MQ-135 的 AO。
+ * 两套宏指向同一根引脚,接哪个器件就用哪套名字,不要同时按两种用途初始化。 */
 #define SYS_ADC_LIGHT_ADC       ADC3
 #define SYS_ADC_LIGHT_CH        ADC_Channel_5      /* PF7 = ADC3_IN5 */
 #define SYS_ADC_LIGHT_PORT      GPIOF
 #define SYS_ADC_LIGHT_PIN       GPIO_Pin_7
+
+/* MQ-135 空气质量（模拟输出 AO）:AO 最高接近 5V,须先分压到 ≤3.3V 再进 ADC,
+ * 详见 外设采购清单.md 与 MQ-135 手册（预热 ≥48 小时,R0 需自测标定） */
+#define SYS_ADC_MQ135_ADC       ADC3
+#define SYS_ADC_MQ135_CH        ADC_Channel_5      /* PF7 = ADC3_IN5 */
+#define SYS_ADC_MQ135_PORT      GPIOF
+#define SYS_ADC_MQ135_PIN       GPIO_Pin_7
 
 
 /* ================================================================

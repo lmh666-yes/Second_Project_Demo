@@ -105,8 +105,8 @@ const STD_BUILD_GUIDE = [
       [
         "打开工程并认准目录",
         "改错目录 = 编译过不了或下载了旧代码，是新手最常见的坑。",
-        "用 Keil 打开 D:\\GitHub_Project\\S_N_sys\\Project_1_检测端\\Project\\标准模板.uvprojx；在左侧工程树里认出四类分组：main.c（你自己的代码）、FWLIB\\src（驱动实现，只读不改）、Startup（启动文件与中断向量）、FreeRTOS（内核）。注意：main.c 就在 Project 根目录下，不在 User\\ 里。",
-        "工程路径：D:\\GitHub_Project\\S_N_sys\\Project_1_检测端\\Project\\标准模板.uvprojx\n待你写的文件：D:\\GitHub_Project\\S_N_sys\\Project_1_检测端\\Project\\main.c",
+        "用 Keil 打开 D:\\GitHub_Project\\EnvMonitor\\Project_1_检测端\\Project\\标准模板.uvprojx；在左侧工程树里认出四类分组：main.c（你自己的代码）、FWLIB\\src（驱动实现，只读不改）、Startup（启动文件与中断向量）、FreeRTOS（内核）。注意：main.c 就在 Project 根目录下，不在 User\\ 里。",
+        "工程路径：D:\\GitHub_Project\\EnvMonitor\\Project_1_检测端\\Project\\标准模板.uvprojx\n待你写的文件：D:\\GitHub_Project\\EnvMonitor\\Project_1_检测端\\Project\\main.c",
         "Keil 打开后能展开分组看到 FWLIB\\src\\sys_usart.c、sys_frame.c 等；双击 main.c 能定位到 Project\\main.c。",
         "工程文件是 标准模板.uvprojx，另有一个 标准模板.uvoptx 保存的是显示设置（比如断点、打开的窗口），两者别搞混；不要用 keilkilll.bat 清理后就以为代码没了——它只删中间产物。",
         ""
@@ -141,7 +141,7 @@ const STD_BUILD_GUIDE = [
       [
         "建立你的进度文档节奏",
         "板1 调试会反复，记录能省下大量重复劳动。",
-        "在 D:\\GitHub_Project\\S_N_sys\\Project_1_检测端\\板1进度文档.md 里自己记（这份文档只由你写）：今天做了什么、卡在哪、怎么解决的、下一步。每解决一个问题就补一行。",
+        "在 D:\\GitHub_Project\\EnvMonitor\\Project_1_检测端\\板1进度文档.md 里自己记（这份文档只由你写）：今天做了什么、卡在哪、怎么解决的、下一步。每解决一个问题就补一行。",
         "",
         "文档里有至少 3 条“问题 → 原因 → 解决”的记录。",
         "别只在脑子里记——三天后再回来，你会忘了当时为什么改这一行。",

@@ -26,6 +26,9 @@ public:
        也能断言它解析成功——路径判据一旦写错，运行器页会整体失效，属于必须测到的东西。 */
     static QString toolsDirPath();
 
+    /* 按页面标题跳到对应页（列表项文本匹配）。供体检面板的健康度卡片联动。 */
+    void jumpToPage(const QString &title);
+
 private:
     QWidget *buildKickstartPage();
     QWidget *buildRtosGenPage();
@@ -39,6 +42,7 @@ private:
     QWidget *buildLoraPage();           /* LoRa 检查：配置一致性 / 引脚成对 / 波特率合法 */
     QWidget *buildOtaPage();            /* OTA 台架：包 OTA/tools/ota_send.py 串口直连模式 */
     QWidget *buildFirmwareBudgetPage(); /* 固件预算：分区上限 / 体积 / 固件头与 Intel HEX 复核 */
+    QWidget *buildScaffoldPage();       /* 工程模板：一键生成 STM32 工程骨架 */
     QWidget *buildFullCheckPage();
     QWidget *buildOverviewPage();
     QWidget *buildSettingsPage();       /* 设置：集中放个性化选项（默认不变） */
@@ -60,7 +64,7 @@ private:
     QList<QWidget *> m_warnTargets;     /* 目录缺失时需要告警的运行器页 */
     WorkbenchWindow *m_workbench = nullptr;   /* 供跨工具联动调用 */
     KickStartWindow *m_kickstart = nullptr;   /* 供 RTOS 生成页导入任务表 */
-    MainWindow      *m_lookup    = nullptr;   /* STM32 速查（懒加载） */
+    MainWindow      *m_lookup    = nullptr;   /* 单片机手册（懒加载） */
     int m_workbenchPage = -1;                 /* 协议工作台在堆栈里的页号 */
     int m_lookupPage    = -1;                 /* 速查页在堆栈里的页号 */
     bool m_lookupLoaded = false;
