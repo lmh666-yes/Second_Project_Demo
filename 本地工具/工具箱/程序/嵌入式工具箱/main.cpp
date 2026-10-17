@@ -179,8 +179,11 @@ static int runCli(const QStringList &args)
             {"LoRa 检查",    "检查/LoRa检查/lora_check.py"},
             {"协议校验",     "检查/协议校验/protocol_check.py"},
             {"断网缓存",     "检查/断网缓存/cache_check.py"},
+            /* 生成器也挂进来：它的"骨架阶段提示"曾出现"两种风格不一致 / 无任务时阶段3缺号"，
+               靠自检钉住输出结构，别靠人想起来去比对。 */
+            {"工程模板生成", "程序/工程模板/project_scaffold.py"},
         };
-        out << QString::fromUtf8("\n── 各检查器自检（--selftest）──\n");
+        out << QString::fromUtf8("\n── 各脚本自检（--selftest）：8 个检查器 + 工程模板生成器 ──\n");
         out.flush();
         const QStringList py = PyFind::detect();
         if (py.isEmpty()) {

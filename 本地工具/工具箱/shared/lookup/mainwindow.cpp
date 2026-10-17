@@ -280,7 +280,12 @@ void MainWindow::refreshList()
     m_list->clear();
     for (int i : m_shown) {
         const Card &c = m_ds.at(i);
-        m_list->addItem(QStringLiteral("%1  ⟨%2⟩").arg(c.n, typeTag(c)));
+        /* 项目引导里列的全是手册阶段卡，每行再挂一个「⟨手册⟩」就是行行重复的噪声；
+           那个板块直接只显示卡名（其余板块类型是混的，标签才有信息量）。 */
+        if (m_section == int(Card::Build))
+            m_list->addItem(c.n);
+        else
+            m_list->addItem(QStringLiteral("%1  ⟨%2⟩").arg(c.n, typeTag(c)));
     }
     m_list->blockSignals(false);
 

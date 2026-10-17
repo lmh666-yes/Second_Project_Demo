@@ -507,7 +507,9 @@ def generate_register_main_c(out_dir, board, periph_names, tasks):
 
     lines.append('int main(void)')
     lines.append('{')
-    lines.append('    /* SystemInit() 已由启动文件调用：HSE 8MHz → PLL 168MHz */')
+    lines.append('    /* ---------- 阶段 1：时钟 ----------')
+    lines.append('     * 必须最先：外设都靠它。SystemInit() 已由启动文件调用（HSE 8MHz → PLL 168MHz），')
+    lines.append('     * 这里只开各外设的时钟。 */')
     lines.append('')
 
     # 统一开时钟
@@ -533,6 +535,8 @@ def generate_register_main_c(out_dir, board, periph_names, tasks):
         lines.append('')
 
     # 初始化调用
+    lines.append('    /* ---------- 阶段 2：基础外设 ----------')
+    lines.append('     * 放在时钟之后、任务/主循环之前：外设没初始化就进任务，第一次用它就空。 */')
     for block in init_blocks:
         for line in block.split('\n'):
             if line.strip():
@@ -541,11 +545,15 @@ def generate_register_main_c(out_dir, board, periph_names, tasks):
 
     # FreeRTOS 任务
     if has_freertos:
-        lines.append('    /* ---------- FreeRTOS 任务 ---------- */')
+        lines.append('    /* ---------- 阶段 3：FreeRTOS 任务 ----------')
+        lines.append('     * 建完任务就交给调度器，main 到此不再往下执行。 */')
         for tc in task_creates:
             lines.append(tc)
         lines.append('    vTaskStartScheduler();')
         lines.append('')
+    else:
+        lines.append('    /* ---------- 阶段 3：主循环 ----------')
+        lines.append('     * 没有任务时，自己的逻辑写在这个 for(;;) 里。 */')
 
     lines.append('    for (;;)')
     lines.append('    {')
@@ -631,14 +639,16 @@ def generate_driver_main_c(out_dir, board, periph_names, tasks, fwlib_dir):
 
     lines.append('int main(void)')
     lines.append('{')
-    lines.append('    /* ---------- 阶段 1：时钟 ---------- */')
+    lines.append('    /* ---------- 阶段 1：时钟 ----------')
+    lines.append('     * 必须最先：后面的外设都靠它。HighSpeed = HSE 8MHz → PLL 168MHz。 */')
     lines.append('    SYS_CLK_ToHighSpeed();')
     if has_freertos:
         lines.append('    /* SysTick 由 FreeRTOS 端口层接管，不要调 SYS_TICK_Init() */')
     else:
         lines.append('    SYS_TICK_Init();')
     lines.append('')
-    lines.append('    /* ---------- 阶段 2：基础外设 ---------- */')
+    lines.append('    /* ---------- 阶段 2：基础外设 ----------')
+    lines.append('     * 放在时钟之后、任务/主循环之前：外设没初始化就进任务，第一次用它就空。 */')
     if has_usart:
         lines.append('    SYS_USART_Init(DBG, DBG_BAUD);')
         lines.append('    SYS_USART_SendString(DBG, "\\r\\n[%s] skeleton ready\\r\\n");' % board.lower())
@@ -653,11 +663,15 @@ def generate_driver_main_c(out_dir, board, periph_names, tasks, fwlib_dir):
     lines.append('')
 
     if has_freertos:
-        lines.append('    /* ---------- 阶段 3：FreeRTOS 任务 ---------- */')
+        lines.append('    /* ---------- 阶段 3：FreeRTOS 任务 ----------')
+        lines.append('     * 建完任务就交给调度器，main 到此不再往下执行。 */')
         for tc in task_creates:
             lines.append(tc)
         lines.append('    vTaskStartScheduler();')
         lines.append('')
+    else:
+        lines.append('    /* ---------- 阶段 3：主循环 ----------')
+        lines.append('     * 没有任务时，自己的逻辑写在这个 for(;;) 里。 */')
 
     lines.append('    for (;;)')
     lines.append('    {')
@@ -868,6 +882,71 @@ FREERTOS_CONFIG_TEMPLATE = r'''#ifndef FREERTOS_CONFIG_H
 '''
 
 
+def selftest():
+    """自检「骨架阶段提示」的结构（错例 + 反例），生成到临时目录，不碰仓库。
+
+    为什么要它：这两条曾经是"看着对、其实不齐"的地方 ——
+      ① 驱动库风格的三个阶段有编号，寄存器风格一个编号都没有（同一个工具两种风格不一样）；
+      ② 没给任务时"阶段 3"整条消失，编号从 2 直接跳到 for(;;)。
+    有任务 / 没任务两条路径都要断言，否则只会剩下一条能过。
+    """
+    import contextlib
+    import io
+    import shutil
+    import tempfile
+
+    tmp = tempfile.mkdtemp(prefix='scaffold_selftest_')
+    fails = []
+
+    def expect(cond, label):
+        print(('PASS ' if cond else 'FAIL ') + label)
+        if not cond:
+            fails.append(label)
+
+    def gen(style, tasks):
+        d = os.path.join(tmp, style + ('_task' if tasks else '_bare'))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):        # run() 会打一堆"生成完成…"，自检不要它
+            run('F407ZE', ['usart', 'led'], tasks, d, style=style)
+        p = os.path.join(d, 'main.c')
+        return open(p, encoding='utf-8').read() if os.path.exists(p) else ''
+
+    for style in ('driver', 'register'):
+        name = '驱动库风格' if style == 'driver' else '寄存器风格'
+        with_task = gen(style, ['Led:2:128'])
+        no_task = gen(style, [])
+
+        # 错例：给了任务 → 阶段 1/2/3 齐全且顺序正确，阶段 3 是"FreeRTOS 任务"
+        s1 = with_task.find('阶段 1：时钟')
+        s2 = with_task.find('阶段 2：基础外设')
+        s3 = with_task.find('阶段 3：FreeRTOS 任务')
+        expect(0 <= s1 < s2 < s3,
+               '%s·有任务：阶段 1→2→3 顺序正确（位置 %d/%d/%d）' % (name, s1, s2, s3))
+        expect('vTaskStartScheduler();' in with_task, '%s·有任务：有调度器启动' % name)
+
+        # 反例：没给任务 → 阶段 3 必须是"主循环"，且不许出现 FreeRTOS 任务那一段
+        b1 = no_task.find('阶段 1：时钟')
+        b2 = no_task.find('阶段 2：基础外设')
+        b3 = no_task.find('阶段 3：主循环')
+        expect(0 <= b1 < b2 < b3,
+               '%s·无任务：阶段 1→2→3（主循环）顺序正确（位置 %d/%d/%d）' % (name, b1, b2, b3))
+        expect('阶段 3：FreeRTOS 任务' not in no_task,
+               '%s·无任务：不该出现"阶段 3：FreeRTOS 任务"（反例）' % name)
+        expect('vTaskStartScheduler();' not in no_task,
+               '%s·无任务：不该出现调度器启动（反例）' % name)
+
+        # 生成物只许有一个 main（阶段提示是插进同一份 main.c 的，不许带出第二个）
+        for label, body in (('有任务', with_task), ('无任务', no_task)):
+            n = body.count('int main(void)')
+            expect(n == 1, '%s·%s：生成物只有一个 int main（实际 %d 个）' % (name, label, n))
+            expect('for (;;)' in body, '%s·%s：有主循环（兜底放着自己的逻辑）' % (name, label))
+
+    shutil.rmtree(tmp, ignore_errors=True)
+    print()
+    print('失败项 %d' % len(fails))
+    return 1 if fails else 0
+
+
 def main():
     parser = argparse.ArgumentParser(description='STM32 工程模板生成器')
     parser.add_argument('--board', default='F407ZE', help='板子型号（F407ZE/F407ZG）')
@@ -879,7 +958,12 @@ def main():
                         help='生成风格：driver=调用驱动库（默认），register=寄存器操作')
     parser.add_argument('--list', action='store_true', help='列出可用外设')
     parser.add_argument('--list-presets', action='store_true', help='列出可用预设')
+    parser.add_argument('--selftest', action='store_true',
+                        help='自检：生成到临时目录，核对「骨架阶段提示」结构（不碰仓库）')
     args = parser.parse_args()
+
+    if args.selftest:
+        sys.exit(selftest())
 
     if args.list:
         print('可用外设（driver 风格，%d 个）：' % len(PERIPHERALS))
