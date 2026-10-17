@@ -231,10 +231,15 @@ RtosGenPage::RtosGenPage(QWidget *parent)
     QPushButton *bVal  = new QPushButton(QStringLiteral("校验"), this);
     QPushButton *bGen  = new QPushButton(QStringLiteral("生成骨架"), this);
     QPushButton *bCopy = new QPushButton(QStringLiteral("复制代码"), this);
+    QPushButton *bCopyCfg = new QPushButton(QStringLiteral("复制 FreeRTOSConfig.h"), this);
     QPushButton *bSave = new QPushButton(QStringLiteral("保存 main.c"), this);
+    bCopyCfg->setToolTip(QStringLiteral("复制下方那份完整 FreeRTOSConfig.h（每个宏都带取值理由）"));
+    bSave->setToolTip(QStringLiteral("保存 main.c（勾了「生成 .h」连 .h 一起存），"
+                                     "同时把完整 FreeRTOSConfig.h 落到同一目录"));
     bar->addWidget(bVal);
     bar->addWidget(bGen);
     bar->addWidget(bCopy);
+    bar->addWidget(bCopyCfg);
     bar->addWidget(bSave);
     bar->addStretch(1);
     lay->addLayout(bar);
@@ -245,10 +250,14 @@ RtosGenPage::RtosGenPage(QWidget *parent)
     m_issues->setFixedHeight(90);
     lay->addWidget(m_issues);
 
-    lay->addWidget(new QLabel(QStringLiteral("FreeRTOSConfig 建议（生成时给出）"), this));
+    lay->addWidget(new QLabel(QStringLiteral("FreeRTOSConfig.h（完整生成物：每个宏都带取值理由；"
+                                             "末尾附该放哪些 port 文件）"), this));
     m_config = new QPlainTextEdit(this);
     m_config->setReadOnly(true);
-    m_config->setFixedHeight(84);
+    m_config->setFixedHeight(220);
+    QFont cfgMono(QStringLiteral("Consolas"));
+    cfgMono.setStyleHint(QFont::Monospace);
+    m_config->setFont(cfgMono);
     lay->addWidget(m_config);
 
     lay->addWidget(new QLabel(QStringLiteral("骨架预览"), this));
@@ -277,6 +286,7 @@ RtosGenPage::RtosGenPage(QWidget *parent)
     connect(bVal,    &QPushButton::clicked, this, &RtosGenPage::doValidate);
     connect(bGen,    &QPushButton::clicked, this, &RtosGenPage::doGenerate);
     connect(bCopy,   &QPushButton::clicked, this, &RtosGenPage::doCopy);
+    connect(bCopyCfg, &QPushButton::clicked, this, &RtosGenPage::doCopyConfig);
     connect(bSave,   &QPushButton::clicked, this, &RtosGenPage::doSave);
 
     addTaskRow(RtosGen::TaskSpec{QStringLiteral("Sensor"), QStringLiteral("周期"), 2000, 3, 256,
@@ -655,7 +665,9 @@ void RtosGenPage::doGenerate()
     const QVector<RtosGen::ResSpec> rs = readResources();
     const RtosGen::GenOptions op = readOptions();
     m_preview->setPlainText(RtosGen::render(m_cfg, tk, rs, op, proj));
-    m_config->setPlainText(RtosGen::configSnippet(m_cfg, tk, rs));
+    /* 另一件生成物：完整 FreeRTOSConfig.h（逐宏给出取值理由 + port 文件清单）。
+       不再只给"要改的那几条"（configSnippet 仍保留，供只关心增量时调用）。 */
+    m_config->setPlainText(RtosGen::renderFreeRTOSConfig(m_cfg, tk, rs, proj));
 }
 
 void RtosGenPage::doCopy()
@@ -666,6 +678,16 @@ void RtosGenPage::doCopy()
             return;
     }
     QApplication::clipboard()->setText(m_preview->toPlainText());
+}
+
+void RtosGenPage::doCopyConfig()
+{
+    if (m_config->toPlainText().isEmpty()) {
+        doGenerate();
+        if (m_config->toPlainText().isEmpty())
+            return;
+    }
+    QApplication::clipboard()->setText(m_config->toPlainText());
 }
 
 void RtosGenPage::doSave()
@@ -697,13 +719,27 @@ void RtosGenPage::doSave()
             written << hpath;
     }
 
+    /* 完整 FreeRTOSConfig.h 是另一件生成物，落到同一目录让"生成一次就齐了"。
+       已存在就不覆盖 —— 那多半是你工程里真在用的配置，冲掉比不生成更糟。 */
+    QString cfgNote;
+    const QString cfgText = m_config->toPlainText();
+    if (!cfgText.isEmpty()) {
+        const QString cfgPath = QFileInfo(path).dir().filePath(QStringLiteral("FreeRTOSConfig.h"));
+        if (QFile::exists(cfgPath))
+            cfgNote = QStringLiteral("\n\n%1 已存在，未覆盖：它是你工程在用的配置，"
+                                     "请按生成物里的宏值/理由自行并入。").arg(cfgPath);
+        else if (writeGenerated(cfgPath, cfgText))
+            written << cfgPath;
+    }
+
     if (written.isEmpty())
         QMessageBox::warning(this, QStringLiteral("保存失败"), QStringLiteral("没能写出文件。"));
     else
         QMessageBox::information(
             this, QStringLiteral("已保存"),
             written.join(QStringLiteral("\n"))
-                + QStringLiteral("\n\n若目标文件已存在，其中 USER CODE 保护区的内容已保留。"));
+                + QStringLiteral("\n\n若目标文件已存在，其中 USER CODE 保护区的内容已保留。")
+                + cfgNote);
 }
 
 /* 按所选编码写出；若目标已存在，先把 USER CODE 保护区的内容合并进来。

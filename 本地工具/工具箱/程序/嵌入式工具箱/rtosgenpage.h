@@ -43,6 +43,7 @@ private slots:
     void doValidate();
     void doGenerate();
     void doCopy();
+    void doCopyConfig();   /* 复制完整 FreeRTOSConfig.h（另一件生成物） */
     void doSave();
 
 private:

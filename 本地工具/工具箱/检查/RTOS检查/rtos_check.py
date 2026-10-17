@@ -27,6 +27,11 @@ r"""FreeRTOS 安全检查器（只读源码，不改任何文件）。
      Write），又把看门狗超时设得偏短（SYS_WDG_Init(<8000ms)），或超时实参判不出时，
      给"注意"级提示——擦除期间 CPU 取指被硬件挂起、SysTick 与串口都停，喂不了狗。
      FWLIB 里 sys_flash.c / sys_wdg.c 的"实现"不算"工程在用"，只看工程自己的调用。
+  9) 移植自检（类别 key=porting，报告单列一节）：查"FreeRTOS 移植这一步有没有漏"——
+     FreeRTOSConfig.h 必备宏是否齐（缺关键项判严重），端口层 port.c / portmacro.h 与
+     heap_N.c 是否在位，配置口径是否自洽（PRIO_BITS ↔ NVIC 分组、LOWEST / MAX_SYSCALL /
+     KERNEL 的移位换算）。为什么单独一节：前面所有优先级/栈/堆判定都建立在"宏齐、口径对、
+     端口层在位"这个前提上，前提不齐时后面的结论会整体失真。
 
 报告写到脚本同目录的 RTOS检查报告.md，并在控制台打印摘要。只读，不改任何文件。
 
@@ -148,6 +153,46 @@ RE_FLOAT_USE = re.compile(r'\b(?:float|double)\b|\d+\.\d+[fF]?')
 # 工程里会做长耗时 Flash 擦写的接口（定义在 FWLIB/sys_flash.c，这里只认"调用"）
 FLASH_LONG_OPS = ('SYS_FLASH_EraseSector', 'SYS_FLASH_ErasePage',
                   'SYS_FLASH_SaveParams', 'SYS_FLASH_Write')
+
+# 移植自检（新增类别 key='porting'）。为什么加这一节：本检查器后面所有的判定——优先级上限、
+# 栈/堆预算、ISR 越界——都建立在"内核宏齐、配置口径对、端口层文件在位"这个前提上。前提不齐
+# 时结论会整体失真（例如 configPRIO_BITS 缺失，所有"抢占优先级 vs 上限"的比较都失去参照），
+# 而老版本只查语义（优先级/栈/堆），没查"移植骨架本身齐不齐"，所以补上这一节。
+PORTING_REQUIRED_MACROS = [
+    'configUSE_PREEMPTION', 'configTICK_RATE_HZ', 'configMAX_PRIORITIES',
+    'configMINIMAL_STACK_SIZE', 'configTOTAL_HEAP_SIZE', 'configPRIO_BITS',
+    'configLIBRARY_LOWEST_INTERRUPT_PRIORITY',
+    'configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY',
+    'configKERNEL_INTERRUPT_PRIORITY', 'configMAX_SYSCALL_INTERRUPT_PRIORITY',
+    'configCHECK_FOR_STACK_OVERFLOW',
+]
+# 缺了这几个关键项，后面所有优先级/栈/堆判定都失去参照口径，判"严重"；其余必备宏判"注意"。
+PORTING_CRITICAL_MACROS = {
+    'configPRIO_BITS', 'configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY',
+    'configTOTAL_HEAP_SIZE', 'configMINIMAL_STACK_SIZE', 'configMAX_PRIORITIES',
+}
+# NVIC 分组 -> 抢占位数，用于与 configPRIO_BITS 对照（Group_4 = 4 位全做抢占）。
+NVIC_GROUP_PREEMPT_BITS = {
+    'NVIC_PriorityGroup_0': 0, 'NVIC_PriorityGroup_1': 1,
+    'NVIC_PriorityGroup_2': 2, 'NVIC_PriorityGroup_3': 3,
+    'NVIC_PriorityGroup_4': 4,
+}
+# 端口层文件候选目录（按路径分段。本仓库实际把端口层放在 FreeRTOS/port/（含 port.c /
+# portmacro.h / heap_4.c），标准内核包则在 FreeRTOS/Source/portable/GCC/ARM_CM4F/）。两套都认；
+# 找不到只提示"注意：未找到，请确认"，不凭印象断言"必须叫这个名字"。
+PORT_DIR_CANDIDATES = (
+    ('FreeRTOS', 'port'),
+    ('FreeRTOS', 'Source', 'portable', 'GCC', 'ARM_CM4F'),
+    ('FreeRTOS', 'Source', 'portable', 'GCC', 'ARM_CM3'),
+    ('FreeRTOS', 'Source', 'portable', 'MemMang'),
+)
+PORT_HEAP_NOTE = {
+    'heap_1.c': 'heap_1 只能分配、不能释放（没有 vPortFree）',
+    'heap_2.c': 'heap_2 有 vPortFree，但不合并相邻空闲块',
+    'heap_3.c': 'heap_3 直接包装 malloc/free（依赖标准库堆）',
+    'heap_4.c': 'heap_4 支持 vPortFree 且合并相邻空闲块',
+    'heap_5.c': 'heap_5 在 heap_4 基础上支持多块不连续内存',
+}
 
 # 规则表（数据模型）外置在 工具箱/速查数据/rules/，检查器与其它工具共读一份：
 # 加一个新的 RTOS 接口只要改表，不用动脚本。表缺失/损坏时回退到上面那三份内置默认值，
@@ -614,6 +659,231 @@ def scan_prio_drift(proj):
     return out
 
 
+def cfg_macros_of(text):
+    """从 FreeRTOSConfig.h 原文提取 #define 宏（先拼续行），返回 {宏名: 值原文}。
+    与 parse_config 的 raw 不同：多行宏这里保留真值（parse_config 是逐行扫描，会把多行宏的
+    值记成续行的反斜杠），自洽性比对需要真值。值里的块注释一并剥掉。"""
+    joined = re.sub(r'\\\s*\n', ' ', text)
+    out = {}
+    for m in re.finditer(r'^\s*#\s*define\s+([A-Za-z_]\w*)\b[ \t]*([^\r\n]*)', joined, re.M):
+        val = re.sub(r'/\*.*?\*/', '', m.group(2)).strip()
+        out.setdefault(m.group(1), val)
+    return out
+
+
+def _strip_outer_parens(e):
+    """剥掉表达式最外层成对的括号（逐层），以便把 `(a << b)` 拆成 `a` 与 `b` 求值。"""
+    e = e.strip()
+    while len(e) >= 2 and e[0] == '(' and e[-1] == ')':
+        depth, balanced, inner_ok = 0, False, True
+        for i, ch in enumerate(e):
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+                if depth == 0:
+                    if i != len(e) - 1:
+                        inner_ok = False
+                    balanced = True
+                    break
+        if not balanced or not inner_ok:
+            break
+        e = e[1:-1].strip()
+    return e
+
+
+RE_CFG_SHIFT = re.compile(r'^(.*?)<<\s*(.*)$')
+
+
+def eval_cfg_int(expr, sub):
+    """求 FreeRTOSConfig.h 的整数宏，额外支持 << 左移（eval_int 的字符集不含移位运算符）。
+    求不出返回 None。"""
+    if not expr:
+        return None
+    e = expr.strip()
+    for k, v in (sub or {}).items():
+        if v is None:
+            continue
+        e = re.sub(r'\b' + re.escape(k) + r'\b', str(v), e)
+    e = _strip_outer_parens(e)
+    m = RE_CFG_SHIFT.match(e)
+    if m:
+        left = eval_int(m.group(1))
+        right = eval_int(m.group(2))
+        if left is None or right is None:
+            return None
+        return left << right
+    return eval_int(e)
+
+
+def find_port_files(proj):
+    """在候选目录里找端口层文件，返回 {port_c, portmacro, heap}（相对路径，找不到为 None）。
+    heap 只认 heap_1..heap_5。本仓库实际布局是 FreeRTOS/port/，标准内核包是 Source/portable/…"""
+    hits = {'port_c': None, 'portmacro': None, 'heap': None}
+    for parts in PORT_DIR_CANDIDATES:
+        d = os.path.join(proj, *parts)
+        if not os.path.isdir(d):
+            continue
+        rel = '/'.join(parts)
+        for fn in sorted(os.listdir(d)):
+            if fn == 'port.c' and hits['port_c'] is None:
+                hits['port_c'] = '%s/%s' % (rel, fn)
+            elif fn == 'portmacro.h' and hits['portmacro'] is None:
+                hits['portmacro'] = '%s/%s' % (rel, fn)
+            elif re.fullmatch(r'heap_[1-5]\.c', fn) and hits['heap'] is None:
+                hits['heap'] = '%s/%s' % (rel, fn)
+    return hits
+
+
+def infer_port_hint(proj, prio_bits):
+    """推端口层应对应哪个内核型号目录：优先看芯片型号（RTE/Device 目录名或启动文件名），
+    再看 configPRIO_BITS。返回 (芯片, 目录名)——芯片可能为空、目录名可能为 None。"""
+    chip = ''
+    dev = os.path.join(proj, 'RTE', 'Device')
+    if os.path.isdir(dev):
+        for name in sorted(os.listdir(dev)):
+            if os.path.isdir(os.path.join(dev, name)):
+                chip = name
+                break
+    if not chip:
+        for base, dirs, files in os.walk(proj):
+            dirs[:] = [x for x in dirs if x not in ('FreeRTOS', 'Objects', 'Listings')]
+            for fn in files:
+                m = re.match(r'startup_(stm32f\d+)\w*\.s$', fn.lower())
+                if m:
+                    chip = m.group(1).upper()
+                    break
+            if chip:
+                break
+    up = (chip or '').upper()
+    if 'STM32F4' in up:
+        return chip, 'ARM_CM4F'
+    if 'STM32F1' in up or 'STM32F2' in up:
+        return chip, 'ARM_CM3'
+    if prio_bits == 4:
+        return chip, 'ARM_CM4F'
+    if prio_bits == 2:
+        return chip, 'ARM_CM3'
+    return chip, None
+
+
+def check_porting(proj, cfg_path, vals, findings):
+    """移植自检：查"FreeRTOS 移植这一步有没有漏"。三类结果都挂 key='porting'：
+      1) FreeRTOSConfig.h 必备宏齐全性（缺关键项判严重，其余判注意）；
+      2) 端口层 port.c / portmacro.h 与 heap_N.c 是否在位（找不到只提示"注意：未找到，请确认"）；
+      3) 配置口径自洽（configPRIO_BITS ↔ NVIC 分组、LOWEST / MAX_SYSCALL / KERNEL 的移位换算）。
+    只新增检查与报告文字，不改任何既有判定规则。返回详情字典，供报告 '## 移植自检' 一节用。"""
+    text, _ = read_text(cfg_path)
+    macros = cfg_macros_of(text)
+    prio_bits = vals.get('configPRIO_BITS')
+    mx_lib = vals.get('configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY')
+    lowest_lib = eval_int(macros.get('configLIBRARY_LOWEST_INTERRUPT_PRIORITY', ''))
+    rel_cfg = 'FreeRTOS/port/FreeRTOSConfig.h'
+    detail = {'missing': [], 'critical_missing': [], 'selfcheck': []}
+
+    # 1) 必备宏齐全性
+    missing = [k for k in PORTING_REQUIRED_MACROS if k not in macros]
+    detail['missing'] = missing
+    detail['critical_missing'] = [k for k in missing if k in PORTING_CRITICAL_MACROS]
+    for k in missing:
+        crit = k in PORTING_CRITICAL_MACROS
+        findings.append((('严重' if crit else '注意'), rel_cfg,
+                         'FreeRTOSConfig.h 缺少必备宏 %s：%s'
+                         % (k, '它决定后面所有优先级/栈/堆判定的参照口径，缺了整节结论会失真'
+                            if crit else '缺这条会让对应功能取默认值或被裁剪掉'),
+                         'porting'))
+
+    # 2) 端口层文件齐全性
+    hits = find_port_files(proj)
+    detail.update(hits)
+    chip, want_dir = infer_port_hint(proj, prio_bits)
+    detail['chip'] = chip
+    hint = ''
+    if want_dir:
+        hint = '（按%s推，应放在 GCC/%s 下）' % (
+            chip or ('configPRIO_BITS=%s' % prio_bits), want_dir)
+    for fkey, label in (('port_c', 'port.c'), ('portmacro', 'portmacro.h')):
+        if hits[fkey] is None:
+            findings.append(('注意', 'FreeRTOS/...',
+                             '注意：未找到移植所需的 %s，请确认。本仓库端口层实际在 '
+                             'FreeRTOS/port/，标准内核包在 '
+                             'FreeRTOS/Source/portable/GCC/ARM_CM4F/%s%s'
+                             % (label, label, hint), 'porting'))
+    if hits['heap'] is None:
+        findings.append(('注意', 'FreeRTOS/...',
+                         '注意：未找到堆实现 heap_N.c，请确认。候选位置：'
+                         'FreeRTOS/port/heap_N.c 或 '
+                         'FreeRTOS/Source/portable/MemMang/heap_N.c —— '
+                         '用哪个影响能否调用 vPortFree', 'porting'))
+    else:
+        detail['heap_note'] = PORT_HEAP_NOTE.get(os.path.basename(hits['heap']), '')
+
+    # 3) 配置口径自洽性（对不上判注意）
+    def sc(ok, good, bad):
+        detail['selfcheck'].append((ok, good if ok else bad))
+        if not ok:
+            findings.append(('注意', rel_cfg, bad, 'porting'))
+
+    group = None
+    inc = os.path.join(proj, 'FWLIB', 'inc')
+    if os.path.isdir(inc):
+        for fn in sorted(os.listdir(inc)):
+            if not fn.endswith('.h'):
+                continue
+            t2, _ = read_text(os.path.join(inc, fn))
+            m = re.search(r'#\s*define\s+SYS_NVIC_PRIORITY_GROUP\s+(\S+)', t2)
+            if m:
+                group = m.group(1).strip()
+                break
+    if group is None or prio_bits is None:
+        detail['selfcheck'].append(
+            (None, '未读到 configPRIO_BITS 或 SYS_NVIC_PRIORITY_GROUP，跳过分组自洽性比对'))
+    elif group not in NVIC_GROUP_PREEMPT_BITS:
+        detail['selfcheck'].append((None, '分组取值 %s 不认识，跳过比对' % group))
+    else:
+        want_bits = NVIC_GROUP_PREEMPT_BITS[group]
+        sc(want_bits == prio_bits,
+           'configPRIO_BITS=%d 与 %s（%d 位抢占）匹配 ✓'
+           % (prio_bits, group, want_bits),
+           'configPRIO_BITS=%d 与 SYS_NVIC_PRIORITY_GROUP=%s（%d 位抢占）不匹配：'
+           '分组会把抢占值按位截断，数值口径对不上，会让人误判优先级'
+           % (prio_bits, group, want_bits))
+
+    if prio_bits is not None and lowest_lib is not None:
+        want = (1 << prio_bits) - 1
+        sc(lowest_lib == want,
+           'configLIBRARY_LOWEST_INTERRUPT_PRIORITY=%d = 2^configPRIO_BITS-1（%d）✓'
+           % (lowest_lib, want),
+           'configLIBRARY_LOWEST_INTERRUPT_PRIORITY=%d 不等于 2^configPRIO_BITS-1（=%d）：'
+           '数值口径错了' % (lowest_lib, want))
+
+    decl_sys = eval_cfg_int(macros.get('configMAX_SYSCALL_INTERRUPT_PRIORITY', ''),
+                            {'configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY': mx_lib,
+                             'configPRIO_BITS': prio_bits})
+    if prio_bits is not None and mx_lib is not None and decl_sys is not None:
+        want_sys = mx_lib << (8 - prio_bits)
+        sc(decl_sys == want_sys,
+           'configMAX_SYSCALL_INTERRUPT_PRIORITY=%d = %d<<(8-%d) ✓'
+           % (decl_sys, mx_lib, prio_bits),
+           'configMAX_SYSCALL_INTERRUPT_PRIORITY 写的是 %d，应为 '
+           'configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY<<(8-configPRIO_BITS)=%d：'
+           '数值口径错了，会让人误判优先级' % (decl_sys, want_sys))
+
+    decl_kern = eval_cfg_int(macros.get('configKERNEL_INTERRUPT_PRIORITY', ''),
+                             {'configLIBRARY_LOWEST_INTERRUPT_PRIORITY': lowest_lib,
+                              'configPRIO_BITS': prio_bits})
+    if prio_bits is not None and lowest_lib is not None and decl_kern is not None:
+        want_kern = lowest_lib << (8 - prio_bits)
+        sc(decl_kern == want_kern,
+           'configKERNEL_INTERRUPT_PRIORITY=%d = %d<<(8-%d) ✓'
+           % (decl_kern, lowest_lib, prio_bits),
+           'configKERNEL_INTERRUPT_PRIORITY 写的是 %d，应为 '
+           'configLIBRARY_LOWEST_INTERRUPT_PRIORITY<<(8-configPRIO_BITS)=%d：数值口径错了'
+           % (decl_kern, want_kern))
+
+    return detail
+
+
 def check_board(title, proj):
     """返回 findings 列表：每项 (等级, 位置, 现象, 原理键)。"""
     findings = []
@@ -906,6 +1176,11 @@ def check_board(title, proj):
                              '（或把看门狗超时放到 %d ms 以上）。'
                              % (op0, why, WDG_SAFE_MS), 'wdg_flash'))
 
+    # 9) 移植自检（新增，key='porting'）：查"FreeRTOS 移植这一步有没有漏"。只加检查与报告
+    #    文字，不改既有判定；结果并入既有 findings / severe / warn 计数，详情供报告
+    #    '## 移植自检' 一节用（存进 vals 的私有键，to_json 只收标量，JSON 字段/类型不受影响）。
+    vals['_porting'] = check_porting(proj, cfg, vals, findings)
+
     return vals, findings, tasks
 
 
@@ -980,6 +1255,58 @@ def render(results):
             for key in seen:
                 out.append('- %s' % PRINCIPLE.get(key, ''))
             out.append('')
+    # D2：报告新增一节 '## 移植自检'（放在「检查结果」之后、说明之前）——把"移植这一步
+    # 有没有漏"（必备宏齐全性 / 端口层文件 / 配置口径自洽）写成清单。前面所有优先级/栈/堆
+    # 判定都建立在这些前提上，前提不齐时后面结论会整体失真，所以要单列出来给人先看。
+    out.append('## 移植自检')
+    out.append('')
+    out.append('本节查"FreeRTOS 移植这一步有没有漏"：内核必备宏是否齐、端口层 '
+               '`port.c` / `portmacro.h` 与 `heap_N.c` 是否在位、配置口径是否自洽'
+               '（`configPRIO_BITS` ↔ NVIC 分组、LOWEST / MAX_SYSCALL / KERNEL 的移位换算）。'
+               '这些是所有优先级/栈/堆判定的前提，前提不齐时后面的结论会失真。')
+    out.append('')
+    for title, vals, findings, tasks in results:
+        out.append('### %s' % title)
+        out.append('')
+        det = (vals or {}).get('_porting') if vals else None
+        pfind = [f for f in findings if f[3] == 'porting']
+        if not det:
+            out.append('未读到 FreeRTOSConfig.h，本节跳过。')
+            out.append('')
+            continue
+        out.append('| 检查项 | 结果 |')
+        out.append('|---|---|')
+        miss = det.get('missing') or []
+        crit = det.get('critical_missing') or []
+        if not miss:
+            out.append('| 必备宏齐全性 | 齐全（%d 条必备宏都在） |' % len(PORTING_REQUIRED_MACROS))
+        else:
+            out.append('| 必备宏齐全性 | 缺 %d 条：%s%s |'
+                       % (len(miss), '、'.join('`%s`' % k for k in miss),
+                          ('；其中关键项 %s 判严重' % '、'.join('`%s`' % k for k in crit))
+                          if crit else ''))
+        pc, pm = det.get('port_c'), det.get('portmacro')
+        out.append('| 端口层 port.c / portmacro.h | %s |'
+                   % ('在 `%s`、`%s` 找到' % (pc, pm) if pc and pm
+                      else '注意：未找到，请确认'))
+        hp = det.get('heap')
+        out.append('| 堆实现 heap_N.c | %s |'
+                   % ('找到 `%s`：%s' % (hp, det.get('heap_note') or '') if hp
+                      else '注意：未找到，请确认（用哪个影响能否调用 vPortFree）'))
+        rows = ['%s %s' % ('✓' if st is True else ('✗' if st is False else '·'), txt)
+                for st, txt in (det.get('selfcheck') or [])]
+        out.append('| 配置自洽性 | %s |' % ('<br>'.join(rows) if rows else '无可比对项'))
+        out.append('')
+        if pfind:
+            out.append('移植自检命中项：')
+            out.append('')
+            for lv, loc, msg, _ in pfind:
+                out.append('- [%s] `%s` %s' % (lv, loc, msg.replace('|', '\\|')))
+            out.append('')
+        else:
+            out.append('移植自检未命中问题。')
+            out.append('')
+
     # B1：报告结尾补一节"下一步怎么做" —— 命中问题后要知道先改哪一处、按什么判断改多少，
     # 而不是只看到一张问题表。只加报告文字，不动任何判定逻辑与 JSON 字段。
     out.append('## 下一步怎么做')
@@ -1266,6 +1593,74 @@ def selftest():
            not b3_of(mkproj('b3_pos',
                'void TIM4_IRQHandler(void)\n{\n    g_flag = 1;\n'
                '    xQueueSendFromISR(q, &d, &w);\n}\n')))
+
+        # ---- D2 移植自检（错例必须命中，反例必须不报）----
+        # GOOD_CFG 是"骨架齐全"的模板：11 条必备宏都在、口径自洽；端口层文件也放齐。
+        GOOD_CFG = (
+            '#define configUSE_PREEMPTION 1\n'
+            '#define configTICK_RATE_HZ 1000\n'
+            '#define configMAX_PRIORITIES 8\n'
+            '#define configMINIMAL_STACK_SIZE 128\n'
+            '#define configTOTAL_HEAP_SIZE ((size_t)(30 * 1024))\n'
+            '#define configPRIO_BITS 4\n'
+            '#define configLIBRARY_LOWEST_INTERRUPT_PRIORITY 15\n'
+            '#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY 5\n'
+            '#define configKERNEL_INTERRUPT_PRIORITY '
+            '(configLIBRARY_LOWEST_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))\n'
+            '#define configMAX_SYSCALL_INTERRUPT_PRIORITY '
+            '(configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))\n'
+            '#define configCHECK_FOR_STACK_OVERFLOW 2\n'
+            '#define configASSERT(x) if ((x) == 0) { for (;;); }\n')
+
+        def mkport(name, cfg_text, port_files=True):
+            pp = os.path.join(d, name)
+            pd = os.path.join(pp, 'FreeRTOS', 'port')
+            os.makedirs(pd)
+            wr(os.path.join(pd, 'FreeRTOSConfig.h'), cfg_text)
+            if port_files:
+                wr(os.path.join(pd, 'port.c'), 'void xPortPendSVHandler(void) {}\n')
+                wr(os.path.join(pd, 'portmacro.h'), '#define portSTACK_GROWTH (-1)\n')
+                wr(os.path.join(pd, 'heap_4.c'),
+                   'void *pvPortMalloc(unsigned int n) { (void)n; return 0; }\n')
+            os.makedirs(os.path.join(pp, 'FWLIB', 'inc'))
+            wr(os.path.join(pp, 'FWLIB', 'inc', 'sys_nvic.h'),
+               '#define SYS_NVIC_PRIORITY_GROUP NVIC_PriorityGroup_4\n')
+            return pp
+
+        def port_of(proj):
+            _, ff, _ = check_board('x', proj)
+            return [(lv, m) for lv, _, m, k in ff if k == 'porting']
+
+        # 错例 1：缺关键宏 -> 严重
+        bad_cfg = GOOD_CFG.replace('#define configPRIO_BITS 4\n', '') \
+                          .replace('#define configTOTAL_HEAP_SIZE ((size_t)(30 * 1024))\n', '')
+        ep = port_of(mkport('port_missing', bad_cfg))
+        ck('D2 错例：缺关键宏 configPRIO_BITS / configTOTAL_HEAP_SIZE -> 严重',
+           any(lv == '严重' and '缺少必备宏 configPRIO_BITS' in m for lv, m in ep),
+           '、'.join(m for _, m in ep))
+
+        # 错例 2：configMAX_SYSCALL_INTERRUPT_PRIORITY 写错（≠ 上限<<(8-PRIO_BITS)）-> 注意
+        wrong_cfg = GOOD_CFG.replace(
+            '(configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))', '47')
+        ep2 = port_of(mkport('port_maxsys', wrong_cfg))
+        ck('D2 错例：configMAX_SYSCALL_INTERRUPT_PRIORITY 写错 -> 注意',
+           any(lv == '注意' and 'configMAX_SYSCALL_INTERRUPT_PRIORITY 写的是 47' in m
+               for lv, m in ep2), '、'.join(m for _, m in ep2))
+
+        # 正例：骨架齐全的自造工程 -> 移植自检不报（守住"不是永远报"）
+        ok_port = port_of(mkport('port_ok', GOOD_CFG))
+        ck('D2 正例：必备宏齐 + 端口层在位 + 口径自洽 -> 移植自检不报',
+           not ok_port, '、'.join(m for _, m in ok_port))
+
+        # 反例：本仓库真实两块板（既有写法：用真实配置做反例）解析后不许误报
+        real_porting = []
+        for _t, _rel in BOARDS:
+            _p = os.path.join(ROOT, _rel)
+            if not os.path.exists(os.path.join(_p, 'FreeRTOS', 'port', 'FreeRTOSConfig.h')):
+                continue
+            real_porting.extend(port_of(_p))
+        ck('D2 反例：本仓库真实两块板配置解析后不报移植问题',
+           not real_porting, '、'.join(m for _, m in real_porting))
 
         j = to_json([('板X', None, [('严重', 'loc', 'msg', 'assert')], [('f.c', 1, 't', 128, 3)])])
         ck('JSON 结构正确（工具名/板数/ok）',

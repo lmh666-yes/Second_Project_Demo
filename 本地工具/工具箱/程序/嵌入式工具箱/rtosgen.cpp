@@ -139,6 +139,7 @@ FwConfig parseConfig(const QString &configHeaderPath)
         QStringLiteral("configMINIMAL_STACK_SIZE"),
         QStringLiteral("configMAX_PRIORITIES"),
         QStringLiteral("configTICK_RATE_HZ"),
+        QStringLiteral("configCPU_CLOCK_HZ"),   /* 生成完整配置时要"与工程一致"，现读现用 */
         QStringLiteral("configUSE_MUTEXES"),
         QStringLiteral("configUSE_RECURSIVE_MUTEXES"),
         QStringLiteral("configUSE_COUNTING_SEMAPHORES"),
@@ -1126,6 +1127,282 @@ QString configSnippet(const FwConfig &cfg, const QVector<TaskSpec> &tasks,
     return out.join(QLatin1Char('\n'));
 }
 
+/* ---------------- 完整 FreeRTOSConfig.h 生成 ----------------
+   configSnippet 只列"相对你现有配置要改的那几条"；本函数把常用宏**逐条列全**，
+   每行后面跟一句中文理由：算得出来的写清算法，照惯例的写明「惯例/与工程一致」，
+   末尾再附「该放哪些 port 文件」清单。目的不是丢一串数字，而是把取值方法讲明白，
+   让用户下次遇到别的板子也能自己推。 */
+
+namespace {
+
+/* 堆用量估算：把 configTOTAL_HEAP_SIZE 拆成讲得清的几块 */
+struct HeapEstimate {
+    int stackWords     = 0;   /* 任务栈合计（字） */
+    int taskStackBytes = 0;   /* 任务栈合计（字节，1 字 = 4 字节） */
+    int resCount       = 0;
+    int resBytes       = 0;   /* 队列/信号量/定时器对象与缓冲 */
+    int sysTaskBytes   = 0;   /* 空闲任务栈（+ 有软定时器时的定时器服务任务栈） */
+    int base           = 0;   /* 小计 */
+    int total          = 0;   /* 含余量、向上取整后的最终值 */
+};
+
+HeapEstimate heapEstimate(const QVector<TaskSpec> &tasks, const QVector<ResSpec> &res,
+                          int minStack, int timerStackWords, bool useTimers)
+{
+    HeapEstimate h;
+    for (const TaskSpec &t : tasks)
+        h.stackWords += t.stackWords;
+    h.taskStackBytes = h.stackWords * 4;
+    h.resCount = int(res.size());
+    h.resBytes = h.resCount * 128;   /* 惯例：每个对象与缓冲按 128 字节估，够覆盖 Queue_t/Semaphore_t */
+    h.sysTaskBytes = minStack * 4 + (useTimers ? timerStackWords * 4 : 0);
+    h.base = h.taskStackBytes + h.resBytes + h.sysTaskBytes;
+    int total = h.base + h.base / 4;          /* 留四分之一余量 */
+    total = (total + 1023) / 1024 * 1024;     /* 向上取整到 1KB 边界 */
+    if (total < 8 * 1024)
+        total = 8 * 1024;                     /* 太小连这一个骨架都跑不起来 */
+    h.total = total;
+    return h;
+}
+
+} // namespace
+
+QString renderFreeRTOSConfig(const FwConfig &cfg, const QVector<TaskSpec> &tasks,
+                             const QVector<ResSpec> &res, const QString &projectName)
+{
+    const QString proj = projectName.trimmed().isEmpty() ? QStringLiteral("未命名工程")
+                                                         : projectName.trimmed();
+
+    int usedPrio = -1;
+    for (const TaskSpec &t : tasks)
+        usedPrio = qMax(usedPrio, t.prio);
+    /* 优先级档数：至少覆盖"最高任务优先级 + 1 档"，再留 1 档余量；惯例不低于 8 */
+    const int maxPrio = qMax(8, usedPrio + 2);
+    /* 定时器服务任务优先级：惯例 3，且必须 < configMAX_PRIORITIES */
+    const int timerPrio = qMax(1, qMin(3, maxPrio - 1));
+
+    bool needMutex = false, needRec = false, needCnt = false, needTimer = false;
+    for (const ResSpec &r : res) {
+        if (r.kind == QStringLiteral("mutex"))
+            needMutex = true;
+        else if (r.kind == QStringLiteral("recursive"))
+            needRec = true;
+        else if (r.kind == QStringLiteral("counting"))
+            needCnt = true;
+        else if (r.kind == QStringLiteral("timer"))
+            needTimer = true;
+    }
+
+    const bool cpuFromCfg = cfg.ints.contains(QStringLiteral("configCPU_CLOCK_HZ"));
+    const int cpuHz = cpuFromCfg ? cfg.ints.value(QStringLiteral("configCPU_CLOCK_HZ")) : 168000000;
+    const bool minStackFromCfg = cfg.ints.contains(QStringLiteral("configMINIMAL_STACK_SIZE"));
+    const int minStack = minStackFromCfg ? cfg.ints.value(QStringLiteral("configMINIMAL_STACK_SIZE")) : 128;
+    const int timerStack = 128;   /* 惯例，与工程一致 */
+
+    const HeapEstimate he = heapEstimate(tasks, res, minStack, timerStack, needTimer);
+
+    QStringList L;
+    auto def = [&L](const QString &name, const QString &value, const QString &why) {
+        QString n = name + QStringLiteral(" ").repeated(qMax(1, 42 - int(name.size())));
+        QString v = value + QStringLiteral(" ").repeated(qMax(1, 22 - int(value.size())));
+        L << QStringLiteral("#define %1%2/* %3 */").arg(n, v, why);
+    };
+
+    /* ---- 文件头 ---- */
+    L << QStringLiteral("/* ================================================================");
+    L << QStringLiteral(" *  FreeRTOSConfig.h —— %1（由 嵌入式工具箱 · RTOS 骨架生成 生成）").arg(proj);
+    L << QStringLiteral(" *  任务清单 %1 个（最高优先级 %2）；资源清单 %3 个。")
+             .arg(tasks.size())
+             .arg(usedPrio < 0 ? QStringLiteral("无") : QString::number(usedPrio))
+             .arg(res.size());
+    L << QStringLiteral(" *  本文件把常用宏逐条列全，每行后用中文注释说明「为什么取这个值」：");
+    L << QStringLiteral(" *    算得出来的写清算法；照惯例取的写明「惯例/与工程一致」，可直接现读现比。");
+    L << QStringLiteral(" *  依据的现有配置：%1")
+             .arg(cfg.path.isEmpty() ? QStringLiteral("未解析（按本仓库两块板的配置取值）") : cfg.path);
+    L << QStringLiteral(" *  末尾附「该放哪些 port 文件」清单，照它把 port 层文件放进工程即可编。");
+    L << QStringLiteral(" * ================================================================ */");
+    L << QString();
+    L << QStringLiteral("#ifndef FREERTOS_CONFIG_H");
+    L << QStringLiteral("#define FREERTOS_CONFIG_H");
+    L << QString();
+
+    /* ---- 基础调度 ---- */
+    L << QStringLiteral("/* ---------------- 基础调度 ---------------- */");
+    def(QStringLiteral("configUSE_PREEMPTION"), QStringLiteral("1"),
+        QStringLiteral("抢占式调度（内核核心机制）：高优先级任务一就绪就切换；置 0 会退化成协作式，"
+                       "本骨架的周期任务就得不到保证（与工程一致）"));
+    def(QStringLiteral("configUSE_IDLE_HOOK"), QStringLiteral("0"),
+        QStringLiteral("空闲钩子：每轮空闲循环都会回调 vApplicationIdleHook；不用低功耗/空闲统计就置 0，"
+                       "省掉这个每轮回调（与工程一致）"));
+    def(QStringLiteral("configUSE_TICK_HOOK"), QStringLiteral("0"),
+        QStringLiteral("节拍钩子：每个节拍（1ms）都会回调 vApplicationTickHook；没有每拍必做的事就置 0，"
+                       "省中断时间（与工程一致）"));
+    def(QStringLiteral("configCPU_CLOCK_HZ"),
+        QStringLiteral("(%1UL)").arg(cpuHz),
+        cpuFromCfg
+            ? QStringLiteral("取你现有配置的值（与工程一致）：本仓库两块板均为 STM32F407 @168MHz。"
+                             "它只用于 SysTick 重装载与运行统计，务必与系统时钟初始化一致（运行中切频会让节拍实际变慢）")
+            : QStringLiteral("惯例/与工程一致：本仓库两块板均为 STM32F407 @168MHz，取 168000000。"
+                             "务必与系统时钟初始化一致（运行中切频会让节拍实际变慢）"));
+    def(QStringLiteral("configTICK_RATE_HZ"), QStringLiteral("1000"),
+        QStringLiteral("节拍 1000Hz = 1ms（与工程一致）：周期任务用 pdMS_TO_TICKS(周期ms) 就直接等于毫秒数，"
+                       "调周期不用换算"));
+    def(QStringLiteral("configMAX_PRIORITIES"), QString::number(maxPrio),
+        usedPrio < 0
+            ? QStringLiteral("任务清单为空 → 按惯例取 8（与工程 configMAX_PRIORITIES=8 一致）")
+            : QStringLiteral("按任务清单算：最高优先级 %1 → 至少 %2 档，再留 1 档余量给后续新增/临时提升；"
+                             "惯例不低于 8（与工程一致）→ 取 %3")
+                  .arg(usedPrio).arg(usedPrio + 2).arg(maxPrio));
+    def(QStringLiteral("configMINIMAL_STACK_SIZE"), QString::number(minStack),
+        minStackFromCfg
+            ? QStringLiteral("空闲任务栈深度（字），取你现有配置的值（与工程一致）。各任务栈在 xTaskCreate 处单独给，"
+                             "不受此值约束")
+            : QStringLiteral("空闲任务栈深度（字）：惯例 128（与工程一致）。各任务栈在 xTaskCreate 处单独给，"
+                             "不受此值约束"));
+    def(QStringLiteral("configMAX_TASK_NAME_LEN"), QStringLiteral("16"),
+        QStringLiteral("任务名最大字符数：惯例 16（与工程一致），够放 Sensor/Process/Comm 这类名字；"
+                       "每调大 1 就按任务数多吃 RAM"));
+    def(QStringLiteral("configUSE_16_BIT_TICKS"), QStringLiteral("0"),
+        QStringLiteral("32 位节拍计数（与工程一致）：Cortex-M 本就是 32 位，TickType_t 用 32 位能记更长节拍跨度，"
+                       "不必省这 2 字节"));
+    L << QString();
+
+    /* ---- 内存管理 ---- */
+    L << QStringLiteral("/* ---------------- 内存管理（heap_4.c） ---------------- */");
+    def(QStringLiteral("configSUPPORT_STATIC_ALLOCATION"), QStringLiteral("0"),
+        QStringLiteral("只用动态分配：本骨架用 xTaskCreate/xQueueCreate，不需要静态缓冲（入门简单）；"
+                       "要静态分配再置 1 并另配静态对象"));
+    def(QStringLiteral("configSUPPORT_DYNAMIC_ALLOCATION"), QStringLiteral("1"),
+        QStringLiteral("开动态分配（与工程一致）：本骨架的 xTaskCreate / xQueueCreate 都从这里取堆，"
+                       "置 0 这些 API 直接编不进来"));
+    def(QStringLiteral("configTOTAL_HEAP_SIZE"), QStringLiteral("((size_t)(%1))").arg(he.total),
+        QStringLiteral("算：任务栈合计 %1 字 ×4 = %2 字节 + 队列/信号量/定时器对象与缓冲 128 字节 ×%3 = %4 字节 "
+                       "+ 系统任务栈（空闲 %5 字%6）×4 = %7 字节 → 小计 %8；再留四分之一余量并向上取整到 1KB → %9。"
+                       "留余量是因为运行中反复创建/删除对象还会再吃堆")
+            .arg(he.stackWords).arg(he.taskStackBytes).arg(he.resCount).arg(he.resBytes)
+            .arg(minStack)
+            .arg(needTimer ? QStringLiteral(" + 定时器服务 %1 字").arg(timerStack) : QString())
+            .arg(he.sysTaskBytes).arg(he.base).arg(he.total));
+    L << QString();
+
+    /* ---- 同步与通信开关 ---- */
+    L << QStringLiteral("/* ---------------- 同步与通信开关（按资源清单决定） ---------------- */");
+    def(QStringLiteral("configUSE_MUTEXES"), needMutex || needRec ? QStringLiteral("1") : QStringLiteral("0"),
+        (needMutex || needRec)
+            ? QStringLiteral("资源清单里有互斥量 → 置 1：xSemaphoreCreateMutex 必须把这块内核代码编进来；"
+                             "置 0 时该 API 不存在")
+            : QStringLiteral("本清单没用到互斥量 → 置 0 省 Flash（工程默认为 1，清单里加了互斥量就改回 1）"));
+    def(QStringLiteral("configUSE_RECURSIVE_MUTEXES"), needRec ? QStringLiteral("1") : QStringLiteral("0"),
+        needRec
+            ? QStringLiteral("资源清单里有递归互斥量 → 置 1：同一任务要重复取同一个锁时才用得上")
+            : QStringLiteral("本清单没用到递归互斥量 → 置 0 省代码（工程默认为 1）"));
+    def(QStringLiteral("configUSE_COUNTING_SEMAPHORES"), needCnt ? QStringLiteral("1") : QStringLiteral("0"),
+        needCnt
+            ? QStringLiteral("资源清单里有计数信号量 → 置 1：xSemaphoreCreateCounting 才会编进来")
+            : QStringLiteral("本清单没用到计数信号量 → 置 0 省代码（工程默认为 1）"));
+    def(QStringLiteral("configUSE_TIMERS"), needTimer ? QStringLiteral("1") : QStringLiteral("0"),
+        needTimer
+            ? QStringLiteral("资源清单里有软定时器 → 置 1：xTimerCreate 与定时器服务任务都由此开关，"
+                             "置 0 时下面三个定时器参数不会被用到")
+            : QStringLiteral("本清单没有软定时器 → 置 0 省 Flash；下面三个定时器参数仍按惯例列出来，"
+                             "以后要用只需把这一处改成 1"));
+    L << QString();
+
+    /* ---- 软件定时器 ---- */
+    L << QStringLiteral("/* ---------------- 软件定时器（configUSE_TIMERS=1 时生效） ---------------- */");
+    def(QStringLiteral("configTIMER_TASK_PRIORITY"), QString::number(timerPrio),
+        QStringLiteral("定时器服务任务优先级：惯例 3（与工程一致，工程为 3）；须小于 configMAX_PRIORITIES(%1)，"
+                       "取 min(3, %2)=%3。它应高于所有要用定时器的任务，否则回调会被业务任务压住")
+            .arg(maxPrio).arg(maxPrio - 1).arg(timerPrio));
+    def(QStringLiteral("configTIMER_QUEUE_LENGTH"), QStringLiteral("10"),
+        QStringLiteral("定时器命令队列长度：惯例 10（与工程一致），攒得下同时送来的启动/停止/复位命令"));
+    def(QStringLiteral("configTIMER_TASK_STACK_DEPTH"), QString::number(timerStack),
+        QStringLiteral("定时器服务任务栈深度（字）：惯例 %1（与工程一致），够回调与命令处理").arg(timerStack));
+    L << QString();
+
+    /* ---- 钩子 ---- */
+    L << QStringLiteral("/* ---------------- 钩子函数（实现见 freertos_hooks.c） ---------------- */");
+    def(QStringLiteral("configCHECK_FOR_STACK_OVERFLOW"), QStringLiteral("2"),
+        QStringLiteral("栈溢出检查 = 2（与工程一致）：切任务时比对栈尾模式串，能抓到多数溢出；"
+                       "需在 freertos_hooks.c 实现 vApplicationStackOverflowHook，否则报链接错"));
+    def(QStringLiteral("configUSE_MALLOC_FAILED_HOOK"), QStringLiteral("1"),
+        QStringLiteral("堆分配失败钩子 = 1（与工程一致）：xTaskCreate/xQueueCreate 建不出来（多半是堆不够）时报警，"
+                       "需在 freertos_hooks.c 实现 vApplicationMallocFailedHook"));
+    L << QString();
+
+    /* ---- 断言 ---- */
+    L << QStringLiteral("/* ---------------- 断言（调试利器） ---------------- */");
+    L << QStringLiteral("#define configASSERT(x) \\");
+    L << QStringLiteral("    if ((x) == 0) { taskDISABLE_INTERRUPTS(); for (;;); }"
+                        "   /* 断言：优先级违规 / ISR 里调错接口会被当场抓住；先关中断再死循环，"
+                        "方便调试器停下看现场。生产版可改空定义（与工程一致） */");
+    L << QString();
+
+    /* ---- 中断优先级 ---- */
+    L << QStringLiteral("/* ---------------- 中断优先级（与 NVIC 分组强相关） ----------------");
+    L << QStringLiteral(" *  Cortex-M 上「数值越小 = 优先级越高」。");
+    L << QStringLiteral(" *  NVIC 分组必须用 NVIC_PriorityGroup_4（4 位全做抢占，共 16 档，FreeRTOS 推荐）；");
+    L << QStringLiteral(" *  若改成 Group_2（2 位抢占），LIBRARY_MAX_SYSCALL 里的 5 会被截成 1，");
+    L << QStringLiteral(" *  所有 ISR 都会越过内核的 syscall 上限，在里面调 FromISR 接口会破坏临界区。 */");
+    def(QStringLiteral("configPRIO_BITS"), QStringLiteral("4"),
+        QStringLiteral("NVIC 优先级位数 = 4（与工程一致，即 CMSIS 宏 __NVIC_PRIO_BITS）："
+                       "STM32F4 只用高 4 位做优先级，共 16 档"));
+    def(QStringLiteral("configLIBRARY_LOWEST_INTERRUPT_PRIORITY"), QStringLiteral("15"),
+        QStringLiteral("内核/节拍中断所在的最低档：数值越小越高，15 是最低档（与工程一致）"));
+    def(QStringLiteral("configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY"), QStringLiteral("5"),
+        QStringLiteral("「能调用 FreeRTOS 接口的最高优先级」= 5（与工程一致）：ISR 里要调 xxxFromISR，"
+                       "其中断优先级数值必须 ≥ 5，否则越过 BASEPRI 破坏临界区（configASSERT 会抓）。"
+                       "本仓库 sys_usart / sys_tim 等模块的 SYS_XXX_IRQ_PRE_PRIO 都配 5，正好对齐"));
+    def(QStringLiteral("configKERNEL_INTERRUPT_PRIORITY"),
+        QStringLiteral("(configLIBRARY_LOWEST_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))"),
+        QStringLiteral("算：15 << (8-4) = 240 —— 把 4 位优先级左移到 8 位 IPR 的高位，"
+                       "用于 PendSV/SysTick 的优先级设置"));
+    def(QStringLiteral("configMAX_SYSCALL_INTERRUPT_PRIORITY"),
+        QStringLiteral("(configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY << (8 - configPRIO_BITS))"),
+        QStringLiteral("算：5 << (8-4) = 80 —— 同上换算后写进 BASEPRI，屏蔽优先级数值 < 80 的中断，"
+                       "使内核临界区不被高优先级 ISR 打断"));
+    L << QString();
+
+    /* ---- 移植层必需：向量改名 ---- */
+    L << QStringLiteral("/* ---------------- 内核异常处理函数改名（移植层必需） ---------------- */");
+    L << QStringLiteral("/* 端口层提供 SVC / PendSV / SysTick 三个入口，名字映射成启动文件里的标准向量名，"
+                        "否则链接不上；sys_tick.c 里的同名弱定义会被顶替 —— 用 FreeRTOS 后延时改用 vTaskDelay。 */");
+    def(QStringLiteral("vPortSVCHandler"), QStringLiteral("SVC_Handler"), QStringLiteral("同上：映射到启动文件向量名"));
+    def(QStringLiteral("xPortPendSVHandler"), QStringLiteral("PendSV_Handler"), QStringLiteral("同上：映射到启动文件向量名"));
+    def(QStringLiteral("xPortSysTickHandler"), QStringLiteral("SysTick_Handler"), QStringLiteral("同上：映射到启动文件向量名"));
+    L << QString();
+
+    /* ---- 该放哪些 port 文件 ---- */
+    L << QStringLiteral("/* ================= 该放哪些 port 文件（按本仓库实际目录） ==================");
+    L << QStringLiteral("   内核源码（必需，本仓库放 FreeRTOS/src/）：");
+    L << QStringLiteral("     tasks.c   —— 任务调度与生命周期（必需）");
+    L << QStringLiteral("     list.c    —— 内核用的双向链表（必需）");
+    L << QStringLiteral("     queue.c   —— 队列 / 信号量 / 互斥量的实现（必需）");
+    L << QStringLiteral("     timers.c  —— 软件定时器服务（%1）")
+             .arg(needTimer ? QStringLiteral("本清单用了软定时器 → 必须加")
+                                                                 : QStringLiteral("本清单没用软定时器，可不加；再加就把 configUSE_TIMERS 置 1"));
+    L << QStringLiteral("     event_groups.c / stream_buffer.c —— 用事件组 / 流(消息)缓冲才加"
+                        "（本清单没有；本仓库也没放 stream_buffer.c 源码）");
+    L << QStringLiteral("   头文件（本仓库放 FreeRTOS/inc/）：FreeRTOS.h / task.h / queue.h / semphr.h / timers.h 等");
+    L << QStringLiteral("   移植层（Cortex-M4F）：port.c 与 portmacro.h");
+    L << QStringLiteral("     上游标准路径 FreeRTOS/Source/portable/GCC/ARM_CM4F/port.c(+portmacro.h)；");
+    L << QStringLiteral("     本仓库两块板把 port.c / portmacro.h / heap_4.c / FreeRTOSConfig.h 全放在");
+    L << QStringLiteral("     Project/FreeRTOS/port/ 下（扁平的 port 目录，同上目录还含 freertos_hooks.c）。");
+    L << QStringLiteral("   堆实现 heap_4.c（上游 FreeRTOS/Source/portable/MemMang/heap_4.c；本仓库在 FreeRTOS/port/heap_4.c）");
+    L << QStringLiteral("     为什么选 heap_4：它在「首次适应」基础上会把相邻空闲块合并，能扛住反复创建/删除");
+    L << QStringLiteral("     任务或定时器造成的碎片；比 heap_1（不能 free）灵活、比 heap_2（碎片不合并）抗碎片，");
+    L << QStringLiteral("     实现又比 heap_5（要另配多段堆表）简单 —— 多数 Cortex-M 工程的默认选择。");
+    L << QStringLiteral("   配置与钩子（本仓库在 FreeRTOS/port/）：");
+    L << QStringLiteral("     FreeRTOSConfig.h —— 就是本文件（本工具已按你的清单生成）");
+    L << QStringLiteral("     freertos_hooks.c —— 实现 vApplicationMallocFailedHook / vApplicationStackOverflowHook");
+    L << QStringLiteral("   ====================================================================== */");
+    L << QString();
+    L << QStringLiteral("#endif /* FREERTOS_CONFIG_H */");
+    L << QString();
+
+    return L.join(QLatin1Char('\n'));
+}
+
 QString mergeUserCode(const QString &generated, const QString &existing)
 {
     if (existing.trimmed().isEmpty())
@@ -1642,6 +1919,112 @@ int selftest(QStringList &log, const QString &envMonitorRoot)
         /* 反例：一条 WCET 都没填 → 不输出（别在没数据时刷屏） */
         expect(RtosGen::scheduleAnalysis(sampleTasks()).isEmpty(),
                QStringLiteral("可调度性反例：没有填 WCET 的周期任务时不输出"));
+    }
+
+    /* ---------------- 完整 FreeRTOSConfig.h 生成（D1 新能力） ----------------
+       错例：生成物必须是"一份完整配置"——含必需宏、含成规模的中文理由注释、含 port 文件清单；
+       反例：配置头里不该混进应用代码，也不该出现"configUSE_TIMERS 置 1 却缺定时器参数"的自相矛盾。
+       最后把生成物落盘并用 parseConfig 回读，避免"只断言文本含某串、值改错了也照样过"。 */
+    {
+        QVector<ResSpec> resWithTimer = sampleResources();
+        resWithTimer << ResSpec{QStringLiteral("timer"), QStringLiteral("s_tmr_tick"),
+                                QStringLiteral("vTickCb"), 100, QStringLiteral("周期回调")};
+        const QString gen = RtosGen::renderFreeRTOSConfig(
+            FwConfig{}, sampleTasks(), resWithTimer, QStringLiteral("自检工程"));
+
+        /* 错例①：必需宏在 */
+        expect(gen.contains(QStringLiteral("#define configPRIO_BITS")),
+               QStringLiteral("完整配置：含 configPRIO_BITS"));
+        expect(gen.contains(QStringLiteral("#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY"))
+                   && gen.contains(QStringLiteral("#define configMAX_SYSCALL_INTERRUPT_PRIORITY")),
+               QStringLiteral("完整配置：含 syscall 优先级上限（LIBRARY 与换算后的两条）"));
+        expect(gen.contains(QStringLiteral("#define configASSERT")),
+               QStringLiteral("完整配置：含 configASSERT"));
+
+        /* 错例②：每个宏后面都要有理由注释，少于 20 处就说明退化成"只丢一堆数字" */
+        const int reasons = gen.count(QStringLiteral("/*"));
+        expect(reasons >= 20,
+               QStringLiteral("完整配置：中文理由注释至少 20 处（实际 %1）").arg(reasons));
+
+        /* 错例③：port 文件清单在，且内核 / 移植层 / 堆三个层面都点到 */
+        expect(gen.contains(QStringLiteral("该放哪些 port 文件")),
+               QStringLiteral("完整配置：含「该放哪些 port 文件」清单"));
+        expect(gen.contains(QStringLiteral("tasks.c")) && gen.contains(QStringLiteral("list.c"))
+                   && gen.contains(QStringLiteral("queue.c")),
+               QStringLiteral("port 清单：含内核必需三件 tasks.c / list.c / queue.c"));
+        expect(gen.contains(QStringLiteral("ARM_CM4F")) && gen.contains(QStringLiteral("portmacro.h")),
+               QStringLiteral("port 清单：点出 Cortex-M4F 移植层 port.c / portmacro.h"));
+        expect(gen.contains(QStringLiteral("heap_4.c")) && gen.contains(QStringLiteral("首次适应")),
+               QStringLiteral("port 清单：给出 heap_4.c 并说明为何选它"));
+        expect(gen.contains(QStringLiteral("Project/FreeRTOS/port/")),
+               QStringLiteral("port 清单：按本仓库实际目录说明这些文件放在哪"));
+        expect(gen.contains(QStringLiteral("timers.c")),
+               QStringLiteral("port 清单：清单用了软定时器 → 点出要加 timers.c"));
+
+        /* 反例①：配置头里不该混进应用代码（main / 任务参数宏） */
+        expect(!gen.contains(QStringLiteral("int main(")) && !gen.contains(QStringLiteral("APP_TASK_")),
+               QStringLiteral("完整配置反例：配置头里不出现 main() / APP_TASK_* 应用代码"));
+
+        /* 反例②（自相矛盾）：不该出现「configUSE_TIMERS 置 1 却没写定时器参数」。
+           先用一段人造的矛盾文本验"这个判据真能抓到"，再拿生成物验"不误报"。 */
+        auto configConsistent = [](const QString &t, QString *missing) -> bool {
+            if (!QRegularExpression(QStringLiteral("#\\s*define\\s+configUSE_TIMERS\\s+1\\b"))
+                     .match(t).hasMatch())
+                return true;
+            for (const QString &k : {QStringLiteral("configTIMER_TASK_PRIORITY"),
+                                     QStringLiteral("configTIMER_QUEUE_LENGTH"),
+                                     QStringLiteral("configTIMER_TASK_STACK_DEPTH")}) {
+                if (!t.contains(k)) {
+                    if (missing)
+                        *missing = k;
+                    return false;
+                }
+            }
+            return true;
+        };
+        QString miss;
+        const bool caught = !configConsistent(QStringLiteral(
+                                "#define configUSE_TIMERS 1\n#define configTIMER_TASK_PRIORITY 3\n"),
+                            &miss);
+        expect(caught,
+               QStringLiteral("完整配置错例：configUSE_TIMERS=1 却缺 %1，判据要抓到").arg(miss));
+        miss.clear();
+        const bool selfOk = configConsistent(gen, &miss);
+        expect(selfOk,
+               QStringLiteral("完整配置反例：生成物自身不矛盾%1")
+                   .arg(selfOk ? QStringLiteral("") : QStringLiteral("（缺 %1）").arg(miss)));
+
+        /* 生成物落盘 + parseConfig 回读：值与本工程对得上才算数 */
+        const QString tdir = QDir(QDir::tempPath()).filePath(QStringLiteral("rtosgen_selftest"));
+        QDir().mkpath(tdir);
+        const QString cfgPath = QDir(tdir).filePath(QStringLiteral("FreeRTOSConfig.h"));
+        const QByteArray bytes = gen.toUtf8();
+        bool wrote = false;
+        {
+            QFile f(cfgPath);
+            if (f.open(QIODevice::WriteOnly)) {
+                wrote = f.write(bytes) == bytes.size();
+                f.close();
+            }
+        }
+        expect(wrote, QStringLiteral("完整配置：生成物可落盘（%1）").arg(cfgPath));
+        if (wrote) {
+            const FwConfig back = RtosGen::parseConfig(cfgPath);
+            expect(back.ok, QStringLiteral("完整配置回读：parseConfig 解析成功"));
+            expect(back.ints.value(QStringLiteral("configPRIO_BITS")) == 4,
+                   QStringLiteral("完整配置回读：configPRIO_BITS = 4"));
+            expect(back.ints.value(QStringLiteral("configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY")) == 5,
+                   QStringLiteral("完整配置回读：LIBRARY_MAX_SYSCALL = 5"));
+            expect(back.ints.value(QStringLiteral("configMAX_PRIORITIES")) >= 5,
+                   QStringLiteral("完整配置回读：configMAX_PRIORITIES(%1) 覆盖最高任务优先级 4")
+                       .arg(back.ints.value(QStringLiteral("configMAX_PRIORITIES"))));
+            expect(back.ints.value(QStringLiteral("configUSE_TIMERS")) == 1,
+                   QStringLiteral("完整配置回读：清单有软定时器 → configUSE_TIMERS = 1"));
+            expect(back.ints.value(QStringLiteral("configTOTAL_HEAP_SIZE")) >= 512 * 3 * 4,
+                   QStringLiteral("完整配置回读：configTOTAL_HEAP_SIZE(%1) ≥ 任务栈合计 %2")
+                       .arg(back.ints.value(QStringLiteral("configTOTAL_HEAP_SIZE")))
+                       .arg(512 * 3 * 4));
+        }
     }
 
     return fail;

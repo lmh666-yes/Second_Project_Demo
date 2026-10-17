@@ -106,6 +106,12 @@ QString renderHeader(const FwConfig &cfg, const QVector<TaskSpec> &tasks,
 QString configSnippet(const FwConfig &cfg, const QVector<TaskSpec> &tasks,
                       const QVector<ResSpec> &res);
 
+/* 产出一份完整可用的 FreeRTOSConfig.h：常用宏逐条列全，每条后跟中文理由
+   （算得出来的写清算法、照惯例的写明「惯例/与工程一致」），末尾附
+   「该放哪些 port 文件」清单。与 main.c 一样是生成物，可预览/复制/落盘。 */
+QString renderFreeRTOSConfig(const FwConfig &cfg, const QVector<TaskSpec> &tasks,
+                             const QVector<ResSpec> &res, const QString &projectName);
+
 /* 把旧文件里 USER CODE 保护区的内容搬进新生成的文本（重生成不覆盖用户代码）。 */
 QString mergeUserCode(const QString &generated, const QString &existing);
 
