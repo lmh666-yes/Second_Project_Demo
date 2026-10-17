@@ -82,6 +82,64 @@ def collect_defines(text):
     return out
 
 
+# ---------------- B2：从工程里读"上传周期 / 补传节奏" ----------------
+# 这两个是核算结论的关键假设。以前只能手填（默认 1000/50 只是示例），其实工程里
+# 写得出出处：采集/上报任务 `vTaskDelay(pdMS_TO_TICKS(2000))`（板1 main.c）、
+# 补传任务 `vTaskDelay(pdMS_TO_TICKS(REPLAY_PERIOD_MS))`（板2 main.c，宏 = 50）。
+# 能读到就拿来用并在报告里标出出处；读不到就退回命令行值，并标明"默认值/未在工程里找到"。
+MAIN1_REL = os.path.join('EnvMonitor', 'Project_1_检测端', 'Project', 'main.c')
+MAIN2_REL = os.path.join('EnvMonitor', 'Project_2_数据通信端', 'Project', 'main.c')
+RE_TICKS = re.compile(r'pdMS_TO_TICKS\s*\(\s*(\d+)\s*\)')
+RE_FUNC_NAME = re.compile(r'^\s*(?:static\s+)?void\s+(\w+)\s*\(')
+RE_REPLAY_MACRO = re.compile(r'#\s*define\s+(\w*REPLAY\w*)\s+(\d+)\s*$', re.M)
+
+
+def task_delay(text, hint, rel):
+    """在 text 里找"函数名含 hint 的那个函数"体内第一个 pdMS_TO_TICKS(N) → (N, 出处)。"""
+    lines = text.splitlines()
+    for i, ln in enumerate(lines):
+        fm = RE_FUNC_NAME.match(ln)
+        if not fm or hint.lower() not in fm.group(1).lower():
+            continue
+        for j in range(i, min(i + 400, len(lines))):
+            m = RE_TICKS.search(lines[j])
+            if m:
+                return int(m.group(1)), '%s:%d（任务 %s）' % (rel, j + 1, fm.group(1))
+    return None, ''
+
+
+def guess_periods(root):
+    """返回 (上传周期ms, 出处, 补传ms, 出处)；读不到就是 None / ''。"""
+    period, psrc = None, ''
+    t1 = read_text(os.path.join(root, MAIN1_REL))
+    if t1:
+        for hint in ('Sensor', 'Report', 'Upload', 'Env', 'Sample', 'Comm'):
+            period, psrc = task_delay(t1, hint, MAIN1_REL)
+            if period:
+                break
+    replay, rsrc = None, ''
+    t2 = read_text(os.path.join(root, MAIN2_REL))
+    if t2:
+        m = RE_REPLAY_MACRO.search(t2)
+        if m:
+            replay, rsrc = int(m.group(2)), '%s（宏 %s）' % (MAIN2_REL, m.group(1))
+        else:
+            replay, rsrc = task_delay(t2, 'Replay', MAIN2_REL)
+    if replay is None:                     # 宏也可能写在板2 的某个头文件里
+        inc2 = os.path.join(root, INC2)
+        if os.path.isdir(inc2):
+            for fn in sorted(os.listdir(inc2)):
+                if not fn.endswith('.h'):
+                    continue
+                t = read_text(os.path.join(inc2, fn))
+                m = RE_REPLAY_MACRO.search(t or '')
+                if m:
+                    replay = int(m.group(2))
+                    rsrc = '%s%s（宏 %s）' % (INC2, fn, m.group(1))
+                    break
+    return period, psrc, replay, rsrc
+
+
 def num_of(name, pool, depth=0):
     """把宏名算成整数：支持字面量、纯算术与宏引用（如 SLOT - HDR）。
     算不出（含函数调用、类型、字符串）返回 None，不猜。"""
@@ -269,16 +327,18 @@ def render(findings, stats):
     out.append('')
     out.append('| 假设 | 本次取值 | 来源 |')
     out.append('|---|---|---|')
-    out.append('| 上传周期 | %s ms | **命令行参数**（--period-ms），默认 1000 只是示例 |'
-               % stats.get('period_ms'))
-    out.append('| 补传每条耗时 | %s ms | **命令行参数**（--replay-ms），默认 50 只是示例 |'
-               % stats.get('replay_ms'))
+    out.append('| 上传周期 | %s ms | %s |'
+               % (stats.get('period_ms'), stats.get('period_src') or '默认值'))
+    out.append('| 补传每条耗时 | %s ms | %s |'
+               % (stats.get('replay_ms'), stats.get('replay_src') or '默认值'))
     out.append('| 一条线上记录的字节数 | %s B | **命令行参数**（--record-bytes） |'
                % stats.get('record_bytes'))
     out.append('')
-    out.append('> 这两条**不是实测值**，是按你填的参数算的。请按工程实际的采集/上报周期与'
-               '补传任务节奏改，否则「断网可扛」「补传追不追得上」的结论都不成立。'
-               '改完重跑本工具，报告里这两行会同步变成你填的值。')
+    out.append('> 上传周期与补传节奏**优先从工程里读**（采集/上报任务的 '
+               '`vTaskDelay(pdMS_TO_TICKS(...))`、补传任务的 `REPLAY_PERIOD_MS`），'
+               '读不到才用命令行/默认值。上面第三列就是本次的取值来源 —— 显示"默认值"说明'
+               '工程里没找到，请按实际的采集/上报与补传节奏填，否则「断网可扛」「追不追得上」'
+               '的结论都不成立。')
     out.append('')
 
     out.append('## 摘要')
@@ -345,6 +405,22 @@ def render(findings, stats):
         for lv, loc, msg, _ in findings:
             out.append('- **[%s]** %s — %s' % (lv, loc, msg))
         out.append('')
+
+    # B1：命中后具体先做什么（只加报告文字，不动判定逻辑与 JSON 字段）
+    out.append('## 下一步怎么做')
+    out.append('')
+    out.append('- 先看最上面「待确认的假设」：**来源若不是"工程里读到"，结论就只是按默认值试算** —— '
+               '先把采集/上报周期与补传节奏填对（或让工具自己读到），再看下面的数。')
+    out.append('- 判到"补传慢于写入"（严重）：要么加快补传（调小 `--replay-ms` 对应的实际节奏），'
+               '要么放宽上传周期；两者都改不动时，靠 `W25QXX_LogLost` 报警来兜。')
+    out.append('- 判到"记录塞不下 / 跨扇区 / 越过分区上界"：动的是板2 的 `w25qxx_log.h`'
+               '（`SLOT_SIZE` / `SECTORS`）与分区表，改完**重跑本工具 + 重跑协议校验**'
+               '（线上帧长度可能跟着变）。')
+    out.append('- 「上传周期对照表」用来挑周期：别只看"能扛多久"，同看它的补传结论那一列，'
+               '尽量挑"补传追得上"的档。')
+    out.append('- 扇区粒度的连带丢失是硬件限制：要么留余量，要么在 `W25QXX_LogLost` 非 0 时报警'
+               '（这条不是可改的 bug）。')
+    out.append('')
 
     out.append('## 说明')
     out.append('')
@@ -444,6 +520,33 @@ def selftest():
        not any(k == 'replay' for lv, _, m, k in f)
        and any(k == 'catchup' for lv, _, m, k in f))
 
+    # B2 从工程读参数：错例（采集任务 vTaskDelay(pdMS_TO_TICKS(2000)) → 读到 2000）
+    #                 + 反例（工程里没有这些文件 → 返回 None，不瞎猜）
+    import shutil
+    import tempfile
+    d3 = tempfile.mkdtemp(prefix='cache_b2_')
+    d4 = tempfile.mkdtemp(prefix='cache_b2b_')
+    try:
+        m1 = os.path.join(d3, MAIN1_REL)
+        m2 = os.path.join(d3, MAIN2_REL)
+        os.makedirs(os.path.dirname(m1))
+        os.makedirs(os.path.dirname(m2))
+        with open(m1, 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write('void vTaskSensor(void *p)\n{\n    vTaskDelay(pdMS_TO_TICKS(2000));\n}\n')
+        with open(m2, 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write('#define REPLAY_PERIOD_MS 50\n'
+                     'void vTaskReplay(void *p)\n{\n    vTaskDelay(pdMS_TO_TICKS(REPLAY_PERIOD_MS));\n}\n')
+        g_p, g_ps, g_r, g_rs = guess_periods(d3)
+        ck('错例：从工程读到采集周期 2000ms（出处带任务名与行号）',
+           g_p == 2000 and 'vTaskSensor' in g_ps, str((g_p, g_ps)))
+        ck('错例：从工程读到补传节奏 50ms（来自 REPLAY_PERIOD_MS 宏）',
+           g_r == 50 and 'REPLAY' in g_rs, str((g_r, g_rs)))
+        ck('反例：工程里没有这些文件 → 读不到就返回 None（不瞎猜）',
+           guess_periods(d4) == (None, '', None, ''), str(guess_periods(d4)))
+    finally:
+        shutil.rmtree(d3, ignore_errors=True)
+        shutil.rmtree(d4, ignore_errors=True)
+
     # 缺宏：算不出来要报严重，而不是静默通过
     f6, _ = run('#define W25QXX_LOG_SECTORS 16U\n', FLASH_SAMPLE)
     ck('错例：几何宏缺失 → 报严重而不是静默通过',
@@ -502,6 +605,7 @@ def main(argv):
     json_mode = False
     period_ms, replay_ms, record_bytes = 1000, 50, 20
     bad = []
+    given_period, given_replay = False, False
     i = 1
     while i < len(argv):
         a = argv[i]
@@ -523,9 +627,9 @@ def main(argv):
                 i += 2
                 continue
             if a == '--period-ms':
-                period_ms = v
+                period_ms, given_period = v, True
             elif a == '--replay-ms':
-                replay_ms = v
+                replay_ms, given_replay = v, True
             else:
                 record_bytes = v
             i += 2
@@ -548,6 +652,20 @@ def main(argv):
         flash_text = ''
 
     findings, stats = analyze(log_text, flash_text, period_ms, replay_ms, record_bytes)
+    # B2：命令行没给的两个参数，试着从工程里读出来（读得到就用，并记出处给报告用）
+    g_p, g_ps, g_r, g_rs = guess_periods(ROOT)
+    if not given_period and g_p:
+        period_ms, period_src = g_p, '工程里读到：%s' % g_ps
+        findings, stats = analyze(log_text, flash_text, period_ms, replay_ms, record_bytes)
+    else:
+        period_src = '命令行参数' if given_period else '默认值（未在工程里找到）'
+    if not given_replay and g_r:
+        replay_ms, replay_src = g_r, '工程里读到：%s' % g_rs
+        findings, stats = analyze(log_text, flash_text, period_ms, replay_ms, record_bytes)
+    else:
+        replay_src = '命令行参数' if given_replay else '默认值（未在工程里找到）'
+    stats['period_src'] = period_src
+    stats['replay_src'] = replay_src
     ok = not any(f[0] == '严重' for f in findings)
 
     if json_mode:

@@ -968,6 +968,22 @@ def render(results):
             for key in seen:
                 out.append('- %s' % PRINCIPLE.get(key, ''))
             out.append('')
+    # B1：报告结尾补一节"下一步怎么做" —— 命中问题后要知道先改哪一处、按什么判断改多少，
+    # 而不是只看到一张问题表。只加报告文字，不动任何判定逻辑与 JSON 字段。
+    out.append('## 下一步怎么做')
+    out.append('')
+    out.append('- 有「严重」项：先按「检查结果」里的 `文件:行` 打开现场，'
+               '再对照「原理」一节确认上下文，改完重跑本检查。')
+    out.append('- 中断优先级违规：要么调 `SYS_NVIC_SetPriority` 里配下去的那个值，'
+               '要么把 ISR 里调的那个接口换成 `xxxFromISR`。')
+    out.append('- 配置漂移（宏与调用处不一致）：以模块头的 `SYS_*_IRQ_PRE_PRIO` 为准，'
+               '把硬编码那一行的字面量改成引用该宏。')
+    out.append('- 栈 / 堆：先按 `configMINIMAL_STACK_SIZE` 与 `configTOTAL_HEAP_SIZE` 算够'
+               '（栈单位是字，1 字 = 4 字节），再改 `xTaskCreate` 的深度与堆大小。')
+    out.append('- 看门狗 vs Flash 擦写：在擦除前后各补一次 `SYS_WDG_Feed()`，'
+               '或把看门狗超时放到 8s（8000ms）以上。')
+    out.append('')
+
     out.append('## 说明')
     out.append('')
     out.append('1) 静态检查只覆盖能判定的部分，命中项需人工确认上下文。')

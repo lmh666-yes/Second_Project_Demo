@@ -394,6 +394,20 @@ def render(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False
         out.append('| %s | %d |' % (k, v))
     out.append('')
 
+    # B1：报告结尾补一节"下一步怎么做" —— 命中问题后要分清哪些是必须修的真违规、
+    # 哪些只是习惯提示，别把提示当违规去改。只加报告文字，不动判定逻辑与 JSON 字段。
+    out.append('## 下一步怎么做')
+    out.append('')
+    out.append('- 第 1 节「违规清单」里的 BOM / 编码 / 换行 / 替换字符才是真违规，必须逐条修：'
+               'BOM 用编辑器「另存为无 BOM」，main.c 存回 GBK，其余源码与文档存成 UTF-8。')
+    out.append('- 第 1b 节的全角标点属中文注释习惯，不影响编译；'
+               '想按违规计就加 `--strict-comments` 重跑，那一档会写进第 1 节。')
+    out.append('- 换行只在加 `--eol` 时查、且按 git 索引判定；'
+               '若报 CRLF，用 `git add --renormalize` 重归一后再提交。')
+    out.append('- 第 2 节内存快照缺项，只说明 Keil 复编日志没取到，'
+               '把 `keil_板N.log` 放到上述查找路径下重跑即可，不影响编码结论。')
+    out.append('')
+
     out.append('## 4. 说明')
     out.append('')
     out.append('1) 若 main.c 被判为"按 gbk 解码失败、按 utf-8 可解码"，多为编辑器把它另存成了 UTF-8，需改回 GBK。')

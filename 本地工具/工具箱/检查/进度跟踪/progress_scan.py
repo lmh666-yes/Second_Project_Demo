@@ -389,6 +389,65 @@ def delta_text(now, prev):
     return ('↓ 减少 %d' % abs(d)) if d < 0 else ('↑ 增加 %d' % d)
 
 
+def module_summary(markers, todo_stubs):
+    """把待办标记与待实现桩按"模块"汇总，并给出"先做哪个"的顺序。
+
+    为什么加这一节：报告前两节是"按文件"平铺的清单，几十条连着看下来分不清
+    该先动哪个模块。这里按模块（文件名去扩展名，从路径派生、不凭空猜）汇总，
+    再用一条能说清理由的次序回答"先做哪个"：
+
+      1) main（或文件名含 main）最优先——主流程没通，别的都白搭；
+      2) 待办多的模块优先——集中处理，一次把一个模块做完；
+      3) 桩多的模块次之——桩没实现，功能是空的；
+      4) 其余按模块名字母序——优先级相近。
+
+    实现上就是"先分类、再按计数、最后按名称"的稳定排序，不引入任何外部
+    权重表或依赖。同一模块的待办与桩分别累计；只收"有内容"的模块（待办或
+    桩至少 1 个），否则上百个空模块也会进表，反而看不清重点。
+
+    返回 [(模块, 待办数, 桩数, 理由)]，已按建议顺序排好。
+    """
+    counts = {}     # 模块 -> [待办数, 桩数]
+    for r, _, _, _ in markers:
+        counts.setdefault(module_name(r), [0, 0])[0] += 1
+    for r, _, _, _, _, _ in todo_stubs:
+        counts.setdefault(module_name(r), [0, 0])[1] += 1
+
+    def main_like(name):
+        return 'main' in name.lower()
+
+    def sort_key(item):
+        name, mcnt, scnt = item
+        if main_like(name):
+            return (0, 0, 0, name)
+        if mcnt > 0:
+            return (1, -mcnt, -scnt, name)
+        if scnt > 0:
+            return (2, 0, -scnt, name)
+        return (3, 0, 0, name)
+
+    def why(name, mcnt, scnt):
+        if main_like(name):
+            return '主流程没通，别的都白搭'
+        if mcnt > 0:
+            return '集中处理，一次把一个模块做完'
+        if scnt > 0:
+            return '桩没实现，功能是空的'
+        return '按名称排，优先级相近'
+
+    rows = sorted(((n, c[0], c[1]) for n, c in counts.items()), key=sort_key)
+    return [(n, m, s, why(n, m, s)) for n, m, s in rows]
+
+
+def module_name(rel_path):
+    """模块名 = 文件名去掉扩展名（从文件路径派生，不凭空猜）。
+
+    例：EnvMonitor/.../FWLIB/src/sys_usart.c -> sys_usart；
+        EnvMonitor/Project_1_检测端/Project/main.c -> main。
+    """
+    return os.path.splitext(os.path.basename(rel_path))[0]
+
+
 def render(root, markers, stubs, enc_count, file_count, cur=None, prev=None):
     out = []
     out.append('# 进度报告')
@@ -471,7 +530,37 @@ def render(root, markers, stubs, enc_count, file_count, cur=None, prev=None):
                 out.append('| %d | `%s` | %s | %s |' % (ln, name, reason, '是' if has_marker else '否'))
             out.append('')
 
-    out.append('## 3. 疑似有意留空（非待实现，核对后忽略）')
+    # 为什么加这一节：上面两节是"按文件"平铺的清单，看下来不知道该先做哪个模块。
+    # 这里按模块汇总，并给出一个能说清理由的先后次序，直接回答"先做哪个"。
+    out.append('## 3. 待办按模块汇总（先做哪个）')
+    out.append('')
+    mod_rows = module_summary(markers, todo_stubs)
+    if not mod_rows:
+        out.append('无。')
+        out.append('')
+    else:
+        out.append('共 %d 个待办、%d 个待实现桩，分布在 %d 个模块。'
+                   % (len(markers), len(todo_stubs), len(mod_rows)))
+        out.append('')
+        out.append('| 模块 | 待办 | 桩 | 为什么排这个次序 |')
+        out.append('|---|---|---|---|')
+        for name, mcnt, scnt, why in mod_rows:
+            out.append('| %s | %d | %d | %s |' % (name, mcnt, scnt, why))
+        out.append('')
+        # 只列前 8 项，再往后优先级已相近，只报数量，避免清单本身又变成一团。
+        top = mod_rows[:8]
+        seq = ' '.join('%d) %s%s' % (i + 1, n, '（主流程）' if 'main' in n.lower() else '')
+                      for i, (n, _, _, _) in enumerate(top))
+        line = '建议顺序：' + seq
+        if len(mod_rows) > len(top):
+            line += '；其余 %d 个模块不再逐一列出。' % (len(mod_rows) - len(top))
+        out.append(line)
+        out.append('')
+    # 本节只做汇总与排序：扫描口径、--json 字段名均未改动，面板契约不变。
+    out.append('注：本节只汇总排序，扫描口径与 `--json` 字段均未改动。')
+    out.append('')
+
+    out.append('## 4. 疑似有意留空（非待实现，核对后忽略）')
     out.append('')
     if not noop_stubs:
         out.append('无。')
@@ -489,7 +578,7 @@ def render(root, markers, stubs, enc_count, file_count, cur=None, prev=None):
                 out.append('| %d | `%s` | %s |' % (ln, name, reason))
             out.append('')
 
-    out.append('## 4. 进度文档现状')
+    out.append('## 5. 进度文档现状')
     out.append('')
     out.append('| 文档 | 大小 | 现状 |')
     out.append('|---|---|---|')
@@ -503,7 +592,7 @@ def render(root, markers, stubs, enc_count, file_count, cur=None, prev=None):
         out.append('| `%s` | %d 字节 | %s |' % (d, size, state))
     out.append('')
 
-    out.append('## 5. 说明')
+    out.append('## 6. 说明')
     out.append('')
     out.append('1) 待办标记取源码注释与代码里的关键字，第三方目录已跳过。')
     out.append('2) 桩函数是启发式判定，个别宏或声明式写法可能误报，按清单核对。')
@@ -590,8 +679,33 @@ def selftest():
         report = render(tmp, markers, stubs, enc_count, file_count)
         ck('报告渲染不炸且含两栏清单',
            '## 2. 疑似桩函数（待实现）' in report and 'App_Sensor' in report
-           and '## 3. 疑似有意留空' in report and 'App_Cb' in report)
+           and '## 4. 疑似有意留空' in report and 'App_Cb' in report)
         ck('自检未污染趋势快照', load_prev() == before)
+
+        # B4 待办按模块汇总：正例（模块名派生 + 排序）与反例（有意留空不计入）
+        mod_rows = module_summary(markers, todo)
+        mod_names = sorted(n for n, _, _, _ in mod_rows)
+        # 错例：把扩展名当模块名、或漏掉某模块，这条就 FAIL
+        ck('模块名由文件名去扩展名（a.c->a、b.cpp->b）', mod_names == ['a', 'b'],
+           '、'.join(mod_names) or '无')
+        # 反例：c.c 的桩是有意留空，'c' 不该出现在模块表里（避免把空桩当待办）
+        ck('反例：有意留空的桩不计入模块（c 不出现）', 'c' not in mod_names)
+        ck('排序：含待办的模块排在只有桩的模块之前',
+           [n for n, _, _, _ in mod_rows] == ['a', 'b'],
+           '、'.join(n for n, _, _, _ in mod_rows) or '无')
+        # 错例：不把 main 排最前、或忽略待办数多寡，这条就 FAIL
+        fm = [('x/sys_usart.c', 1, 'TODO', ''), ('x/sys_usart.c', 2, 'TODO', ''),
+              ('x/main.c', 3, 'TODO', ''), ('x/zzz.c', 4, 'TODO', ''), ('x/zzz.c', 5, 'TODO', '')]
+        fs = [('x/adc.c', 1, 'F', '空函数体', False, False),
+              ('x/adc.c', 2, 'F', '空函数体', False, False),
+              ('x/adc.c', 3, 'F', '空函数体', False, False)]
+        ck('main 最优先、待办多的在前（排序错即 FAIL）',
+           [n for n, _, _, _ in module_summary(fm, fs)] == ['main', 'sys_usart', 'zzz', 'adc'],
+           '、'.join(n for n, _, _, _ in module_summary(fm, fs)))
+        ck('新节在桩函数节之后、说明之前',
+           '## 3. 待办按模块汇总（先做哪个）' in report
+           and report.index('## 2. 疑似桩函数') < report.index('## 3. 待办按模块汇总')
+           < report.index('## 6. 说明'))
 
         j = to_json(tmp, markers, stubs, enc_count, file_count, [])
         ck('JSON 结构正确（工具名/计数/stub_files）',

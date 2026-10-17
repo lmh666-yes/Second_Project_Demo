@@ -13,6 +13,7 @@
 #include <QToolTip>
 #include <QVariantList>
 
+#include <algorithm>
 #include <climits>
 
 namespace {
@@ -124,6 +125,7 @@ void DashboardCanvas::paintEvent(QPaintEvent *)
     const int w = qMax(320, width() - kMargin * 2);
     int y = kMargin;
 
+    y = drawConclusion(p, kMargin, y, w, pal);   /* B3：先给一句话结论 + 最该先看的 3 件事 */
     y = drawHealth(p, kMargin, y, w, pal);
     y = drawDelta(p, kMargin, y, w, pal);
     y = drawPins(p, kMargin, y, w, pal);
@@ -343,6 +345,146 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
         m_hits.append(hit);
     }
     return y + ch + 14;
+}
+
+/* B3：面板顶部一句话结论 + 最该先看的 3 件事（每一项可点，直达报告里对应那一节）。
+   B3 的目的：不用先看懂 7 张卡片与一堆数字，也知道"现在什么状态、先动哪一个"。
+   判定口径与健康度卡片一致（引脚调试口=严重、数量类 1~4 黄 / ≥5 红、缓存按可扛时长）。 */
+int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Palette &pal)
+{
+    struct Item { QString key; QString name; QString why; int level; };   /* level: 0=严重 1=注意 */
+    QVector<Item> bad;
+
+    {
+        const QVariantMap m = m_tools.value(QStringLiteral("pin")).toMap();
+        int conflicts = 0, dbg = 0;
+        for (const QVariant &b : m.value(QStringLiteral("boards")).toList()) {
+            conflicts += b.toMap().value(QStringLiteral("conflicts")).toMap().size();
+            dbg += b.toMap().value(QStringLiteral("debug_used")).toList().size();
+        }
+        if (dbg)
+            bad.append({QStringLiteral("pin"), QStringLiteral("引脚规划"),
+                        QStringLiteral("调试口被业务宏占了"), 0});
+        else if (conflicts)
+            bad.append({QStringLiteral("pin"), QStringLiteral("引脚规划"),
+                        QStringLiteral("%1 处引脚冲突").arg(conflicts), conflicts >= 5 ? 0 : 1});
+    }
+    {
+        const QVariantMap m = m_tools.value(QStringLiteral("rtos")).toMap();
+        int sev = 0, wr = 0;
+        for (const QVariant &b : m.value(QStringLiteral("boards")).toList()) {
+            sev += b.toMap().value(QStringLiteral("severe")).toInt();
+            wr += b.toMap().value(QStringLiteral("warn")).toInt();
+        }
+        if (sev)
+            bad.append({QStringLiteral("rtos"), QStringLiteral("RTOS 检查"),
+                        QStringLiteral("%1 处严重（优先级 / ISR 用法）").arg(sev), 0});
+        else if (wr)
+            bad.append({QStringLiteral("rtos"), QStringLiteral("RTOS 检查"),
+                        QStringLiteral("%1 处注意").arg(wr), 1});
+    }
+    {
+        const QVariantMap m = m_tools.value(QStringLiteral("enc")).toMap();
+        const int v = m.value(QStringLiteral("violations")).toInt();
+        if (v)
+            bad.append({QStringLiteral("enc"), QStringLiteral("编码守卫"),
+                        QStringLiteral("%1 个文件违规").arg(v), v >= 5 ? 0 : 1});
+    }
+    {
+        const QVariantMap m = m_tools.value(QStringLiteral("lora")).toMap();
+        int n = m.value(QStringLiteral("cross")).toList().size();
+        for (const QVariant &b : m.value(QStringLiteral("boards")).toList())
+            n += b.toMap().value(QStringLiteral("issues")).toList().size();
+        if (n)
+            bad.append({QStringLiteral("lora"), QStringLiteral("LoRa 检查"),
+                        QStringLiteral("%1 处问题").arg(n), n >= 3 ? 0 : 1});
+    }
+    {
+        const QVariantMap m = m_tools.value(QStringLiteral("protocol")).toMap();
+        int n = 0;
+        for (const QVariant &b : m.value(QStringLiteral("boards")).toList())
+            n += b.toMap().value(QStringLiteral("issues")).toInt();
+        n += m.value(QStringLiteral("findings")).toList().size();
+        if (n)
+            bad.append({QStringLiteral("protocol"), QStringLiteral("协议校验"),
+                        QStringLiteral("%1 处问题").arg(n), n >= 3 ? 0 : 1});
+    }
+    {
+        const QVariantMap m = m_tools.value(QStringLiteral("cache")).toMap();
+        const int sv = m.value(QStringLiteral("severe")).toInt();
+        const double hold = m.value(QStringLiteral("hold_seconds")).toDouble();
+        const QString holdText = m.value(QStringLiteral("hold_text")).toString();
+        if (sv)
+            bad.append({QStringLiteral("cache"), QStringLiteral("断网缓存"),
+                        QStringLiteral("补传跟不上写入或越界（%1）").arg(holdText), 0});
+        else if (hold > 0 && hold < 600)
+            bad.append({QStringLiteral("cache"), QStringLiteral("断网缓存"),
+                        QStringLiteral("只能扛 %1（不足 10 分钟）").arg(holdText), 0});
+        else if (hold > 0 && hold < 1800)
+            bad.append({QStringLiteral("cache"), QStringLiteral("断网缓存"),
+                        QStringLiteral("只能扛 %1（不足 30 分钟）").arg(holdText), 1});
+    }
+
+    int sev = 0, wr = 0;
+    for (const Item &it : bad) {
+        if (it.level == 0)
+            ++sev;
+        else
+            ++wr;
+    }
+    std::stable_sort(bad.begin(), bad.end(),
+                     [](const Item &a, const Item &b) { return a.level < b.level; });
+
+    QFont f = p.font();
+    f.setPointSize(10);
+    f.setBold(true);
+    p.setFont(f);
+    QString head;
+    if (sev == 0 && wr == 0)
+        head = m_tools.isEmpty() ? QStringLiteral("尚未取数 —— 点「刷新」跑一轮体检")
+                                 : QStringLiteral("本轮体检：全部正常，可以放心往下写");
+    else
+        head = QStringLiteral("本轮体检：%1 处严重、%2 处注意").arg(sev).arg(wr);
+    if (!m_failedKeys.isEmpty())
+        head += QStringLiteral("（另有 %1 个检查器没取到数）").arg(m_failedKeys.size());
+    /* 缓存给自检读（--shot-overview 断言"结论不能空、有问题必须写严重/注意"） */
+    m_conclusionText = head;
+    m_conclusionCount = bad.size();
+    p.setPen(sev ? pal.err : (wr ? pal.warn : pal.ok));
+    p.drawText(QRect(x, y, w, 20), Qt::AlignLeft | Qt::AlignVCenter,
+               p.fontMetrics().elidedText(head, Qt::ElideRight, w));
+    y += 22;
+
+    f.setBold(false);
+    f.setPointSize(9);
+    p.setFont(f);
+    if (!bad.isEmpty()) {
+        p.setPen(pal.textSec);
+        p.drawText(QRect(x, y, 58, 18), Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("建议先看："));
+        int lx = x + 58;
+        const int top = qMin(3, bad.size());
+        for (int i = 0; i < top; ++i) {
+            const QString label = QStringLiteral("%1 %2（%3）")
+                                      .arg(i + 1).arg(bad.at(i).name, bad.at(i).why);
+            const int tw = p.fontMetrics().horizontalAdvance(label) + 8;
+            if (lx + tw > x + w)
+                break;
+            const QRect r(lx, y, tw, 18);
+            p.setPen(bad.at(i).level == 0 ? pal.err : pal.warn);
+            p.drawText(r, Qt::AlignLeft | Qt::AlignVCenter, label);
+            Hit hit;
+            hit.rect = r;
+            hit.key = bad.at(i).key;
+            hit.tip = QStringLiteral("%1：%2\n点击直达报告里那一节").arg(bad.at(i).name, bad.at(i).why);
+            m_hits.append(hit);
+            lx += tw + 4;
+        }
+        y += 20;
+    }
+    p.setPen(pal.textTer);
+    p.drawText(QRect(x, y, w, 16), Qt::AlignLeft | Qt::AlignVCenter,
+               QStringLiteral("（点上面任一项、或点下面的健康度卡片，都能直达报告里对应的那一节）"));
+    return y + 22;
 }
 
 /* 「较上次」一行：把各指标的增减并排写出来，一眼看出这轮是变好还是变差。 */

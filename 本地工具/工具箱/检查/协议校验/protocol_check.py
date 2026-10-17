@@ -710,6 +710,20 @@ def run(root, quiet=False):
         lines.append('> 想拿链路仿真的实际产物回放：`python protocol_check.py --replay <link_xxx.hex>`。')
     lines.append('')
 
+    # B1：报告结尾补一节"下一步怎么做" —— 本脚本没有「说明」节，故按约定放报告末尾，
+    # 让用户按「发现」里的类型知道先改哪、怎么改。只加报告文字，不动判定逻辑与 JSON 字段。
+    lines.append('## 下一步怎么做')
+    lines.append('')
+    lines.append('- 按「发现」里每条的类型分头处理：常量 / 字段偏移不一致 → 以对端为准，'
+                 '把两板的 `sys_frame.h` 同步成一致。')
+    lines.append('- 帧长超上限（`SYS_FRAME_*_LEN` 大于 `SYS_FRAME_MAX_PAYLOAD`）→ '
+                 '调小该长度宏，或把这条数据拆成多条。')
+    lines.append('- 命令字撞车（同板两个名字同值）→ 改其中一个的取值；'
+                 '应答位不对 → 改成「请求 CMD | `SYS_FRAME_ACK_FLAG`」。')
+    lines.append('- 想验真实闭环：`python protocol_check.py --replay <link_xxx.hex>`，'
+                 '把链路仿真的字节流用板2 的常量拆一遍，看是否逐帧通过。')
+    lines.append('')
+
     out_dir = os.path.dirname(os.path.abspath(__file__))
     report_path = os.path.join(out_dir, '协议校验报告.md')
     with open(report_path, 'w', encoding='utf-8', newline='\n') as f:

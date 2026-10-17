@@ -331,6 +331,20 @@ int main(int argc, char *argv[])
                                 << QString::fromUtf8(" 轮）\n");
             if (rounds >= 2 && tipN < 1)
                 return 2;
+            /* B3：面板顶部"一句话结论"必须非空；有问题项时得写清严重/注意，
+               没有问题时必须写"正常"（不能瞎报）。 */
+            const QString concl = canvas->conclusionText();
+            const int conclN = canvas->conclusionCount();
+            QTextStream(stdout) << QString::fromUtf8("体检结论: ") << concl
+                                << QString::fromUtf8("（问题项 ") << conclN << QString::fromUtf8("）\n");
+            if (concl.isEmpty())
+                return 2;
+            if (conclN > 0
+                && !concl.contains(QStringLiteral("严重"))
+                && !concl.contains(QStringLiteral("注意")))
+                return 2;
+            if (conclN == 0 && !concl.contains(QStringLiteral("正常")))
+                return 2;
             /* D4：--drop 指定的键必须被记成"未取到"（缺数不许画成绿色"正常"） */
             if (!dropKeys.isEmpty()) {
                 const int dn = canvas->failedCount();

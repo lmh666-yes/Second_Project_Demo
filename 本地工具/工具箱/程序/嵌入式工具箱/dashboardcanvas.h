@@ -51,6 +51,12 @@ public:
        供 --shot-overview 断言"趋势点悬停读数已登记"，免得哪天被改没了没人发现。 */
     int tipHitCount() const;
 
+    /* B3：上一次绘制算出的"一句话结论"与"有问题的项数"（供 --shot-overview 断言：
+       结论文案不能空；有问题时必须写严重/注意，没问题时必须写正常）。
+       注意：这两个值在 paintEvent 里更新，读之前得先让它画过一次。 */
+    QString conclusionText() const { return m_conclusionText; }
+    int conclusionCount() const { return m_conclusionCount; }
+
 protected:
     void paintEvent(QPaintEvent *e) override;
     void mouseMoveEvent(QMouseEvent *e) override;
@@ -80,6 +86,7 @@ private:
     };
 
     Palette makePalette() const;
+    int drawConclusion(QPainter &p, int x, int y, int w, const Palette &pal);   /* B3：一句话结论 + 先看哪 3 件 */
     int drawHealth(QPainter &p, int x, int y, int w, const Palette &pal);
     int drawDelta(QPainter &p, int x, int y, int w, const Palette &pal);
     int drawPins(QPainter &p, int x, int y, int w, const Palette &pal);
@@ -100,6 +107,8 @@ private:
     bool    m_pinZoom = false;   /* 热力图大格模式（双击切换） */
     QString m_pinDetail;         /* 选中的引脚详情（画在热力图标题下方） */
     QStringList m_delta;         /* 「较上次」增量文本，空表示无基线 */
+    QString m_conclusionText;    /* B3：上次绘制算出的一句话结论（供自检读取） */
+    int     m_conclusionCount = 0;   /* B3：上次绘制算出的"有问题项数" */
 };
 
 #endif // DASHBOARDCANVAS_H
