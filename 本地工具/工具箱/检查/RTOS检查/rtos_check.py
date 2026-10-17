@@ -71,10 +71,22 @@ if ROOT is None:
         _d = _p
     ROOT = _hit or _d
 
+# C1+C2 板级配置换装口：板名 / 工程相对路径优先读 速查数据/rules/board_envmonitor.json，
+# 换板只改那份 JSON、不用动脚本。读不到（文件缺失/损坏）回退到下面的内置默认，行为不变。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    import boardcfg
+except Exception:
+    boardcfg = None
+
 BOARDS = [
     ('板1 检测端 (F407ZE)', os.path.join('EnvMonitor', 'Project_1_检测端', 'Project')),
     ('板2 通信端 (F407ZG)', os.path.join('EnvMonitor', 'Project_2_数据通信端', 'Project')),
 ]
+
+_cfg_boards = boardcfg.boards(ROOT) if boardcfg else None
+if _cfg_boards:
+    BOARDS = _cfg_boards
 
 KEYWORDS = {
     'if', 'for', 'while', 'switch', 'do', 'else', 'return', 'sizeof',
@@ -1271,6 +1283,35 @@ def selftest():
            and set(j['boards'][0]['tasks'][0]) == {'file', 'line', 'name', 'stack', 'prio'}
            and set(j['boards'][0]['findings'][0]) == {'level', 'loc', 'msg', 'key'},
            '、'.join(sorted(j['boards'][0])))
+
+        # ---- C1+C2 板级配置读取器（换装口）：正例读到 2 块板 / 反例配置被改名后返回 None ----
+        if boardcfg is None:
+            ck('板级配置读取器可用（boardcfg 导入成功）', False, 'boardcfg 导入失败')
+        else:
+            ck('板级配置读取器可用（boardcfg 导入成功）', True)
+            rb = boardcfg.boards(ROOT)
+            ck('正例：仓库真配置读出 2 块板、名字与 board_envmonitor.json 一致',
+               rb is not None and len(rb) == 2
+               and {n for n, _ in rb} == {'板1 检测端 (F407ZE)', '板2 通信端 (F407ZG)'},
+               str(rb))
+            dcfg = tempfile.mkdtemp(prefix='boardcfg_selftest_')
+            try:
+                rp = os.path.join(dcfg, '本地工具', '工具箱', '速查数据', 'rules')
+                os.makedirs(rp)
+                cfgp = os.path.join(rp, 'board_envmonitor.json')
+                with open(cfgp, 'w', encoding='utf-8', newline='\n') as fh:
+                    json.dump({'version': 1, 'boards': [
+                        {'name': '板1 假配置', 'dir': 'x/y'},
+                        {'name': '板2 假配置', 'dir': 'z/w'}]}, fh, ensure_ascii=False)
+                ck('正例：临时假配置读到 2 块板（名字取自假配置）',
+                   boardcfg.boards(dcfg) == [('板1 假配置', 'x/y'), ('板2 假配置', 'z/w')],
+                   str(boardcfg.boards(dcfg)))
+                os.rename(cfgp, cfgp + '.bak')
+                ck('反例：配置被临时改名后返回 None（脚本回退内置默认，不崩）',
+                   boardcfg.load(dcfg, fallback=False) is None
+                   and boardcfg.boards(dcfg, fallback=False) is None)
+            finally:
+                shutil.rmtree(dcfg, ignore_errors=True)
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

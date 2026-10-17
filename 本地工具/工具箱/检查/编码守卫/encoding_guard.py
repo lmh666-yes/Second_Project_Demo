@@ -74,6 +74,15 @@ if ROOT is None:
         _d = _p
     ROOT = _hit or _d
 
+# C1+C2 板级配置换装口：板名 / Keil 日志文件名 / Flash-RAM 上限优先读
+# 速查数据/rules/board_envmonitor.json，换板只改那份 JSON、不用动脚本。
+# 读不到（文件缺失/损坏）回退到下面的内置默认，行为与老版本一致。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    import boardcfg
+except Exception:
+    boardcfg = None
+
 PROJECT = os.path.join(ROOT, 'EnvMonitor')
 
 # 只查口径覆盖的源码与文档类型（不含 .bat/.ini/.ps1 等工程外文件）
@@ -106,6 +115,19 @@ KEIL_LOG_CANDIDATES = [
     ('板1 检测端 (F407ZE)', ['keil_板1.log', 'keil_板1.txt'], 512, 192),
     ('板2 通信端 (F407ZG)', ['keil_板2.log', 'keil_板2.txt'], 1024, 192),
 ]
+
+# 优先读外置板级配置；读到了才覆盖，读不到保持上面内置默认。
+_cfg = boardcfg.load(ROOT) if boardcfg else None
+if _cfg:
+    _cand = []
+    for _bd in (_cfg.get('boards') or []):
+        if not isinstance(_bd, dict) or not _bd.get('name') or not _bd.get('keil_log'):
+            continue
+        _cand.append((_bd['name'], list(_bd['keil_log']),
+                      int(_bd.get('flash_kb') or 0), int(_bd.get('ram_kb') or 0)))
+    if _cand:
+        KEIL_LOG_CANDIDATES = _cand
+
 KEIL_LOG_HINTS = [
     os.path.join('仓库巡检', '验证日志'),
     os.path.join('本地工具', '仓库巡检', '验证日志'),
@@ -534,6 +556,33 @@ def selftest():
     results.append(('JSON 契约：memory 项字段（面板占用条要用 flash_used/ram_used）',
                     set(jm['memory'][0]) == {'title', 'code', 'ro', 'rw', 'zi',
                                              'flash_kb', 'ram_kb', 'flash_used', 'ram_used'}))
+
+    # C1+C2 板级配置读取器（换装口）：正例读到 2 块板 / 反例配置被改名后返回 None
+    if boardcfg is None:
+        results.append(('板级配置读取器可用（boardcfg 导入成功）', False))
+    else:
+        results.append(('板级配置读取器可用（boardcfg 导入成功）', True))
+        rb = boardcfg.boards(ROOT)
+        results.append(('正例：仓库真配置读出 2 块板、名字与 board_envmonitor.json 一致',
+                        rb is not None and len(rb) == 2
+                        and {n for n, _ in rb} == {'板1 检测端 (F407ZE)', '板2 通信端 (F407ZG)'}))
+        dcfg = tempfile.mkdtemp(prefix='boardcfg_selftest_')
+        try:
+            rp = os.path.join(dcfg, '本地工具', '工具箱', '速查数据', 'rules')
+            os.makedirs(rp)
+            cfgp = os.path.join(rp, 'board_envmonitor.json')
+            with open(cfgp, 'w', encoding='utf-8', newline='\n') as fh:
+                json.dump({'version': 1, 'boards': [
+                    {'name': '板1 假配置', 'dir': 'x/y'},
+                    {'name': '板2 假配置', 'dir': 'z/w'}]}, fh, ensure_ascii=False)
+            results.append(('正例：临时假配置读到 2 块板（名字取自假配置）',
+                            boardcfg.boards(dcfg) == [('板1 假配置', 'x/y'), ('板2 假配置', 'z/w')]))
+            os.rename(cfgp, cfgp + '.bak')
+            results.append(('反例：配置被临时改名后返回 None（脚本回退内置默认，不崩）',
+                            boardcfg.load(dcfg, fallback=False) is None
+                            and boardcfg.boards(dcfg, fallback=False) is None))
+        finally:
+            shutil.rmtree(dcfg, ignore_errors=True)
 
     ok = all(r[1] for r in results)
     print('编码守卫自检：%s' % ('PASS' if ok else 'FAIL'))

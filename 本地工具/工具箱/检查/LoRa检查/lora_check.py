@@ -59,6 +59,15 @@ if ROOT is None:
         _d = _p
     ROOT = _hit or _d
 
+# C1+C2 板级配置换装口：板名 / lora_e22.h/.c 路径 / 波特率表优先读
+# 速查数据/rules/board_envmonitor.json，换板只改那份 JSON、不用动脚本。
+# 读不到（文件缺失/损坏）回退到下面的内置默认，行为与老版本一致。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    import boardcfg
+except Exception:
+    boardcfg = None
+
 BOARDS = [
     ('板1 检测端 (F407ZE)', os.path.join('EnvMonitor', 'Project_1_检测端', 'Project', 'FWLIB', 'inc', 'lora_e22.h'),
      os.path.join('EnvMonitor', 'Project_1_检测端', 'Project', 'FWLIB', 'src', 'lora_e22.c')),
@@ -68,6 +77,22 @@ BOARDS = [
 
 # E22-400T22S 支持的波特率（AT+UART 参数）
 VALID_BAUDS = {1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200}
+
+_cfg = boardcfg.load(ROOT) if boardcfg else None
+if _cfg:
+    _nb = []
+    for _bd in (_cfg.get('boards') or []):
+        if not isinstance(_bd, dict) or not _bd.get('name') or not _bd.get('lora_header'):
+            continue
+        _nb.append((_bd['name'],
+                    os.path.join(_bd.get('dir') or '', _bd['lora_header']),
+                    os.path.join(_bd.get('dir') or '',
+                                 _bd.get('lora_src') or _bd['lora_header'])))
+    if _nb:
+        BOARDS = _nb
+    _bauds = (_cfg.get('extra') or {}).get('lora_bauds')
+    if _bauds:
+        VALID_BAUDS = set(int(x) for x in _bauds)
 
 # 必须一致才能互通的数值宏
 MUST_MATCH = {
@@ -380,6 +405,38 @@ def selftest():
            and isinstance(j['boards'][0]['issues'], list)
            and isinstance(j['cross'], list),
            '、'.join(sorted(j)) + ' / ' + '、'.join(sorted(j['boards'][0])))
+
+        # ---- C1+C2 板级配置读取器（换装口）：正例读到 2 块板 / 反例配置被改名后返回 None ----
+        if boardcfg is None:
+            ck('板级配置读取器可用（boardcfg 导入成功）', False, 'boardcfg 导入失败')
+        else:
+            ck('板级配置读取器可用（boardcfg 导入成功）', True)
+            rb = boardcfg.boards(ROOT)
+            ck('正例：仓库真配置读出 2 块板、名字与 board_envmonitor.json 一致',
+               rb is not None and len(rb) == 2
+               and {n for n, _ in rb} == {'板1 检测端 (F407ZE)', '板2 通信端 (F407ZG)'},
+               str(rb))
+            ck('正例：波特率表取自配置（含 115200 且与内核取值一致）',
+               VALID_BAUDS == {1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200},
+               str(sorted(VALID_BAUDS)))
+            dcfg = tempfile.mkdtemp(prefix='boardcfg_selftest_')
+            try:
+                rp = os.path.join(dcfg, '本地工具', '工具箱', '速查数据', 'rules')
+                os.makedirs(rp)
+                cfgp = os.path.join(rp, 'board_envmonitor.json')
+                with open(cfgp, 'w', encoding='utf-8', newline='\n') as fh:
+                    json.dump({'version': 1, 'boards': [
+                        {'name': '板1 假配置', 'dir': 'x/y'},
+                        {'name': '板2 假配置', 'dir': 'z/w'}]}, fh, ensure_ascii=False)
+                ck('正例：临时假配置读到 2 块板（名字取自假配置）',
+                   boardcfg.boards(dcfg) == [('板1 假配置', 'x/y'), ('板2 假配置', 'z/w')],
+                   str(boardcfg.boards(dcfg)))
+                os.rename(cfgp, cfgp + '.bak')
+                ck('反例：配置被临时改名后返回 None（脚本回退内置默认，不崩）',
+                   boardcfg.load(dcfg, fallback=False) is None
+                   and boardcfg.boards(dcfg, fallback=False) is None)
+            finally:
+                shutil.rmtree(dcfg, ignore_errors=True)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

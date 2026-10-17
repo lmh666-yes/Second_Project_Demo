@@ -62,6 +62,14 @@ if ROOT is None:
         _d = _p
     ROOT = _hit or _d
 
+# C1+C2 板级配置换装口：进度文档路径优先读 速查数据/rules/board_envmonitor.json，
+# 换板/换工程只改那份 JSON、不用动脚本。读不到（文件缺失/损坏）回退到下面的内置默认。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    import boardcfg
+except Exception:
+    boardcfg = None
+
 SCAN_EXT = {'.c', '.h', '.cpp', '.hpp', '.cc', '.hh'}
 EXCLUDE_DIR = {
     '.git', '.venv', '.vscode', '__pycache__', 'node_modules',
@@ -109,6 +117,14 @@ PROGRESS_DOCS = [
     os.path.join('EnvMonitor', 'Project_2_数据通信端', '板2进度文档.md'),
     os.path.join('EnvMonitor', 'QT_project', 'QT上位机进度文档.md'),
 ]
+
+# 优先读外置板级配置；读到了才覆盖，读不到保持上面内置默认。
+_cfg = boardcfg.load(ROOT) if boardcfg else None
+if _cfg:
+    _docs = [d for d in ((_cfg.get('extra') or {}).get('progress_docs') or [])
+             if isinstance(d, str)]
+    if _docs:
+        PROGRESS_DOCS = _docs
 
 
 def read_text(path):
@@ -720,6 +736,41 @@ def selftest():
            and isinstance(j['markers'], int) and isinstance(j['stubs'], int)
            and isinstance(j['history'], list) and isinstance(j['stub_files'], dict),
            '、'.join(sorted(j)))
+
+        # ---- C1+C2 板级配置读取器（换装口）：正例读到 2 块板 / 反例配置被改名后返回 None ----
+        if boardcfg is None:
+            ck('板级配置读取器可用（boardcfg 导入成功）', False, 'boardcfg 导入失败')
+        else:
+            ck('板级配置读取器可用（boardcfg 导入成功）', True)
+            rb = boardcfg.boards(ROOT)
+            ck('正例：仓库真配置读出 2 块板、名字与 board_envmonitor.json 一致',
+               rb is not None and len(rb) == 2
+               and {n for n, _ in rb} == {'板1 检测端 (F407ZE)', '板2 通信端 (F407ZG)'},
+               str(rb))
+            ck('正例：进度文档路径取自配置（含上位机那份）',
+               [os.path.normpath(d2).replace('\\', '/') for d2 in PROGRESS_DOCS] == [
+                   'EnvMonitor/Project_1_检测端/板1进度文档.md',
+                   'EnvMonitor/Project_2_数据通信端/板2进度文档.md',
+                   'EnvMonitor/QT_project/QT上位机进度文档.md'],
+               str(PROGRESS_DOCS))
+            dcfg = tempfile.mkdtemp(prefix='boardcfg_selftest_')
+            try:
+                rp = os.path.join(dcfg, '本地工具', '工具箱', '速查数据', 'rules')
+                os.makedirs(rp)
+                cfgp = os.path.join(rp, 'board_envmonitor.json')
+                with open(cfgp, 'w', encoding='utf-8', newline='\n') as fh:
+                    json.dump({'version': 1, 'boards': [
+                        {'name': '板1 假配置', 'dir': 'x/y'},
+                        {'name': '板2 假配置', 'dir': 'z/w'}]}, fh, ensure_ascii=False)
+                ck('正例：临时假配置读到 2 块板（名字取自假配置）',
+                   boardcfg.boards(dcfg) == [('板1 假配置', 'x/y'), ('板2 假配置', 'z/w')],
+                   str(boardcfg.boards(dcfg)))
+                os.rename(cfgp, cfgp + '.bak')
+                ck('反例：配置被临时改名后返回 None（脚本回退内置默认，不崩）',
+                   boardcfg.load(dcfg, fallback=False) is None
+                   and boardcfg.boards(dcfg, fallback=False) is None)
+            finally:
+                shutil.rmtree(dcfg, ignore_errors=True)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

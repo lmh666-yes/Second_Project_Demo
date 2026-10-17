@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "project": "EnvMonitor",
+  "note": "板级配置：换板时复制本文件改这一份即可（checkers 优先读它，缺文件才回退各自内置默认）。",
+  "boards": [
+    {
+      "name": "板1 检测端 (F407ZE)",
+      "dir": "EnvMonitor/Project_1_检测端/Project",
+      "chip": "STM32F407ZE",
+      "flash_kb": 512,
+      "ram_kb": 192,
+      "ports": ["A", "B", "C", "D", "E", "F", "G"],
+      "pins_per_port": 16,
+      "debug_pins": ["PA13", "PA14", "PA15", "PB3", "PB4"],
+      "keil_log": ["keil_板1.log", "keil_板1.txt"],
+      "lora_header": "FWLIB/inc/lora_e22.h",
+      "lora_src": "FWLIB/src/lora_e22.c"
+    },
+    {
+      "name": "板2 通信端 (F407ZG)",
+      "dir": "EnvMonitor/Project_2_数据通信端/Project",
+      "chip": "STM32F407ZG",
+      "flash_kb": 1024,
+      "ram_kb": 192,
+      "ports": ["A", "B", "C", "D", "E", "F", "G"],
+      "pins_per_port": 16,
+      "debug_pins": ["PA13", "PA14", "PA15", "PB3", "PB4"],
+      "keil_log": ["keil_板2.log", "keil_板2.txt"],
+      "lora_header": "FWLIB/inc/lora_e22.h",
+      "lora_src": "FWLIB/src/lora_e22.c",
+      "flash_log_header": "FWLIB/inc/w25qxx_log.h",
+      "flash_header": "FWLIB/inc/w25qxx.h"
+    }
+  ],
+  "extra": {
+    "progress_docs": [
+      "EnvMonitor/Project_1_检测端/板1进度文档.md",
+      "EnvMonitor/Project_2_数据通信端/板2进度文档.md",
+      "EnvMonitor/QT_project/QT上位机进度文档.md"
+    ],
+    "lora_bauds": [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200],
+    "frame_constants_file": "FWLIB/inc/sys_frame.h"
+  }
+}

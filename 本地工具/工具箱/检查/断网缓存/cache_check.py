@@ -53,6 +53,14 @@ if ROOT is None:
             break
         _d = _p
 
+# C1+C2 板级配置换装口：板名 / 工程相对路径优先读 速查数据/rules/board_envmonitor.json，
+# 换板只改那份 JSON、不用动脚本。读不到（文件缺失/损坏）回退到下面的内置默认，行为不变。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    import boardcfg
+except Exception:
+    boardcfg = None
+
 INC2 = os.path.join('EnvMonitor', 'Project_2_数据通信端', 'Project', 'FWLIB', 'inc')
 LOG_H_REL = os.path.join(INC2, 'w25qxx_log.h')
 FLASH_H_REL = os.path.join(INC2, 'w25qxx.h')
@@ -89,6 +97,23 @@ def collect_defines(text):
 # 能读到就拿来用并在报告里标出出处；读不到就退回命令行值，并标明"默认值/未在工程里找到"。
 MAIN1_REL = os.path.join('EnvMonitor', 'Project_1_检测端', 'Project', 'main.c')
 MAIN2_REL = os.path.join('EnvMonitor', 'Project_2_数据通信端', 'Project', 'main.c')
+
+# C1+C2 换装口：板2 工程路径 / Flash 日志头 / Flash 分区头 / 两块板 main.c 优先从配置读；
+# 读不到保持上面内置默认。板2 = 配置里带 flash_log_header 的那块（只有通信端有）。
+_CFG = boardcfg.load(ROOT) if boardcfg else None
+if _CFG:
+    _bl = [x for x in (_CFG.get('boards') or []) if isinstance(x, dict)]
+    _b2 = next((x for x in _bl
+                if x.get('dir') and x.get('flash_log_header') and x.get('flash_header')), None)
+    if _b2:
+        INC2 = os.path.join(_b2['dir'], 'FWLIB', 'inc')
+        LOG_H_REL = os.path.join(_b2['dir'], _b2['flash_log_header'])
+        FLASH_H_REL = os.path.join(_b2['dir'], _b2['flash_header'])
+        MAIN2_REL = os.path.join(_b2['dir'], 'main.c')
+    _b1 = next((x for x in _bl if x.get('dir') and x is not _b2), None)
+    if _b1:
+        MAIN1_REL = os.path.join(_b1['dir'], 'main.c')
+
 RE_TICKS = re.compile(r'pdMS_TO_TICKS\s*\(\s*(\d+)\s*\)')
 RE_FUNC_NAME = re.compile(r'^\s*(?:static\s+)?void\s+(\w+)\s*\(')
 RE_REPLAY_MACRO = re.compile(r'#\s*define\s+(\w*REPLAY\w*)\s+(\d+)\s*$', re.M)
@@ -588,6 +613,39 @@ def selftest():
        and isinstance(j['hold_text'], str)
        and set(j['findings'][0]) == {'level', 'loc', 'msg', 'key'},
        '、'.join(sorted(j)))
+
+    # C1+C2 板级配置读取器（换装口）：正例读到 2 块板 / 反例配置被改名后返回 None
+    if boardcfg is None:
+        ck('板级配置读取器可用（boardcfg 导入成功）', False, 'boardcfg 导入失败')
+    else:
+        ck('板级配置读取器可用（boardcfg 导入成功）', True)
+        rb = boardcfg.boards(ROOT)
+        ck('正例：仓库真配置读出 2 块板、名字与 board_envmonitor.json 一致',
+           rb is not None and len(rb) == 2
+           and {n for n, _ in rb} == {'板1 检测端 (F407ZE)', '板2 通信端 (F407ZG)'},
+           str(rb))
+        ck('正例：板2 的 Flash 头文件路径取自配置（落在 Project_2 下）',
+           os.path.normpath(LOG_H_REL).replace('\\', '/')
+           == 'EnvMonitor/Project_2_数据通信端/Project/FWLIB/inc/w25qxx_log.h',
+           LOG_H_REL)
+        dcfg = tempfile.mkdtemp(prefix='boardcfg_selftest_')
+        try:
+            rp = os.path.join(dcfg, '本地工具', '工具箱', '速查数据', 'rules')
+            os.makedirs(rp)
+            cfgp = os.path.join(rp, 'board_envmonitor.json')
+            with open(cfgp, 'w', encoding='utf-8', newline='\n') as fh:
+                json.dump({'version': 1, 'boards': [
+                    {'name': '板1 假配置', 'dir': 'x/y'},
+                    {'name': '板2 假配置', 'dir': 'z/w'}]}, fh, ensure_ascii=False)
+            ck('正例：临时假配置读到 2 块板（名字取自假配置）',
+               boardcfg.boards(dcfg) == [('板1 假配置', 'x/y'), ('板2 假配置', 'z/w')],
+               str(boardcfg.boards(dcfg)))
+            os.rename(cfgp, cfgp + '.bak')
+            ck('反例：配置被临时改名后返回 None（脚本回退内置默认，不崩）',
+               boardcfg.load(dcfg, fallback=False) is None
+               and boardcfg.boards(dcfg, fallback=False) is None)
+        finally:
+            shutil.rmtree(dcfg, ignore_errors=True)
 
     bad = [c for c in checks if not c[1]]
     for name, ok, extra in checks:
