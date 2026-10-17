@@ -5,6 +5,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QProcess>
 #include <QPushButton>
@@ -154,6 +155,20 @@ void ScaffoldPage::onGenerate()
     if (!QFileInfo::exists(script)) {
         m_log->appendPlainText(QStringLiteral("错误：生成器脚本不存在：%1").arg(script));
         return;
+    }
+
+    /* E1 防呆：输出目录已有东西就问一句，免得把同名的 main.c 直接盖掉 */
+    const QDir od(out);
+    if (od.exists() && !od.entryList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot).isEmpty()) {
+        const auto ans = QMessageBox::question(
+            this, QStringLiteral("输出目录不是空的"),
+            QStringLiteral("「%1」里已经有文件了。生成会**覆盖同名的** main.c / README.md / "
+                           "FreeRTOSConfig.h，但不会删别的文件。\n\n继续吗？").arg(out),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (ans != QMessageBox::Yes) {
+            m_log->appendPlainText(QStringLiteral("已取消：请换一个空目录，或确认可覆盖后再点。"));
+            return;
+        }
     }
 
     m_log->clear();

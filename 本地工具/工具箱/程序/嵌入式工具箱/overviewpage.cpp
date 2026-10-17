@@ -127,6 +127,30 @@ OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
     desc->setStyleSheet(QStringLiteral("color:rgba(127,127,127,255);"));
     lay->addWidget(desc);
 
+    /* E1：上手三步 —— 不必先搞清侧栏那 16 个页面，从这三个入口就能开始 */
+    QLabel *first = new QLabel(QStringLiteral(
+        "上手三步：① 先跑一次全量体检 ② 有问题按卡片点进去看 ③ 要开工就去生成工程骨架。"), this);
+    first->setWordWrap(true);
+    lay->addWidget(first);
+    QHBoxLayout *entry = new QHBoxLayout;
+    QPushButton *bFull = new QPushButton(QStringLiteral("① 跑全量体检"), this);
+    QPushButton *bScaf = new QPushButton(QStringLiteral("③ 生成工程骨架"), this);
+    QPushButton *bDoc  = new QPushButton(QStringLiteral("查单片机手册"), this);
+    bFull->setToolTip(QStringLiteral("跳到「全量检查」页，一次跑完 9 个检查器"));
+    bScaf->setToolTip(QStringLiteral("跳到「工程模板」页，生成能直接编译的工程骨架"));
+    bDoc->setToolTip(QStringLiteral("跳到「单片机手册」查函数 / 流程卡"));
+    connect(bFull, &QPushButton::clicked, this,
+            [this]() { emit requestPage(QStringLiteral("全量检查")); });
+    connect(bScaf, &QPushButton::clicked, this,
+            [this]() { emit requestPage(QStringLiteral("工程模板")); });
+    connect(bDoc, &QPushButton::clicked, this,
+            [this]() { emit requestPage(QStringLiteral("单片机手册")); });
+    entry->addWidget(bFull);
+    entry->addWidget(bScaf);
+    entry->addWidget(bDoc);
+    entry->addStretch(1);
+    lay->addLayout(entry);
+
     QHBoxLayout *bar = new QHBoxLayout;
     QPushButton *bRefresh = new QPushButton(QStringLiteral("刷新"), this);
     QPushButton *bOpen    = new QPushButton(QStringLiteral("打开报告目录"), this);
