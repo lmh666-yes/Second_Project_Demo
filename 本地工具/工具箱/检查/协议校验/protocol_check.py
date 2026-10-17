@@ -22,6 +22,10 @@ r"""协议端到端校验（幂等，只读源码，不改任何文件）。
      MAX_PAYLOAD 的长度上界护栏、帧长是否按 OVERHEAD 算
   9) 两板命令字表（B2）：同名命令字取值是否一致、同板内是否"撞车"（两个名字
      同一个值）；只在一板出现的命令字列进报告对照表，不算问题（两板角色不同）
+ 10) 命令字"新增即检查"（B3）：命令字取值不再只认字面量，宏表达式（如
+     `REPLAY_ACK_CMD = CMD_REPLAY | ACK_FLAG`）也能算出来；核对命名规范
+     （SYS_FRAME_CMD_<大写下划线>）与"应答 CMD = 请求 CMD | ACK_FLAG"约定，
+     并把两板命令字并集落成模板 `速查数据/rules/frame_commands.json`
 
 报告写到脚本同目录的 协议校验报告.md，并在控制台打印摘要。
 
@@ -89,6 +93,7 @@ PROTOCOL_MACROS = {
     'SYS_FRAME_MAX_PAYLOAD': '最大负载',
     'SYS_FRAME_CMD_ENV': '环境帧命令字',
     'SYS_FRAME_ENV_LEN': '环境帧数据长度',
+    'SYS_FRAME_ACK_FLAG': '应答位（应答 CMD = 请求 CMD | 本位）',
 }
 
 # 环境帧字段偏移宏
@@ -101,17 +106,24 @@ ENV_OFFSET_MACROS = [
     'SYS_FRAME_ENV_MQ135_OFF',
 ]
 
-RE_DEFINE_HEX = re.compile(r'^\s*#\s*define\s+([A-Za-z_]\w*)\s+(0x[0-9A-Fa-f]+|\d+)U?')
-RE_DEFINE_NUM = re.compile(r'^\s*#\s*define\s+([A-Za-z_]\w*)\s+(\d+)U?')
+RE_DEFINE_VALUE = re.compile(r'^\s*#\s*define\s+([A-Za-z_]\w*)\s+(.+?)\s*$')
+RE_DEFINE_FUNC = re.compile(r'^\s*#\s*define\s+([A-Za-z_]\w*)\(')   # 函数式宏，跳过
 
 # B2：命令字 / 帧数据段长度 / 字段偏移 三类宏（用于命令字表对照与上限核算）
 RE_CMD_NAME = re.compile(r'^SYS_FRAME_(?:CMD_\w+|\w+_CMD)$')
 RE_LEN_NAME = re.compile(r'^SYS_FRAME_\w+_LEN$')
 RE_OFF_NAME = re.compile(r'^SYS_FRAME_\w+_OFF$')
+# B3：命令字的"规范名" —— SYS_FRAME_CMD_<大写下划线> 或 SYS_FRAME_<大写下划线>_CMD
+RE_CMD_STD = re.compile(r'^SYS_FRAME_(?:CMD_[A-Z0-9_]+|[A-Z0-9_]+_CMD)$')
 # 收帧缓冲按 MAX_PAYLOAD 定尺（如 data[SYS_FRAME_MAX_PAYLOAD]）
 RE_C_SIZED = re.compile(r'\[[^\]]*SYS_FRAME_MAX_PAYLOAD[^\]]*\]')
 # 长度上界护栏：if (len > SYS_FRAME_MAX_PAYLOAD) 这类比较
 RE_C_GUARD = re.compile(r'if\s*\([^)]{0,120}SYS_FRAME_MAX_PAYLOAD')
+
+# B3：命令字全集模板（相对仓库根）—— 两板命令字并集落成一份，新增命令字会出现在这里
+CMD_TEMPLATE_REL = os.path.join('本地工具', '工具箱', '速查数据', 'rules', 'frame_commands.json')
+RE_NUM_SUFFIX = re.compile(r'([0-9A-Fa-f])[uUlL]+\b')
+RE_HEX = re.compile(r'0[xX][0-9A-Fa-f]+')
 
 
 def read_text(path):
@@ -127,33 +139,139 @@ def read_text(path):
     return raw.decode('latin-1', 'replace'), 'latin-1'
 
 
+def eval_expr(expr, pool, depth=0):
+    """把宏表达式算成整数：支持字面量、| & + - << >> 括号与宏引用
+    （如 SYS_FRAME_REPLAY_ACK_CMD = SYS_FRAME_CMD_REPLAY | SYS_FRAME_ACK_FLAG）。
+    算不出（含函数调用、类型名、字符串）返回 None —— 不猜。"""
+    if depth > 8 or expr is None:
+        return None
+    e = re.split(r'/\*|//', expr)[0].strip()
+    if not e:
+        return None
+    e = RE_NUM_SUFFIX.sub(r'\1', e)
+
+    def repl(m):
+        n = m.group(1)
+        v = eval_expr(pool.get(n), pool, depth + 1) if n in pool else None
+        return str(v) if v is not None else n
+
+    e = re.sub(r'\b([A-Za-z_]\w*)\b', repl, e)
+    # 把 16 进制字面量的 x 排除掉，再看还剩没算出来的标识符
+    if re.search(r'[A-Za-z_]', RE_HEX.sub('0', e)):
+        return None
+    try:
+        v = eval(e, {'__builtins__': {}}, {})
+    except Exception:
+        return None
+    return int(v) if isinstance(v, int) else None
+
+
 def parse_header(text):
     """解析 sys_frame.h，返回 (关键常量, B2 宏表, 问题列表)。
 
     B2 宏表收三类：命令字（SYS_FRAME_CMD_* / SYS_FRAME_*_CMD）、
     帧数据段长度（SYS_FRAME_*_LEN）、字段偏移（SYS_FRAME_*_OFF）。
-    取值写成宏表达式（如 ACK_CMD = CMD_REPLAY | ACK_FLAG）的，静态算不出数值，
-    直接跳过不猜。"""
+    B3：取值不再只认字面量 —— 像 `SYS_FRAME_REPLAY_ACK_CMD = SYS_FRAME_CMD_REPLAY |
+    SYS_FRAME_ACK_FLAG` 这种宏表达式也能算出来（这样应答位约定才核得了），
+    真算不出的才跳过。"""
     vals = {}
     extra = {}
     issues = []
+    # 先把全部宏表达式收进池子，供 eval_expr 解析宏引用
+    pool = {}
+    for line in text.splitlines():
+        m = RE_DEFINE_VALUE.match(line)
+        if m and not RE_DEFINE_FUNC.match(line) and m.group(1) not in pool:
+            pool[m.group(1)] = m.group(2).strip()
+
     for i, line in enumerate(text.splitlines(), 1):
-        m = RE_DEFINE_HEX.match(line)
-        if not m:
-            m = RE_DEFINE_NUM.match(line)
+        if RE_DEFINE_FUNC.match(line):
+            continue
+        m = RE_DEFINE_VALUE.match(line)
         if not m:
             continue
-        k, v = m.group(1), m.group(2)
-        try:
-            num = int(v, 0)
-        except ValueError:
-            issues.append(('宏解析失败', '%s = %s（第 %d 行）' % (k, v, i)))
+        k, raw = m.group(1), m.group(2).strip()
+        num = eval_expr(raw, pool)
+        if num is None:
+            if k in PROTOCOL_MACROS or k in ENV_OFFSET_MACROS:
+                issues.append(('宏解析失败', '%s = %s（第 %d 行）' % (k, raw, i)))
             continue
         if k in PROTOCOL_MACROS or k in ENV_OFFSET_MACROS:
             vals[k] = num
         elif RE_CMD_NAME.match(k) or RE_LEN_NAME.match(k) or RE_OFF_NAME.match(k):
             extra[k] = num
     return vals, extra, issues
+
+
+def ack_base_of(name):
+    """B3：把"应答命令字名"映射回它的"请求命令字名"。
+    认得两种写法：SYS_FRAME_<X>_ACK_CMD 与 SYS_FRAME_CMD_<X>_ACK。
+    不是应答命名则返回 None。"""
+    m = re.match(r'^SYS_FRAME_(.+)_ACK_CMD$', name)
+    if m:
+        return 'SYS_FRAME_CMD_' + m.group(1)
+    m = re.match(r'^SYS_FRAME_CMD_(.+)_ACK$', name)
+    if m:
+        return 'SYS_FRAME_CMD_' + m.group(1)
+    return None
+
+
+def cmd_convention_issues(board_name, cmds, ack_flag):
+    """B3：命令字"新增即检查" —— 命名规范 + 应答位约定（应答 CMD = 请求 CMD | ACK_FLAG）。
+    返回 findings（(等级, 位置, 说明, 类别)）。"""
+    out = []
+
+    # 命名规范：SYS_FRAME_CMD_<大写下划线> 或 SYS_FRAME_<大写下划线>_CMD
+    for k in sorted(cmds):
+        if not RE_CMD_STD.match(k):
+            out.append(('注意', board_name,
+                        '命令字 %s 命名不规范：应为 SYS_FRAME_CMD_<大写下划线>'
+                        '（应答可用 SYS_FRAME_<X>_ACK_CMD）' % k, 'cmd_naming'))
+
+    for k in sorted(cmds):
+        base = ack_base_of(k)
+        if base is not None:
+            if base not in cmds:
+                out.append(('注意', board_name,
+                            '应答命令字 %s 找不到对应请求命令字 %s（名字写错？请求还没定义？）'
+                            % (k, base), 'cmd_ack'))
+                continue
+            expect = cmds[base] | ack_flag
+            if cmds[k] != expect:
+                out.append(('严重', board_name,
+                            '应答位不对：%s = 0x%02X，应为 %s(0x%02X) | 0x%02X = 0x%02X'
+                            % (k, cmds[k], base, cmds[base], ack_flag, expect), 'cmd_ack'))
+        elif cmds[k] & ack_flag:
+            # 请求 CMD 应是 0x10~0x7F；最高位被置 1 说明"长得像应答却没按应答命名"
+            out.append(('严重', board_name,
+                        '命令字 %s = 0x%02X 最高位（应答位）被置 1，但名字不是应答命名'
+                        '（应写成 SYS_FRAME_<X>_ACK_CMD；请求命令字应是 0x10~0x7F）'
+                        % (k, cmds[k]), 'cmd_ack'))
+    return out
+
+
+def write_cmd_template(root, tables, ack_flag):
+    """B3：把两板命令字并集落成一份模板（JSON），方便"新增命令字时"对照。
+    tables = [(板名, {命令字: 值}), ...]。写不动就静默跳过（只读工具不因写模板失败而挂）。"""
+    path = os.path.join(root, CMD_TEMPLATE_REL)
+    names = sorted({k for _, t in tables for k in t})
+    cmds = []
+    for k in names:
+        boards = [nm for nm, t in tables if k in t]
+        vals = sorted({t[k] for _, t in tables if k in t})
+        cmds.append({'name': k, 'value': vals[0] if len(vals) == 1 else None,
+                     'value_hex': ('0x%02X' % vals[0]) if len(vals) == 1 else '两板不一致',
+                     'boards': boards})
+    doc = {'version': 1, 'ack_flag': '0x%02X' % ack_flag,
+           'ack_rule': '应答 CMD = 请求 CMD | ACK_FLAG；请求 CMD 0x10~0x7F',
+           'commands': cmds}
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8', newline='\n') as f:
+            f.write(json.dumps(doc, ensure_ascii=False, indent=2) + '\n')
+    except OSError:
+        pass
+    return path
 
 
 def cmd_table_of(vals, extra):
@@ -287,6 +405,7 @@ def run(root, quiet=False):
     details = []
     all_vals = []
     all_extra = []
+    template_path = os.path.join(root, CMD_TEMPLATE_REL)
 
     for name, h_rel, c_rel in BOARDS:
         h_path = os.path.join(root, h_rel)
@@ -339,6 +458,17 @@ def run(root, quiet=False):
                                      '命令字撞车：%s 都是 0x%02X，对端无法区分'
                                      % (' 与 '.join(ks), v), 'cmd_table'))
 
+        # B3 —— 命令字命名规范 + 应答位约定（应答 CMD = 请求 CMD | ACK_FLAG）
+        ack_flag = 0x80
+        for _, vv in all_vals:
+            if 'SYS_FRAME_ACK_FLAG' in vv:
+                ack_flag = vv['SYS_FRAME_ACK_FLAG']
+                break
+        findings.extend(cmd_convention_issues(n1, cmds1, ack_flag))
+        findings.extend(cmd_convention_issues(n2, cmds2, ack_flag))
+        # B3 —— 命令字全集模板：两板并集落一份 JSON，新增命令字会在这里出现
+        template_path = write_cmd_template(root, [(n1, cmds1), (n2, cmds2)], ack_flag)
+
     ok = not any(f[0] == '严重' for f in findings)
 
     # 报告
@@ -388,6 +518,26 @@ def run(root, quiet=False):
     lines.append('> 只在一板出现不算问题：板2 收上位机的控制命令，板1 不需要解析它们。'
                  '真正要抓的是"同名取值不一致"和同板内"两个命令字同值"。')
     lines.append('')
+    # B3：命令字"新增即检查" —— 命名规范与应答位约定
+    ack_flag = 0x80
+    for _, vv in all_vals:
+        if 'SYS_FRAME_ACK_FLAG' in vv:
+            ack_flag = vv['SYS_FRAME_ACK_FLAG']
+            break
+    lines.append('## 命令字命名与应答位（新增即检查）')
+    lines.append('')
+    lines.append('- 请求 CMD 取 0x10 ~ 0x7F；**应答 CMD = 请求 CMD | SYS_FRAME_ACK_FLAG(0x%02X)**。'
+                 % ack_flag)
+    lines.append('- 名字规范：`SYS_FRAME_CMD_<大写下划线>`；应答可写 `SYS_FRAME_<X>_ACK_CMD`。')
+    lines.append('- 新增命令字时本检查自动核对这两条：命名不合规 → 注意，'
+                 '应答位不是"请求|应答位"、或请求字最高位被置 1 → 严重。')
+    try:
+        shown = os.path.relpath(template_path, root).replace('\\', '/')
+    except ValueError:
+        shown = template_path
+    lines.append('- 命令字全集模板：`%s`（每次运行刷新；两板命令字并集都在这里，'
+                 '新增一条就会在模板里多一行）。' % shown)
+    lines.append('')
 
     out_dir = os.path.dirname(os.path.abspath(__file__))
     report_path = os.path.join(out_dir, '协议校验报告.md')
@@ -431,6 +581,9 @@ def selftest():
             '#define SYS_FRAME_ENV_LIGHT_OFF  6U\n'
             '#define SYS_FRAME_ENV_TVOC_OFF   8U\n'
             '#define SYS_FRAME_ENV_MQ135_OFF 10U\n'
+            '#define SYS_FRAME_ACK_FLAG      0x80U\n'
+            '#define SYS_FRAME_CMD_REPLAY    0x16U\n'
+            '#define SYS_FRAME_REPLAY_ACK_CMD (SYS_FRAME_CMD_REPLAY | SYS_FRAME_ACK_FLAG)\n'
         )
 
         # 板1：标准 + 三个 B2 错例 ——
@@ -484,7 +637,7 @@ def selftest():
              os.path.join('EnvMonitor', 'Project_2_数据通信端', 'Project', 'FWLIB', 'src', 'sys_frame.c')),
         ]
 
-        ok, findings, _ = run(d, quiet=True)
+        ok, findings, det = run(d, quiet=True)
         msgs = [f[2] for f in findings]
 
         checks = []
@@ -506,6 +659,32 @@ def selftest():
                    or ('OVERHEAD 计算' in m) for m in msgs))
         ck('反例：合规的 ENV_LEN 与 ENV 字段偏移不误报',
            not any('SYS_FRAME_ENV_LEN' in m for m in msgs))
+
+        # B3 命令字命名/应答位（新增即检查）：
+        # 反例（合规请求+应答不报）+ 错例（应答位错 / 命名不规范 / 请求字带应答位）
+        good = {'SYS_FRAME_CMD_ENV': 0x01, 'SYS_FRAME_CMD_REPLAY': 0x16,
+                'SYS_FRAME_REPLAY_ACK_CMD': 0x96}
+        ck('反例：合规请求 + 应答（0x16|0x80=0x96）不报问题',
+           cmd_convention_issues('板X', good, 0x80) == [])
+        bad_ack = dict(good)
+        bad_ack['SYS_FRAME_REPLAY_ACK_CMD'] = 0x56
+        ck('错例：应答位不等于 请求|0x80（0x56 ≠ 0x96）→ 严重',
+           any(k == 'cmd_ack' and lv == '严重'
+               for lv, _, _, k in cmd_convention_issues('板X', bad_ack, 0x80)))
+        ck('错例：命令字命名不规范（小写 bad）被点出 → 注意',
+           any(k == 'cmd_naming' and lv == '注意'
+               for lv, _, _, k in cmd_convention_issues('板X', {'SYS_FRAME_CMD_bad': 0x30}, 0x80)))
+        ck('错例：请求字最高位被置 1 却没按应答命名（0x90）→ 严重',
+           any(k == 'cmd_ack' and lv == '严重'
+               for lv, _, _, k in cmd_convention_issues('板X', {'SYS_FRAME_CMD_WEIRD': 0x90}, 0x80)))
+        ck('反例：普通请求字 0x12 不被误报应答',
+           cmd_convention_issues('板X', {'SYS_FRAME_CMD_QUERY': 0x12}, 0x80) == [])
+        ck('B3：应答字由宏表达式算出（REPLAY_ACK_CMD = 0x16|0x80 = 0x96）',
+           det[1]['cmd_table'].get('SYS_FRAME_REPLAY_ACK_CMD') == 0x96)
+        ck('B3：命令字全集模板已写出（含应答字）',
+           os.path.exists(os.path.join(d, CMD_TEMPLATE_REL))
+           and 'SYS_FRAME_REPLAY_ACK_CMD'
+           in open(os.path.join(d, CMD_TEMPLATE_REL), encoding='utf-8').read())
 
         # B6 JSON 契约：面板读 boards[].issues 与 findings，字段名/类型一改就红
         _, j_findings, j_details = run(d, quiet=True)

@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "ack_flag": "0x80",
+  "ack_rule": "应答 CMD = 请求 CMD | ACK_FLAG；请求 CMD 0x10~0x7F",
+  "commands": [
+    {
+      "name": "SYS_FRAME_CMD_CLR_CACHE",
+      "value": 19,
+      "value_hex": "0x13",
+      "boards": [
+        "板2 通信端 (F407ZG)"
+      ]
+    },
+    {
+      "name": "SYS_FRAME_CMD_ENV",
+      "value": 1,
+      "value_hex": "0x01",
+      "boards": [
+        "板1 检测端 (F407ZE)",
+        "板2 通信端 (F407ZG)"
+      ]
+    },
+    {
+      "name": "SYS_FRAME_CMD_HISTORY",
+      "value": 21,
+      "value_hex": "0x15",
+      "boards": [
+        "板2 通信端 (F407ZG)"
+      ]
+    },
+    {
+      "name": "SYS_FRAME_CMD_QUERY",
+      "value": 18,
+      "value_hex": "0x12",
+      "boards": [
+        "板2 通信端 (F407ZG)"
+      ]
+    },
+    {
+      "name": "SYS_FRAME_CMD_REBOOT",
+      "value": 20,
+      "value_hex": "0x14",
+      "boards": [
+        "板2 通信端 (F407ZG)"
+      ]
+    },
+    {
+      "name": "SYS_FRAME_CMD_REPLAY",
+      "value": 22,
+      "value_hex": "0x16",
+      "boards": [
+        "板2 通信端 (F407ZG)"
+      ]
+    },
+    {
+      "name": "SYS_FRAME_CMD_SET_CACHE",
+      "value": 17,
+      "value_hex": "0x11",
+      "boards": [
+        "板2 通信端 (F407ZG)"
+      ]
+    },
+    {
+      "name": "SYS_FRAME_CMD_SET_FWD",
+      "value": 16,
+      "value_hex": "0x10",
+      "boards": [
+        "板2 通信端 (F407ZG)"
+      ]
+    },
+    {
+      "name": "SYS_FRAME_REPLAY_ACK_CMD",
+      "value": 150,
+      "value_hex": "0x96",
+      "boards": [
+        "板2 通信端 (F407ZG)"
+      ]
+    }
+  ]
+}

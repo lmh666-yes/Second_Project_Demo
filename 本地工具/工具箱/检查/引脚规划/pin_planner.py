@@ -446,6 +446,24 @@ def fmt_pin(pb):
     return 'P%s%d' % (pb[0], pb[1])
 
 
+# 不能当"改到别的脚"的候选：SWD/JTAG 调试口，改到那里等于自断下载与在线调试通道。
+SKIP_AS_CAND = {'PA13', 'PA14', 'PA15', 'PB3', 'PB4'}
+
+
+def nearest_free(port, bit, free_set, limit=6):
+    """B2：给一个冲突脚找"就近"的空闲脚。
+    先同端口按位距由近到远（相邻脚改起来最省事，布线也最短），再跨端口（按端口、位升序）。
+    全程跳过 SWD/JTAG 调试口。返回 (同端口候选, 跨端口候选)。"""
+    def ok(pb):
+        return fmt_pin(pb) not in SKIP_AS_CAND
+
+    same = sorted((pb for pb in free_set if pb[0] == port and pb[1] != bit and ok(pb)),
+                  key=lambda pb: (abs(pb[1] - bit), pb[1]))
+    cross = sorted((pb for pb in free_set if pb[0] != port and ok(pb)),
+                   key=lambda pb: (pb[0], pb[1]))
+    return [fmt_pin(pb) for pb in same[:limit]], [fmt_pin(pb) for pb in cross[:limit]]
+
+
 def render_board(title, inc_dir, use_list, result):
     out = []
     out.append('## %s' % title)
@@ -498,16 +516,29 @@ def render_board(title, inc_dir, use_list, result):
         for (port, bit), lst in conflicts:
             out.append('- %s ← %s' % (fmt_pin((port, bit)), ', '.join(sorted(set(lst)))))
         out.append('')
-        # 修复建议：只给"库里没人认领"的脚当候选，并明确要求核对原理图。
-        # SWD/JTAG 调试口必须排除——改到那里就等于自断下载与调试通道。
-        SKIP_AS_CAND = {'PA13', 'PA14', 'PA15', 'PB3', 'PB4'}
+        # 修复建议：候选脚只取"库里没人认领"的脚，并明确要求核对原理图。
+        # B2：改成按冲突脚就近给 —— 同端口（位距近的先）优先，跨端口次之，而不是
+        # 全表按端口字母顺序取前 8 个（那 8 个往往跟冲突脚八竿子打不着）。
+        free_set = set(free)
         cand = [fmt_pin(pb) for pb in free if fmt_pin(pb) not in SKIP_AS_CAND][:8]
         out.append('> **下一步怎么做**：上面每个冲突脚都得有一个模块让出来，否则后 init 的会悄悄覆盖前一个。'
-                   '可选方向：① 把其中一个模块改到别的脚（库内当前无人认领的 %d 个脚里有 %s，'
-                   '但**必须对照原理图确认该脚在板上真的没接东西**——库里没人用不等于硬件空着）；'
+                   '可选方向：① 把其中一个模块改到别的脚（库内当前无人认领的 %d 个脚，'
+                   '各冲突脚的就近候选见下表，但**必须对照原理图确认该脚在板上真的没接东西**'
+                   '——库里没人用不等于硬件空着）；'
                    '② 两个模块本来就不会同时用（比如互斥的外设），在代码里加互斥判断；'
                    '③ 确认是"声明了但没实际初始化"的僵尸宏，删掉即可。'
-                   % (len(free), '、'.join(cand) if cand else '（无）'))
+                   % len(free))
+        out.append('')
+        out.append('**各冲突脚的就近候选**（同端口优先、位距近的先；已排除 SWD/JTAG 调试口；'
+                   '整板无人认领脚里前 8 个：%s）：' % ('、'.join(cand) if cand else '（无）'))
+        out.append('')
+        for (port, bit), lst in conflicts:
+            same, cross = nearest_free(port, bit, free_set)
+            out.append('- %s → 同端口：%s；跨端口：%s' % (
+                fmt_pin((port, bit)),
+                '、'.join(same) if same else '（本端口无空闲）',
+                '、'.join(cross) if cross else '（无）'))
+        out.append('')
     else:
         out.append('无。')
     out.append('')
@@ -746,6 +777,19 @@ def selftest():
            unused == {'LORA_E22', 'W25QXX', 'ADC_LIGHT'}, '、'.join(sorted(unused)) or '无')
         ck('报告有「声明了但没人用」一节且列出 ADC_LIGHT',
            '### 声明了但没人用' in txt and 'ADC_LIGHT' in txt)
+
+        # B2 冲突候选脚就近排序：错例（同端口按位距由近到远：PB10 应给 PB12 先于 PB2）/
+        # 反例（调试口 PA13/PA14/PA15 不许当候选，业务脚 PA6 可以）
+        fs = {('B', 2), ('B', 12), ('B', 10), ('A', 13), ('A', 14), ('A', 15),
+              ('A', 6), ('C', 1)}
+        same, cross = nearest_free('B', 10, fs)
+        ck('错例：冲突脚 PB10 的同端口候选按位距就近（PB12 先于 PB2），且不含自己',
+           same == ['PB12', 'PB2'], '、'.join(same))
+        ck('反例：调试口 PA13/PA14/PA15 不当候选，业务脚 PA6 仍在跨端口候选里',
+           not any(p in ('PA13', 'PA14', 'PA15') for p in cross) and 'PA6' in cross,
+           '、'.join(cross))
+        ck('报告里每个冲突脚都给出「就近候选」行（同端口/跨端口）',
+           '各冲突脚的就近候选' in txt and '→ 同端口：' in txt)
 
         claims, unresolved = scan_dma(tmp)
         by_mod = {c['module']: c for c in claims}

@@ -126,6 +126,32 @@ def fmt_dur(sec):
     return '%.1f 秒' % sec
 
 
+def fmt_period(ms):
+    """把上传周期毫秒数写成人话（1 秒 / 10 秒 / 30 秒；非整秒就写 ms）。"""
+    if ms % 1000 == 0:
+        return '%d 秒' % (ms // 1000)
+    return '%d ms' % ms
+
+
+def period_rows(stats, replay_ms):
+    """B1：换个上传周期再算一遍 —— 同一块缓存，周期越长越能扛，但补传越追不上。
+    返回 [(周期ms, 写入速率, 断网可扛秒, 补传结论)]。"""
+    cap = stats.get('capacity_slots') or 0
+    rows = []
+    for ms in (1000, 5000, 10000, 30000):
+        hold = cap * ms / 1000.0
+        if replay_ms > ms:
+            verdict = '补传慢于写入：积压补不完，边补边覆盖（这一档别选）'
+        else:
+            net = 1000.0 / replay_ms - 1000.0 / ms if (ms > 0 and replay_ms > 0) else 0
+            catch = (cap / net) if net > 0 else None
+            verdict = ('补传快于写入，满缓存约 %s 补完' % fmt_dur(catch)) if catch \
+                else '补传快于写入'
+        rows.append((ms, 1000.0 / ms if ms > 0 else 0, hold, verdict,
+                     '注意' if replay_ms > ms else 'OK'))
+    return rows
+
+
 def analyze(log_text, flash_text, period_ms, replay_ms, record_bytes):
     """返回 (findings, stats)。findings 每项 (等级, 位置, 现象, 键)。"""
     findings = []
@@ -276,6 +302,25 @@ def render(findings, stats):
         out.append('- 补完满缓存：约 %s' % fmt_dur(stats['catchup_sec']))
     out.append('')
 
+    # B1：周期对照表 —— 一次把几档上传周期各自能扛多久、补传结论列出来，方便挑周期。
+    cap_slots = stats.get('capacity_slots') or 0
+    if cap_slots:
+        out.append('## 上传周期对照表（挑周期用）')
+        out.append('')
+        out.append('同一块缓存（%d 条）、补传每条固定 %s ms，换上传周期试算：' % (
+            cap_slots, stats.get('replay_ms')))
+        out.append('')
+        out.append('| 上传周期 | 写入速率 | 断网可扛 | 补传结论 |')
+        out.append('|---|---|---|---|')
+        for ms, rate, hold, verdict, _lv in period_rows(stats, stats.get('replay_ms') or 0):
+            mark = '（当前）' if ms == stats.get('period_ms') else ''
+            out.append('| %s%s | %.3f 条/秒 | %s | %s |' % (
+                fmt_period(ms), mark, rate, fmt_dur(hold), verdict))
+        out.append('')
+        out.append('> 周期越长越能扛，但写入越慢、补传越容易追上；周期越短能扛的时长越短。'
+                   '挑周期时两头都看一眼，别只看"断网可扛"。')
+        out.append('')
+
     if findings:
         out.append('## 发现')
         out.append('')
@@ -290,6 +335,8 @@ def render(findings, stats):
     out.append('2) 缓存几何全部读自 `w25qxx_log.h` 与 `w25qxx.h`，不内置任何印象数据。')
     out.append('3) "断网可扛"按"每个上传周期写 1 条"估算；若一次上报写多条，把 --period-ms 按等效周期填。')
     out.append('4) 扇区粒度导致的连带丢失是硬件限制：要么留余量、要么在 W25QXX_LogLost 非 0 时报警。')
+    out.append('5) 「上传周期对照表」固定补传每条（--replay-ms），只换上传周期试算，'
+               '方便对比挑周期；表里的"（当前）"就是本次实际用的那档。')
     out.append('')
     return '\n'.join(out)
 
@@ -383,6 +430,20 @@ def selftest():
     f6, _ = run('#define W25QXX_LOG_SECTORS 16U\n', FLASH_SAMPLE)
     ck('错例：几何宏缺失 → 报严重而不是静默通过',
        any(k == 'geom' and lv == '严重' for lv, _, m, k in f6))
+
+    # B1 上传周期对照表：错例（补传 2000ms 时 1 秒档必须点出"边补边覆盖"）
+    f7, s7 = run(LOG_SAMPLE, FLASH_SAMPLE, period_ms=1000, replay_ms=2000)
+    rows_bad = period_rows(s7, 2000)
+    ck('错例：周期对照表里"补传慢于写入"的档要点明（1 秒档 → 边补边覆盖）',
+       any(ms == 1000 and '边补边覆盖' in v for ms, _, _, v, _ in rows_bad),
+       str([(ms, v) for ms, _, _, v, _ in rows_bad]))
+    # 反例：补传 50ms 快于各档 → 表里不许出现"边补边覆盖"
+    ck('反例：补传快于写入时，周期对照表不许出现"边补边覆盖"',
+       not any('边补边覆盖' in v for _, _, _, v, _ in period_rows(s, 50)))
+    ck('周期对照表：周期越长、断网可扛越久（单调）',
+       [r[2] for r in period_rows(s, 50)] == sorted(r[2] for r in period_rows(s, 50)))
+    ck('周期对照表：报告里确有这一节',
+       '## 上传周期对照表（挑周期用）' in render(f, s))
 
     j = to_json(f, s)
     ck('JSON 结构正确（工具名/ok/容量/可扛时长）',

@@ -202,6 +202,10 @@ PRINCIPLE = {
     'isr_float': 'Cortex-M4 的 ISR 默认不保存 FPU 寄存器（靠惰性压栈），ISR 里做浮点运算'
                  '要额外确认：要么改成定点（本项目线上传定点整数就是为这个），'
                  '要么明确 portTASK_USES_FLOATING_POINT 与 FPU 上下文的取舍。',
+    'prio_drift': '同一个中断的抢占优先级只能有一个来源：模块头里声明的宏'
+                  '（如 SYS_USART_IRQ_PRE_PRIO）。如果 SYS_NVIC_SetPriority 那一行'
+                  '配的是字面量、或用了别的模块的宏，改动宏就不会生效 —— 这就是"配置漂移"，'
+                  '以后调优先级时会以为改一处就行，实际那处根本没被用到。',
 }
 
 
@@ -532,6 +536,72 @@ def is_isr_name(name):
             or name.endswith('_irq') or name.endswith('_dispatch'))
 
 
+# B4：中断优先级"配置漂移" —— 宏声明的值 vs 实际 SYS_NVIC_SetPriority 配下去的值
+RE_PRE_PRIO_MACRO = re.compile(r'#\s*define\s+(SYS_(\w+?)_IRQ_PRE_PRIO)\s+(\d+)')
+RE_SET_PRIO_ARGS = re.compile(
+    r'SYS_NVIC_SetPriority\s*\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*|\d+)')
+
+
+def irq_module_token(irq_name):
+    """IRQn 的模块前缀：USART1_IRQn → USART、RTC_WKUP_IRQn → RTC、TIM5_IRQn → TIM。
+    用来把"模块头里的优先级宏"与"它管的中断"对上号。"""
+    core = irq_name[:-5] if irq_name.endswith('_IRQn') else irq_name
+    m = re.match(r'([A-Za-z]+)', core)
+    return m.group(1).upper() if m else None
+
+
+def scan_prio_drift(proj):
+    """B4：扫"同一个中断，宏声明与实际配置不一致"的漂移。
+    配对靠名字：宏 SYS_<模块>_IRQ_PRE_PRIO ↔ IRQn 的模块前缀。
+    命中两类：① 调用处配字面量、与宏声明的值不等；② 调用处用了别的模块的宏。
+    两处各看各的，改宏就不会生效。"""
+    inc = os.path.join(proj, 'FWLIB', 'inc')
+    src = os.path.join(proj, 'FWLIB', 'src')
+    macros = {}      # 宏名 -> (值, 出处)
+    if os.path.isdir(inc):
+        for fn in sorted(os.listdir(inc)):
+            if not fn.endswith('.h'):
+                continue
+            txt, _ = read_text(os.path.join(inc, fn))
+            for m in RE_PRE_PRIO_MACRO.finditer(txt):
+                macros.setdefault(m.group(1), (int(m.group(3)), 'FWLIB/inc/%s' % fn))
+    out = []
+    if not macros or not os.path.isdir(src):
+        return out
+    for fn in sorted(os.listdir(src)):
+        if not fn.endswith('.c'):
+            continue
+        text, _ = read_text(os.path.join(src, fn))
+        for i, line in enumerate(text.splitlines(), 1):
+            m = RE_SET_PRIO_ARGS.search(line)
+            if not m:
+                continue
+            irq, arg = m.group(1), m.group(2)
+            tok = irq_module_token(irq)
+            if not tok:
+                continue
+            want = 'SYS_%s_IRQ_PRE_PRIO' % tok
+            if want not in macros:
+                continue                       # 本模块没有声明宏，无从比对
+            decl, decl_loc = macros[want]
+            loc = 'FWLIB/src/%s:%d' % (fn, i)
+            if arg.isdigit():
+                if int(arg) == decl:
+                    continue
+                out.append(('注意', loc,
+                            '%s 配的抢占优先级是字面量 %s，但宏 %s（%s）声明的是 %d：'
+                            '两处不一致 —— 改宏不会生效（配置漂移）'
+                            % (irq, arg, want, decl_loc, decl), 'prio_drift'))
+            elif arg != want:
+                got = macros.get(arg, (None, ''))[0]
+                out.append(('注意', loc,
+                            '%s 配的是 %s（%s），而本模块声明的宏是 %s（%s，值 %d）：'
+                            '两处各看各的 —— 配置漂移'
+                            % (irq, arg, ('值 %s' % got) if got is not None else '值算不出',
+                               want, decl_loc, decl), 'prio_drift'))
+    return out
+
+
 def check_board(title, proj):
     """返回 findings 列表：每项 (等级, 位置, 现象, 原理键)。"""
     findings = []
@@ -575,6 +645,9 @@ def check_board(title, proj):
                                      '%s = %d，小于内核上限 %d：该中断一旦调用 FromISR 接口'
                                      '就会越过内核屏蔽'
                                      % (m.group(1), val, mx_lib), 'prio'))
+
+    # 2b) B4 中断优先级配置漂移：同一中断，宏声明的值 vs 实际配下去的值
+    findings.extend(scan_prio_drift(proj))
 
     # 3) ISR 误用 RTOS 接口（直调 / 经宏展开一层 / 经函数最多三层转发） + 4/5) 任务栈与堆预算
     srcs = list(iter_sources(proj))
@@ -1039,6 +1112,37 @@ def selftest():
         ck('外置规则表生效：阻断类 / 临界区类 / 前缀类都对得上',
            'xSemaphoreGive' in BLOCKING_API and 'taskENTER_CRITICAL' in ISR_UNSAFE_CRITICAL
            and 'xQueue' in RTOS_PREFIX, '前缀 %s' % ('、'.join(RTOS_PREFIX)))
+
+        # ---- B4 中断优先级"配置漂移"（错例必须命中，反例必须不报）----
+        # 单独造一个小工程，不动上面的主 fixture（免得影响 TIM5/TIM9 那些反例断言）。
+        d2 = tempfile.mkdtemp(prefix='rtos_drift_')
+        try:
+            pj = os.path.join(d2, 'Project')
+            os.makedirs(os.path.join(pj, 'FWLIB', 'inc'))
+            os.makedirs(os.path.join(pj, 'FWLIB', 'src'))
+            wr(os.path.join(pj, 'FWLIB', 'inc', 'sys_tim.h'),
+               '#define SYS_TIM_IRQ_PRE_PRIO   3\n')
+            wr(os.path.join(pj, 'FWLIB', 'inc', 'sys_usart.h'),
+               '#define SYS_USART_IRQ_PRE_PRIO 5\n')
+            wr(os.path.join(pj, 'FWLIB', 'src', 'nvic.c'),
+               'void Bsp_Init(void)\n{\n'
+               '    SYS_NVIC_SetPriority(USART1_IRQn, SYS_USART_IRQ_PRE_PRIO, 0);\n'
+               '    SYS_NVIC_SetPriority(TIM5_IRQn, 6, 0);\n'
+               '    SYS_NVIC_SetPriority(TIM9_IRQn, SYS_EXTI_IRQ_PRE_PRIO, 0);\n'
+               '}\n')
+            drift = scan_prio_drift(pj)
+            dm = [m for _, _, m, _ in drift]
+            ck('错例：TIM5 配字面量 6、而宏 SYS_TIM_IRQ_PRE_PRIO 声明 3 → 配置漂移',
+               any('TIM5_IRQn' in m and '字面量' in m for m in dm), '、'.join(dm))
+            ck('错例：TIM9 用了别的模块的宏（SYS_EXTI_IRQ_PRE_PRIO）→ 配置漂移',
+               any('TIM9_IRQn' in m and '漂移' in m for m in dm))
+            ck('反例：USART1 用本模块宏、值一致 → 不报漂移',
+               not any('USART1_IRQn' in m for m in dm))
+            ck('配置漂移只挂 prio_drift 一类，共 2 条',
+               len(drift) == 2 and all(k == 'prio_drift' for _, _, _, k in drift),
+               str(len(drift)))
+        finally:
+            shutil.rmtree(d2, ignore_errors=True)
 
         # ---- 看门狗 vs Flash 擦写（错例必须命中，反例必须不报）----
         def mkproj(name, extra_c):

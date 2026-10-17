@@ -20,6 +20,9 @@ r"""编码与仓库守卫（只读源码，不改任何文件）。
 检查项（--eol 启用）：
   4) 换行：git 索引里的换行必须为 LF（autocrlf 不影响该判定）。
 
+检查项（--strict-comments 启用）：
+  5) 注释严格模式：注释里的全角标点也按"违规"计（默认只作提示，见报告 1b 节）。
+
 另附"内存占用快照"：读 Keil 构建日志里的 Program Size 行。
 
 跳过第三方、构建产物与参考素材（FreeRTOS / ETH / RTE / qcustomplot / build / 双版资源）。
@@ -30,6 +33,7 @@ r"""编码与仓库守卫（只读源码，不改任何文件）。
 用法：
     python 本地工具\工具箱\检查\编码守卫\encoding_guard.py
     python 本地工具\工具箱\检查\编码守卫\encoding_guard.py --eol
+    python 本地工具\工具箱\检查\编码守卫\encoding_guard.py --strict-comments
 """
 import json
 import os
@@ -211,8 +215,10 @@ def comment_text(text):
     return '\n'.join(chunks)
 
 
-def comment_notes(text, ext):
-    """B4：注释区的提示项。返回 [( '注释', 说明 )]，没有就返回空。"""
+def comment_notes(text, ext, strict=False):
+    """B4：注释区的提示项。返回 [( kind, 说明 )]，没有就返回空。
+    B5：strict=True（--strict-comments）时，全角标点按"违规"计（kind='注释违规'），
+    默认仍只作提示（kind='注释'）。乱码残留/替换字符本来就是问题，两档都照报。"""
     if ext not in CODE_EXT:
         return []
     cet = comment_text(text)
@@ -221,8 +227,13 @@ def comment_notes(text, ext):
     notes = []
     fw = sorted({ch for ch in cet if ch in FULLWIDTH_PUNCT})
     if fw:
-        notes.append(('注释', '注释里用了全角标点 %s（中文注释的习惯写法，不影响编译）'
-                      % ''.join(fw)))
+        if strict:
+            notes.append(('注释违规',
+                          '注释里用了全角标点 %s（--strict-comments：按违规计）'
+                          % ''.join(fw)))
+        else:
+            notes.append(('注释', '注释里用了全角标点 %s（中文注释的习惯写法，不影响编译）'
+                          % ''.join(fw)))
     bad = sum(cet.count(s) for s in GBK_MOJIBAKE_SIGNS)
     if bad:
         notes.append(('注释', '注释里出现 %d 处 GBK / 乱码残留签名（如"锟斤拷"），'
@@ -233,7 +244,7 @@ def comment_notes(text, ext):
     return notes
 
 
-def check_file(path, index_eol, do_eol):
+def check_file(path, index_eol, do_eol, strict=False):
     issues = []
     with open(path, 'rb') as f:
         data = f.read()
@@ -269,8 +280,8 @@ def check_file(path, index_eol, do_eol):
                 as_utf8 = None
             if as_utf8 is not None and re.search(r'[\u4e00-\u9fff]', as_utf8):
                 issues.append(('编码', '可按 GBK 解码，但内容更像 UTF-8（含中文），疑似被另存为 UTF-8'))
-        # B4：注释区体检（kind = '注释'，由 main 分拣出去，不计入违规）
-        issues.extend(comment_notes(text, os.path.splitext(path)[1].lower()))
+        # B4：注释区体检（kind = '注释'/'注释违规'，由 main 分拣出去）
+        issues.extend(comment_notes(text, os.path.splitext(path)[1].lower(), strict))
 
     if do_eol and index_eol:
         rel = os.path.relpath(path, ROOT).replace('\\', '/')
@@ -296,7 +307,7 @@ def keil_snapshot():
     return rows, missing
 
 
-def render(scanned, bad_files, enc_stat, do_eol, comment_list=None):
+def render(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False):
     out = ['# 编码守卫报告', '',
            '来源：`encoding_guard.py`（只读扫描，可重复运行）', '']
     out.append('## 0. 总览')
@@ -307,6 +318,8 @@ def render(scanned, bad_files, enc_stat, do_eol, comment_list=None):
     out.append('| 扫描文件 | %d |' % scanned)
     out.append('| 违规文件 | %d |' % len(bad_files))
     out.append('| 换行检查 | %s |' % ('已启用（按 git 索引判定）' if do_eol else '未启用（加 --eol 启用）'))
+    out.append('| 注释严格模式 | %s |' % ('已启用（--strict-comments：全角标点按违规计）'
+                                        if strict else '未启用（加 --strict-comments 启用）'))
     out.append('')
     out.append('口径：main.c 为 GBK 无 BOM；其余为 UTF-8 无 BOM；仓库索引换行为 LF。')
     out.append('')
@@ -343,7 +356,8 @@ def render(scanned, bad_files, enc_stat, do_eol, comment_list=None):
                        '不影响编译，不逐条列出）。' % (len(cl) - len(shown)))
             out.append('')
         out.append('注：这一节只做提示。全角标点在注释里是习惯问题；真正按"违规"处理的'
-                   '只有编码/BOM/换行/替换字符那些（见上一节）。')
+                   '只有编码/BOM/换行/替换字符那些（见上一节）。'
+                   '想让全角标点也按违规计，加 `--strict-comments`（那一档会写进第 1 节）。')
         out.append('')
 
     out.append('## 2. 内存占用快照（取自 Keil 构建日志）')
@@ -389,7 +403,7 @@ def render(scanned, bad_files, enc_stat, do_eol, comment_list=None):
     return '\n'.join(out)
 
 
-def to_json(scanned, bad_files, enc_stat, do_eol, comment_list=None):
+def to_json(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False):
     """结构化输出，供工具箱的可视化体检面板读取。"""
     rows, missing = keil_snapshot()
     memory = []
@@ -412,6 +426,7 @@ def to_json(scanned, bad_files, enc_stat, do_eol, comment_list=None):
         'memory': memory,
         'memory_missing': missing,
         'eol_checked': bool(do_eol),
+        'strict_comments': bool(strict),
     }
 
 
@@ -459,6 +474,26 @@ def selftest():
     results.append(('B4 注释提示在 check_file 里以 kind=注释 返回（供 main 分拣，不计违规）',
                     any(k == '注释' for k, _ in check_file(p4, {}, False))))
 
+    # 5) B5：注释严格模式 —— 全角标点按违规计（kind=注释违规）；默认仍只提示
+    results.append(('B5 错例：--strict-comments 下注释全角标点按违规计（kind=注释违规）',
+                    any(k == '注释违规'
+                        for k, _ in comment_notes('/* 温度，湿度。 */', '.c', strict=True))))
+    results.append(('B5 反例：默认（非严格）时同一段注释仍只是提示（kind=注释，不算违规）',
+                    {k for k, _ in comment_notes('/* 温度，湿度。 */', '.c')} == {'注释'}))
+    results.append(('B5 反例：注释里没有全角标点时，严格模式也不报',
+                    not any(k == '注释违规'
+                            for k, _ in comment_notes('/* temp, humi. */', '.c', strict=True))))
+    results.append(('B5 反例：严格模式只对 C 系文件生效（md 不做注释体检）',
+                    comment_notes('温度，湿度。', '.md', strict=True) == []))
+    with open(os.path.join(d, 'strict.c'), 'wb') as f:
+        f.write('/* 温度，湿度。 */\nint x;\n'.encode('utf-8'))
+    results.append(('B5：check_file 在严格模式下把注释违规一并返回',
+                    any(k == '注释违规'
+                        for k, _ in check_file(os.path.join(d, 'strict.c'), {}, False, True))))
+    results.append(('B5 反例：check_file 默认模式不把注释算违规（只给 kind=注释）',
+                    not any(k == '注释违规'
+                            for k, _ in check_file(os.path.join(d, 'strict.c'), {}, False, False))))
+
     j = to_json(3, [(p1, [('编码', 'x')])], {'utf-8': 2}, False)
     results.append(('JSON 输出结构正确',
                     j['tool'] == 'encoding_guard' and j['scanned'] == 3
@@ -471,9 +506,13 @@ def selftest():
     results.append(('JSON 契约：面板读取的字段名/类型都在',
                     set(j) == {'tool', 'schema', 'ok', 'scanned', 'violations',
                                'violations_list', 'comment_notes', 'encoding_stat',
-                               'memory', 'memory_missing', 'eol_checked'}
+                               'memory', 'memory_missing', 'eol_checked',
+                               'strict_comments'}
                     and isinstance(j['violations'], int)
                     and isinstance(j['memory'], list)))
+    results.append(('JSON 契约：strict_comments 反映严格模式开关',
+                    j['strict_comments'] is False
+                    and to_json(1, [], {}, False, None, True)['strict_comments'] is True))
 
     jm = to_json(1, [], {'utf-8': 1}, False)
     jm['memory'] = [{'title': 't', 'code': 1, 'ro': 2, 'rw': 3, 'zi': 4,
@@ -496,6 +535,7 @@ def main(argv):
     quiet = False
     do_eol = False
     json_mode = False
+    strict = False
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '编码守卫报告.md')
     bad = []
     i = 1
@@ -509,6 +549,9 @@ def main(argv):
             i += 1
         elif a == '--json':
             json_mode = True
+            i += 1
+        elif a == '--strict-comments':
+            strict = True
             i += 1
         elif a == '--out':
             if i + 1 >= len(argv):
@@ -524,7 +567,7 @@ def main(argv):
     # 参数写错要报错退出，不能静默忽略（否则会跑成一次全量真实扫描并覆盖报告）
     if bad:
         print('未知参数：%s' % ' '.join(bad))
-        print('可用参数：--out <文件> | --quiet | --eol | --json | --selftest')
+        print('可用参数：--out <文件> | --quiet | --eol | --strict-comments | --json | --selftest')
         return 2
 
     index_eol, ok = git_index_eol() if do_eol else ({}, False)
@@ -539,22 +582,24 @@ def main(argv):
         scanned += 1
         enc = expected_encoding(path)
         enc_stat[enc] = enc_stat.get(enc, 0) + 1
-        issues = check_file(path, index_eol, do_eol)
-        # B4：把注释区的提示项拣出来单独成节 —— 全角标点是习惯问题，不该算"违规文件"
+        issues = check_file(path, index_eol, do_eol, strict)
+        # B4/B5：把注释区的提示项拣出来单独成节 —— 全角标点是习惯问题，不该算"违规文件"；
+        # 但开了 --strict-comments 时，全角标点以 kind='注释违规' 返回，归到违规里。
         notes = [x for x in issues if x[0] == '注释']
-        issues = [x for x in issues if x[0] != '注释']
+        strict_hits = [x for x in issues if x[0] == '注释违规']
+        issues = [x for x in issues if x[0] not in ('注释', '注释违规')]
         rel = os.path.relpath(path, ROOT)
-        if issues:
-            bad_files.append((rel, issues))
+        if issues or strict_hits:
+            bad_files.append((rel, issues + strict_hits))
         if notes:
             comment_list.append((rel, notes))
 
     if json_mode:
-        print(json.dumps(to_json(scanned, bad_files, enc_stat, do_eol, comment_list),
+        print(json.dumps(to_json(scanned, bad_files, enc_stat, do_eol, comment_list, strict),
                          ensure_ascii=False))
         return 1 if bad_files else 0
 
-    report = render(scanned, bad_files, enc_stat, do_eol, comment_list)
+    report = render(scanned, bad_files, enc_stat, do_eol, comment_list, strict)
     with open(out_path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(report)
 
@@ -564,6 +609,7 @@ def main(argv):
     print('  违规文件: %d' % len(bad_files))
     print('  注释体检: %d 个文件有提示（仅提示，不计违规，见报告 1b 节）' % len(comment_list))
     print('  换行检查: %s' % ('开' if do_eol else '关（加 --eol）'))
+    print('  严格注释: %s' % ('开（全角标点按违规计）' if strict else '关（加 --strict-comments）'))
     print('  报告    : %s' % out_path)
     if not quiet and bad_files:
         for rel, issues in bad_files:
