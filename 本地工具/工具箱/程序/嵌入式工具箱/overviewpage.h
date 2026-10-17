@@ -71,6 +71,7 @@ signals:
 
 private slots:
     void refresh();
+    void startNextProc();      /* F1：分批起取数进程（每轮事件循环只起一个） */
     void openReportsDir();
     void showHistorySnapshot();
 
@@ -121,6 +122,13 @@ private:
     QVariantMap m_tools;
     QStringList m_failed;
     QStringList m_dropKeys;    /* 测试钩子：这些键一律当"没取到" */
+    /* F1：分批起进程用 —— 本轮要起的 (键, 脚本) 队列、队列游标、当前轮次号。
+       m_gen 一变，上一轮排队中的"起下一个"回调就会自己作废（连点刷新时不叠罗汉）。 */
+    QList<QPair<QString, QString>> m_queue;
+    QStringList m_py;
+    int         m_toStart = 0;
+    int         m_gen = 0;
+    bool        m_startDone = false;   /* 队列已全部起完（此后 m_pending 归零才收尾） */
 };
 
 #endif // OVERVIEWPAGE_H

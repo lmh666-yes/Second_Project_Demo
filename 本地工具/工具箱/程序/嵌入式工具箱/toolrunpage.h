@@ -23,6 +23,7 @@ class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
 class QHBoxLayout;
+class QVBoxLayout;
 class QProcess;
 class QTimer;
 
@@ -51,6 +52,9 @@ public:
     void setReportPath(const QString &path);
     void setReportLabel(const QString &text);      /* 供"打开报告"使用 */
     QHBoxLayout *optionsLayout();                 /* 外部往这一行加选项控件 */
+    /* F2：选项多的页面（OTA 台架）把控件全塞一行会把页最小宽度顶到 797px，
+       于是再给一行"续行"。按需创建，没用到的页面不会多出一行空白。 */
+    QHBoxLayout *optionsLayout2();
 
     /* 工具箱目录未解析出来时由外部调用，页面上给出显式告警 */
     void warnMissingToolsDir();
@@ -97,6 +101,9 @@ private:
     QLabel         *m_status  = nullptr;
     QLabel         *m_find    = nullptr;
     QHBoxLayout    *m_options = nullptr;
+    QHBoxLayout    *m_options2 = nullptr;        /* F2：第二行选项，按需创建 */
+    QVBoxLayout    *m_lay = nullptr;             /* 本页主布局，供插入"续行"用 */
+    int             m_optionsIndex = 0;         /* m_options 在主布局里的位置 */
     QHBoxLayout    *m_actionsLayout = nullptr;   /* 自定义动作按钮，如「发送到协议工作台」 */
     QPlainTextEdit *m_out     = nullptr;
     QPushButton    *m_btnRun  = nullptr;

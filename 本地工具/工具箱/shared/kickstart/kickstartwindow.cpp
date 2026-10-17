@@ -55,6 +55,9 @@ KickStartWindow::KickStartWindow(QWidget *parent)
     QVBoxLayout *right = new QVBoxLayout;
     right->addWidget(split, 1);
 
+    /* F2「图形界面大小」：原来 7 个按钮挤在一行，最小宽度 737px，把本页顶到 951px、
+       进而把主窗口顶到 1195px 宽（笔记本上缩不小）。拆成两行：第一行"走流程"，
+       第二行"草稿与导出"，两行各自靠左留白，窄窗口也不会挤成一团。 */
     QHBoxLayout *bar = new QHBoxLayout;
     m_btnPrev  = new QPushButton(QStringLiteral("上一步"), central);
     m_btnNext  = new QPushButton(QStringLiteral("下一步"), central);
@@ -70,12 +73,15 @@ KickStartWindow::KickStartWindow(QWidget *parent)
     bar->addWidget(m_btnPrev);
     bar->addWidget(m_btnNext);
     bar->addStretch(1);
-    bar->addWidget(btnLoad);
-    bar->addWidget(btnSave);
-    bar->addWidget(btnCopy);
-    bar->addWidget(btnExport);
     bar->addWidget(btnScaffold);
+    QHBoxLayout *bar2 = new QHBoxLayout;
+    bar2->addWidget(btnLoad);
+    bar2->addWidget(btnSave);
+    bar2->addWidget(btnCopy);
+    bar2->addWidget(btnExport);
+    bar2->addStretch(1);
     right->addLayout(bar);
+    right->addLayout(bar2);
 
     root->addWidget(m_steps);
     root->addLayout(right, 1);
@@ -164,7 +170,11 @@ QWidget *KickStartWindow::buildPage(const PageSpec &page)
             QPushButton *toggle = new QPushButton(QStringLiteral("看示例 / 填入示例"), content);
             toggle->setFlat(true);
             toggle->setCursor(Qt::PointingHandCursor);
-            toggle->setStyleSheet(QStringLiteral("text-align:left;color:%1;border:none;")
+            /* F2：界面上所有按钮总高必须一种。全局 QSS 给按钮定的是
+               min/max-height 22px（内容高），总高 = 内容 22 + padding 12 + 边框 2 = 36；
+               这里原来写 border:none 会少掉 2px、变成 34px，是量测里唯一"另类"的按钮。
+               改成 1px 透明边框即可：看着仍是"无框文字按钮"，尺寸却与别的按钮一致。 */
+            toggle->setStyleSheet(QStringLiteral("text-align:left;color:%1;border:1px solid transparent;")
                                       .arg(QStringLiteral("#6fa8dc")));
 
             QLabel *demoBox = new QLabel(demo, content);

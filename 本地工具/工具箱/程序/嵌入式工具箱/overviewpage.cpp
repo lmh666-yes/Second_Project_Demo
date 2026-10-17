@@ -287,21 +287,28 @@ OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
     QWidget *hist = new QWidget(this);
     QVBoxLayout *hl = new QVBoxLayout(hist);
     hl->setContentsMargins(0, 0, 0, 0);
+    /* F2「图形界面大小」：原来把"快照下拉 + 基准下拉 + 两段说明 + 状态文字"挤在一行，
+       最小宽度到 939px，把整页、进而把主窗口撑到 1207px 宽（笔记本上缩不小）。
+       拆成两行：第一行选快照/基准，第二行放状态；说明文字短一些、细节进 tooltip。 */
     QHBoxLayout *hbar = new QHBoxLayout;
     m_histCombo = new QComboBox(hist);
-    m_histCombo->setMinimumWidth(180);
+    m_histCombo->setMinimumWidth(150);
     m_histBaseCombo = new QComboBox(hist);
-    m_histBaseCombo->setMinimumWidth(200);
+    m_histBaseCombo->setMinimumWidth(160);
     m_histStatus = new QLabel(QStringLiteral("还没有历史快照。"), hist);
     m_histStatus->setStyleSheet(QStringLiteral("color:rgba(127,127,127,255);"));
-    hbar->addWidget(new QLabel(QStringLiteral("选一轮快照："), hist));
+    QLabel *lSnap = new QLabel(QStringLiteral("快照："), hist);
+    lSnap->setToolTip(QStringLiteral("挑一轮已归档的体检快照重新渲染"));
+    QLabel *lBase = new QLabel(QStringLiteral("基准："), hist);
+    lBase->setToolTip(QStringLiteral("选一个基准轮次，卡片上会显示相对它的增减"));
+    hbar->addWidget(lSnap);
     hbar->addWidget(m_histCombo);
     hbar->addSpacing(8);
-    hbar->addWidget(new QLabel(QStringLiteral("对比基准："), hist));
+    hbar->addWidget(lBase);
     hbar->addWidget(m_histBaseCombo);
-    hbar->addSpacing(12);
-    hbar->addWidget(m_histStatus, 1);
+    hbar->addStretch(1);
     hl->addLayout(hbar);
+    hl->addWidget(m_histStatus);
     m_histCanvas = new DashboardCanvas(hist);
     m_histCanvas->setObjectName(QStringLiteral("histDashboard"));
     QScrollArea *hsa = new QScrollArea(hist);
@@ -376,15 +383,21 @@ void OverviewPage::refresh()
     m_tools.clear();
     m_failed.clear();
     m_pending = 0;
+    ++m_gen;                    /* 上一轮排队中的"起下一个"回调就此作废（连点刷新不叠罗汉） */
+    m_startDone = false;
 
-    const QStringList py = PyFind::detect();
-    if (py.isEmpty()) {
+    m_py = PyFind::detect();
+    if (m_py.isEmpty()) {
         m_canvas->setNotice(QStringLiteral(
             "未找到 Python（已尝试 python / py -3 / python3）。装一个并加入 PATH 即可。"));
         m_status->setText(QStringLiteral("未找到 Python"));
         return;
     }
 
+    /* 先排好"本轮要起哪些"（跳过的直接记成没取到），再交给分批起进程的链。
+       F1：原来 7 个进程一次起完，实测会在事件循环里堵 ~200ms —— 首次打开本页就顿一下。
+       现在每轮事件循环只起一个（见 startNextProc），界面始终能动，并行语义不变。 */
+    m_queue.clear();
     for (const ToolDef &d : TOOLS) {
         const QString script = QDir(m_toolsDir).filePath(QString::fromUtf8(d.rel));
         const QString key = QString::fromUtf8(d.key);
@@ -397,33 +410,61 @@ void OverviewPage::refresh()
             m_failed << key;
             continue;
         }
-
-        QProcess *proc = new QProcess(this);
-        proc->setWorkingDirectory(QFileInfo(script).absolutePath());
-        QStringList a = py.mid(1);
-        a << script << QStringLiteral("--json");
-
-        /* 单个进程 30s 兜底超时，免得一个脚本卡住拖住整轮 */
-        QTimer *tm = new QTimer(proc);
-        tm->setSingleShot(true);
-        tm->setInterval(30000);
-        connect(tm, &QTimer::timeout, proc, &QProcess::kill);
-        tm->start();
-
-        connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-                this, [this, key, proc](int, QProcess::ExitStatus) {
-            onFetchFinished(key, proc);
-        });
-
-        proc->start(py.value(0), a);
-        ++m_pending;
+        m_queue << qMakePair(key, script);
     }
-
-    if (m_pending == 0) {
+    if (m_queue.isEmpty()) {
+        m_startDone = true;
         finishFetch();
         return;
     }
+
+    m_pending  = m_queue.size();
+    m_toStart  = 0;
     m_status->setText(QStringLiteral("正在取数…（并行跑 %1 个检查器）").arg(m_pending));
+    startNextProc();
+}
+
+/* F1：一次只起一个取数进程 —— Windows 上 QProcess::start 不便宜（一个几十毫秒），
+   7 个一口气起完就是"界面顿 ~0.2 秒"。分批后每轮只花一个进程的钱，其余让出事件循环。
+   队列起完后才允许收尾（m_startDone）：防止"后面的还没起，前面的就已经全回来"
+   导致重复渲染 / 重复归档。 */
+void OverviewPage::startNextProc()
+{
+    if (m_toStart >= m_queue.size()) {
+        m_startDone = true;
+        if (m_pending <= 0)          /* 都已起完且都已回来 */
+            finishFetch();
+        return;
+    }
+
+    const int gen = m_gen;
+    const QString key    = m_queue.at(m_toStart).first;
+    const QString script = m_queue.at(m_toStart).second;
+    ++m_toStart;
+
+    QProcess *proc = new QProcess(this);
+    proc->setWorkingDirectory(QFileInfo(script).absolutePath());
+    QStringList a = m_py.mid(1);
+    a << script << QStringLiteral("--json");
+
+    /* 单个进程 30s 兜底超时，免得一个脚本卡住拖住整轮 */
+    QTimer *tm = new QTimer(proc);
+    tm->setSingleShot(true);
+    tm->setInterval(30000);
+    connect(tm, &QTimer::timeout, proc, &QProcess::kill);
+    tm->start();
+
+    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this, key, proc](int, QProcess::ExitStatus) {
+        onFetchFinished(key, proc);
+    });
+
+    proc->start(m_py.value(0), a);
+
+    QTimer::singleShot(0, this, [this, gen]() {
+        if (gen == m_gen)            /* 这一轮没被新一轮顶掉，才继续起下一个 */
+            startNextProc();
+    });
 }
 
 /* 退出时收干净还在跑的取数进程。
@@ -470,7 +511,9 @@ void OverviewPage::onFetchFinished(const QString &key, QProcess *proc)
         m_failed << key;
 
     proc->deleteLater();
-    if (--m_pending <= 0)
+    /* F1：分批起进程后，"都回来了"不等于"都起过了" —— 队列没起完就还不能收尾，
+       否则会拿半份数据渲染一次、等真正到齐又渲染一次（还会重复归档快照）。 */
+    if (--m_pending <= 0 && m_startDone)
         finishFetch();
 }
 

@@ -9,7 +9,8 @@
 
 namespace PyFind {
 
-/* 返回 [程序名, 前置参数...]；三种都不行时返回空列表。 */
+/* 返回 [程序名, 前置参数...]；三种都不行时返回空列表。
+   结果在本进程内缓存一次（见 .cpp 里的说明）。 */
 QStringList detect();
 
 } // namespace PyFind

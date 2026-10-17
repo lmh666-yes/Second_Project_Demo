@@ -58,6 +58,8 @@ ToolRunPage::ToolRunPage(const QString &title, const QString &desc, QWidget *par
     m_options = opt;
     opt->addStretch(1);
     lay->addLayout(opt);
+    m_lay = lay;
+    m_optionsIndex = lay->count() - 1;   /* m_options 在主布局里的位置（"续行"插它下面） */
 
     QHBoxLayout *bar = new QHBoxLayout;
     m_btnRun    = new QPushButton(QStringLiteral("运行"), this);
@@ -179,6 +181,18 @@ void ToolRunPage::setReportPath(const QString &path)
 QHBoxLayout *ToolRunPage::optionsLayout()
 {
     return m_options;
+}
+
+/* F2：第二行选项。选项多的页（OTA 台架）把控件全塞一行会让本页最小宽度到 797px、
+   主窗口在 1024×768 屏上放不下。按需创建：没用到的页不会多出一行空白。 */
+QHBoxLayout *ToolRunPage::optionsLayout2()
+{
+    if (!m_options2) {
+        m_options2 = new QHBoxLayout;
+        if (m_lay)
+            m_lay->insertLayout(m_optionsIndex + 1, m_options2);
+    }
+    return m_options2;
 }
 
 void ToolRunPage::warnMissingToolsDir()
@@ -304,7 +318,8 @@ void ToolRunPage::startStep(int index)
     const RunStep &s = m_steps[index];
     append(QStringLiteral("==== %1 ====\n").arg(s.label));
 
-    /* 每次运行都重新探测解释器：换了机器或改了 PATH 不用重启程序 */
+    /* F1：解释器探测结果在 PyFind 里缓存（原来每步都重新起进程探一次，串行多步就白付多次）；
+       探测本身要同步等进程，是全流程里少数几个"几百毫秒"级的开销。 */
     m_python = PyFind::detect();
     if (m_python.isEmpty()) {
         append(QStringLiteral("未找到可用的 Python（已尝试 python、py -3、python3）。\n"

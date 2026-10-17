@@ -14,6 +14,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSet>
 #include <QStackedWidget>
 #include <QString>
 #include <QStringConverter>
@@ -21,6 +22,9 @@
 #include <QTabWidget>
 #include <QTextStream>
 #include <QTimer>
+
+#include <algorithm>
+#include <functional>
 
 #include "dashboardcanvas.h"
 #include "docbuilder.h"
@@ -494,8 +498,10 @@ int main(int argc, char *argv[])
         QApplication::processEvents();
 
         QList<int> btnH, btnPt, tabH, sbW, listH, marginX;
-        QStringList clipList, pages;
+        QList<int> pageMinW, pageMinH;    /* 各页 minimumSizeHint —— 决定主窗口能缩到多小 */
+        QStringList clipList, pages, oversize;
         int clipped = 0;
+        int sbHidden = 0;                 /* 隐藏的滚动条数（不算入"滚动条宽度"口径） */
 
         auto measure = [&](QWidget *pg) {
             if (!pg)
@@ -514,10 +520,22 @@ int main(int argc, char *argv[])
             }
             for (QTabWidget *t : pg->findChildren<QTabWidget *>())
                 tabH << t->tabBar()->height();
-            for (QScrollArea *sa : pg->findChildren<QScrollArea *>())
-                sbW << sa->verticalScrollBar()->width();
+            /* 滚动条宽度：只量**看得见**的（布局已参与、就是用户实际看到的那条）。
+               隐藏的（内容没溢出）量出来是 QWidget 默认 100×30 或样式默认 14，都不是
+               "界面上的滚动条"，算进来只会污染口径。 */
+            for (QScrollArea *sa : pg->findChildren<QScrollArea *>()) {
+                QScrollBar *sb = sa->verticalScrollBar();
+                if (sb->isVisible())
+                    sbW << sb->width();
+                else
+                    ++sbHidden;
+            }
             for (QListWidget *l : pg->findChildren<QListWidget *>()) {
-                sbW << l->verticalScrollBar()->width();
+                QScrollBar *sb = l->verticalScrollBar();
+                if (sb->isVisible())
+                    sbW << sb->width();
+                else
+                    ++sbHidden;
                 listH << l->height();
             }
             if (pg->layout()) {
@@ -537,6 +555,28 @@ int main(int argc, char *argv[])
                 parts << QStringLiteral("%1px×%2").arg(it.key()).arg(it.value());
             return parts.isEmpty() ? QStringLiteral("（无）") : parts.join(QStringLiteral(" / "));
         };
+        /* F2：沿布局树往下走（含子布局、标签页里的页），收"每个控件的最小尺寸"。
+           用途：指出"是哪个控件把这一页的最小尺寸顶上去的"，好按图索骥地收。 */
+        std::function<void(QLayout *, QList<QPair<int, QString>> &, int)> walk =
+            [&](QLayout *l, QList<QPair<int, QString>> &acc, int depth) {
+                if (!l || depth > 3)
+                    return;
+                for (int i = 0; i < l->count(); ++i) {
+                    QLayoutItem *it = l->itemAt(i);
+                    if (!it)
+                        continue;
+                    if (QWidget *cw = it->widget()) {
+                        const QSize k = cw->minimumSizeHint();
+                        acc << qMakePair(k.width(),
+                                         QStringLiteral("%1(%2×%3)")
+                                             .arg(QString::fromLatin1(cw->metaObject()->className()))
+                                             .arg(k.width()).arg(k.height()));
+                        walk(cw->layout(), acc, depth + 1);
+                    } else if (QLayout *sl = it->layout()) {
+                        walk(sl, acc, depth + 1);
+                    }
+                }
+            };
 
         /* 切页走**侧栏**（与 --gui-smoke 同一条已验证安全的路径），不要直接 setCurrentIndex：
            实测直接切主堆栈会在退出阶段报堆损坏（0xC0000374），走侧栏则干净，
@@ -576,7 +616,32 @@ int main(int argc, char *argv[])
                     continue;
                 side->setCurrentRow(r);
                 QApplication::processEvents();
-                measure(pgStack ? pgStack->currentWidget() : nullptr);
+                QWidget *pg = pgStack ? pgStack->currentWidget() : nullptr;
+                measure(pg);
+                /* F2「图形界面大小」：某页 minimumSizeHint 越大，主窗口就越缩不小。
+                   门槛定在 740×654 —— 加上侧栏 220、边距/间距约 24，主窗口最小尺寸约
+                   984×708，正好在 1024×768 这类小屏上放得下（高 912 那种就是这里翻车的）。
+                   超标的页单独点名，并列出"是哪个控件把最小宽度顶上去的"。 */
+                if (pg) {
+                    const QSize mn = pg->minimumSizeHint();
+                    pageMinW << mn.width();
+                    pageMinH << mn.height();
+                    if ((mn.width() > 740 || mn.height() > 654) && oversize.size() < 8) {
+                        QList<QPair<int, QString>> found;
+                        walk(pg->layout(), found, 0);
+                        std::sort(found.begin(), found.end(),
+                                  [](const QPair<int, QString> &a, const QPair<int, QString> &b) {
+                                      return a.first > b.first;
+                                  });
+                        QStringList kids;
+                        for (int i = 0; i < found.size() && kids.size() < 6; ++i)
+                            kids << found.at(i).second;
+                        oversize << QStringLiteral("%1 %2×%3 → 最宽的几个: %4")
+                                        .arg(side->item(r)->text())
+                                        .arg(mn.width()).arg(mn.height())
+                                        .arg(kids.join(QStringLiteral(", ")));
+                    }
+                }
             }
             side->setCurrentRow(0);
         } else {
@@ -589,18 +654,144 @@ int main(int argc, char *argv[])
         out << QString::fromUtf8("按钮高度: ") << dist(btnH) << "\n";
         out << QString::fromUtf8("按钮字号: ") << dist(btnPt) << "\n";
         out << QString::fromUtf8("标签栏高度: ") << dist(tabH) << "\n";
-        out << QString::fromUtf8("滚动条宽度: ") << dist(sbW) << "\n";
+        out << QString::fromUtf8("滚动条宽度: ") << dist(sbW)
+            << QString::fromUtf8("（另有 ") << sbHidden << QString::fromUtf8(" 条隐藏未计）\n");
         out << QString::fromUtf8("页左外边距: ") << dist(marginX) << "\n";
+        out << QString::fromUtf8("窗口最小尺寸: ") << w.minimumSizeHint().width() << "×"
+            << w.minimumSizeHint().height() << "\n";
+        out << QString::fromUtf8("页最小尺寸: 宽 ") << dist(pageMinW)
+            << QString::fromUtf8("　高 ") << dist(pageMinH) << "\n";
         out << QString::fromUtf8("文字可能被裁: ") << clipped
             << (clipList.isEmpty() ? QString() : QStringLiteral("　") + clipList.join(QStringLiteral("；")))
             << "\n";
         out << QString::fromUtf8("各页边距/间距: ") << pages.join(QStringLiteral("　")) << "\n";
+
+        /* F2「UI 规范」硬判定：同一类尺寸必须收成一种，且不许有文字被裁。
+           这是可反复跑的"界面标准"检查 —— 哪天谁改了 QSS 把按钮高度弄成两种，这里立刻红。 */
+        auto kinds = [](const QList<int> &v) {
+            QSet<int> s;
+            for (int x : v) s.insert(x);
+            return s.size();
+        };
+        const bool hOk    = kinds(btnH) == 1;      /* 按钮高度只许一种 */
+        const bool ptOk   = kinds(btnPt) == 1;     /* 按钮字号只许一种 */
+        const bool tabOk  = kinds(tabH) <= 1;      /* 标签栏高度只许一种（无标签栏时为空） */
+        const bool sbOk   = kinds(sbW) == 1;       /* 滚动条宽度只许一种 */
+        const bool mOk    = kinds(marginX) == 1;   /* 页左外边距只许一种 */
+        const bool clipOk = clipped == 0;          /* 按钮文字不许被裁 */
+        const bool sizeOk = oversize.isEmpty();    /* 页最小尺寸不许超过 740×654 */
+        const bool ok = hOk && ptOk && tabOk && sbOk && mOk && clipOk && sizeOk;
+        out << QString::fromUtf8("页最小尺寸偏大(宽>740 或 高>654 → 主窗口在 1024×768 上放不下): ")
+            << oversize.size()
+            << (oversize.isEmpty() ? QString() : QStringLiteral("　") + oversize.join(QStringLiteral("；")))
+            << "\n";
+        out << QString::fromUtf8("UI 规范: 按钮高度一种 ") << (hOk ? "是" : "否")
+            << QString::fromUtf8("　按钮字号一种 ") << (ptOk ? "是" : "否")
+            << QString::fromUtf8("　标签栏一种 ") << (tabOk ? "是" : "否")
+            << QString::fromUtf8("　滚动条一种 ") << (sbOk ? "是" : "否")
+            << QString::fromUtf8("　页左外边距一种 ") << (mOk ? "是" : "否")
+            << QString::fromUtf8("　无裁字 ") << (clipOk ? "是" : "否")
+            << QString::fromUtf8("　页最小尺寸达标 ") << (sizeOk ? "是" : "否")
+            << QString::fromUtf8("　→ ") << (ok ? QStringLiteral("通过") : QStringLiteral("不达标")) << "\n";
         out.flush();
         /* 走事件循环退出（与 --gui-smoke 同一条干净路径）。实测：先 show 再直接 return，
            Qt 退出阶段会报堆损坏（0xC0000374）；从这里退出则干净。 */
         w.hide();
         QTimer::singleShot(0, qApp, []() { QApplication::quit(); });
-        return app.exec();
+        app.exec();                       /* 只为干净退出；退出码按上面的 UI 规范判定给 */
+        return ok ? 0 : 2;
+    }
+
+    /* F1 量测出口：把"用起来要等多久"按毫秒量一遍 —— 冷启动（构造全部页面）、
+       窗口显示 + 首帧、逐页首访（含首次进「单片机手册」要读 4MB 数据）。
+       用途：① 驱动 F1 的性能优化（先量再改）；② 长期可复跑的"启动/切页不许卡"检查。 */
+    if (args.contains(QStringLiteral("--perf-probe"))) {
+        /* 先单独量一次解释器探测：首次是"真起一个 python 探一次"，第二次应命中缓存（≈0ms）。
+           放在页面量测之前，是为了让后面的"逐页首访"体现**缓存生效后的常态**；
+           真实用户第一次取数/第一次运行仍会付这一次（约几百毫秒），那是"取数"本身的一部分。 */
+        QElapsedTimer dt;
+        dt.start();
+        const QStringList py1 = PyFind::detect();
+        const qint64 msProbe1 = dt.elapsed();
+        dt.restart();
+        PyFind::detect();
+        const qint64 msProbe2 = dt.elapsed();
+
+        QElapsedTimer t;
+        t.start();
+        ToolboxWindow w(nullptr, true);
+        const qint64 tCtor = t.elapsed();      /* 构造 15 个页面（含起手助手等）的耗时 */
+        w.resize(1200, 900);
+        w.show();
+        QApplication::processEvents();
+        QApplication::processEvents();          /* 一次布局、一次首帧 */
+        const qint64 tShow = t.elapsed();
+
+        QListWidget *side = nullptr;
+        for (QListWidget *l : w.findChildren<QListWidget *>()) {
+            bool hasHeader = false;
+            for (int r = 0; r < l->count(); ++r)
+                if (l->item(r)->flags() == Qt::NoItemFlags) { hasHeader = true; break; }
+            if (hasHeader && l->count() >= 15) { side = l; break; }
+        }
+
+        QList<QPair<qint64, QString>> pageMs;   /* (耗时ms, 页名) */
+        qint64 total = 0;
+        if (side) {
+            for (int r = 0; r < side->count(); ++r) {
+                if (side->item(r)->flags() == Qt::NoItemFlags)   /* 分组头 */
+                    continue;
+                QElapsedTimer pt;
+                pt.start();
+                side->setCurrentRow(r);            /* 首访：手册页会在这里读 4MB 数据 */
+                QApplication::processEvents();
+                const qint64 ms = pt.elapsed();
+                total += ms;
+                pageMs << qMakePair(ms, side->item(r)->text());
+            }
+            side->setCurrentRow(0);
+        }
+        std::sort(pageMs.begin(), pageMs.end(),
+                  [](const QPair<qint64, QString> &a, const QPair<qint64, QString> &b) {
+                      return a.first > b.first;
+                  });
+
+        /* F1 判定线：冷启动 > 1500ms、或单页首访 > 800ms 就算"卡"。
+           这两条是"用户能明显感觉到停顿"的量级，先按这个卡住，后续优化再往下压。 */
+        const qint64 worst = pageMs.isEmpty() ? 0 : pageMs.first().first;
+        const bool ok = tCtor <= 1500 && worst <= 800;
+
+        QTextStream out(stdout);
+        out << QString::fromUtf8("解释器探测: 首次 ") << msProbe1 << QString::fromUtf8(" ms（")
+            << (py1.isEmpty() ? QStringLiteral("没找到") : py1.value(0))
+            << QString::fromUtf8("）　再次 ") << msProbe2 << QString::fromUtf8(" ms（缓存命中）\n");
+        out << QString::fromUtf8("冷启动(构造全部页面): ") << tCtor << QString::fromUtf8(" ms\n");
+        out << QString::fromUtf8("显示+首帧: ") << (tShow - tCtor) << QString::fromUtf8(" ms（累计 ")
+            << tShow << QString::fromUtf8(" ms）\n");
+        out << QString::fromUtf8("切遍 ") << pageMs.size() << QString::fromUtf8(" 页合计: ")
+            << total << QString::fromUtf8(" ms\n");
+        out << QString::fromUtf8("最慢的页: ");
+        for (int i = 0; i < pageMs.size() && i < 6; ++i)
+            out << QStringLiteral("%1 %2ms　").arg(pageMs.at(i).second).arg(pageMs.at(i).first);
+        out << QString::fromUtf8("\n全部逐页: ");
+        QList<QPair<qint64, QString>> all = pageMs;
+        std::sort(all.begin(), all.end(),
+                  [](const QPair<qint64, QString> &a, const QPair<qint64, QString> &b) {
+                      return a.second < b.second;
+                  });
+        for (const auto &p : all)
+            out << QStringLiteral("%1=%2ms　").arg(p.second).arg(p.first);
+        out << "\n";
+        out << QString::fromUtf8("F1 判定: 冷启动≤1500 ") << (tCtor <= 1500 ? "是" : "否")
+            << QString::fromUtf8("　单页首访≤800 ") << (worst <= 800 ? "是" : "否")
+            << QString::fromUtf8("　→ ") << (ok ? QStringLiteral("通过") : QStringLiteral("偏慢"))
+            << "\n";
+        out.flush();
+
+        w.hide();
+        QTimer::singleShot(0, qApp, []() { QApplication::quit(); });
+        app.exec();
+        return ok ? 0 : 2;
     }
 
     if (!args.isEmpty()) {

@@ -35,6 +35,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScreen>
+#include <QScrollArea>
 #include <QShortcut>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -855,6 +856,9 @@ QWidget *ToolboxWindow::buildOtaPage()
             [syncMode](int) { syncMode(); });
     syncMode();
 
+    /* F2「图形界面大小」：5 组"标签+控件"全塞一行，本页最小宽度 797px，主窗口在
+       1024×768 屏上放不下。拆两行：第一行"连哪块板"（模式 / 串口 / 监听端口），
+       第二行"发什么"（固件 bin / 版本）。 */
     QHBoxLayout *opt = p->optionsLayout();
     opt->insertWidget(0, new QLabel(QStringLiteral("模式"), this));
     opt->insertWidget(1, mode);
@@ -862,10 +866,11 @@ QWidget *ToolboxWindow::buildOtaPage()
     opt->insertWidget(3, com);
     opt->insertWidget(4, new QLabel(QStringLiteral("监听端口"), this));
     opt->insertWidget(5, port);
-    opt->insertWidget(6, new QLabel(QStringLiteral("固件 bin"), this));
-    opt->insertWidget(7, bin);
-    opt->insertWidget(8, new QLabel(QStringLiteral("版本"), this));
-    opt->insertWidget(9, ver);
+    QHBoxLayout *opt2 = p->optionsLayout2();
+    opt2->addWidget(new QLabel(QStringLiteral("固件 bin"), this));
+    opt2->addWidget(bin, 1);        /* 路径输入框吃掉这一行的剩余宽度 */
+    opt2->addWidget(new QLabel(QStringLiteral("版本"), this));
+    opt2->addWidget(ver);
 
     /* 从工具箱目录上溯找 OTA/tools/ota_send.py（repo 根那层） */
     QString script;
@@ -1031,10 +1036,23 @@ QWidget *ToolboxWindow::buildFullCheckPage()
  * ===================================================================== */
 QWidget *ToolboxWindow::buildSettingsPage()
 {
+    /* F2「图形界面大小」：设置页是一长条分组表单，直接堆在页里会把主窗口的最小高度
+       顶到 912px —— 1366×768 的笔记本上窗口都塞不进屏幕。改成"外层 9px 边距 + 里层滚动"，
+       与「RTOS 骨架生成」页同一套做法：页边距/间距口径不变，最小高度交给滚动区。 */
     QWidget *w = new QWidget;
-    QVBoxLayout *lay = new QVBoxLayout(w);
-    lay->setContentsMargins(9, 9, 9, 9);   /* F2：与其余页统一（原 18/16，全界面唯一的例外） */
-    lay->setSpacing(6);                    /* F2：与其余页统一（原 12） */
+    QVBoxLayout *outer = new QVBoxLayout(w);
+    outer->setContentsMargins(9, 9, 9, 9);   /* F2：与其余页统一（原 18/16，全界面唯一的例外） */
+    outer->setSpacing(6);                    /* F2：与其余页统一（原 12） */
+
+    QScrollArea *sa = new QScrollArea(w);
+    sa->setWidgetResizable(true);
+    sa->setFrameShape(QFrame::NoFrame);
+    QWidget *inner = new QWidget;
+    QVBoxLayout *lay = new QVBoxLayout(inner);
+    lay->setContentsMargins(0, 0, 0, 0);     /* 边距已由外层给，这里别再叠一层 */
+    lay->setSpacing(6);
+    sa->setWidget(inner);
+    outer->addWidget(sa);
 
     QLabel *title = new QLabel(QStringLiteral("设置"));
     QFont tf = title->font();
