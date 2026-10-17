@@ -237,6 +237,7 @@ void ToolRunPage::run()
     m_out->clear();
     m_find->clear();
     m_stepCodes.clear();
+    m_paraOut.clear();
     m_running = true;
     m_btnRun->setEnabled(false);
     m_btnStop->setEnabled(true);
@@ -343,6 +344,7 @@ void ToolRunPage::startAllParallel()
 {
     m_parallelProcs.clear();
     m_stepCodes = QVector<int>(m_steps.size(), INT_MIN);
+    m_paraOut   = QVector<QString>(m_steps.size());
 
     append(QStringLiteral("并行执行 %1 个步骤…\n\n").arg(m_steps.size()));
 
@@ -353,8 +355,11 @@ void ToolRunPage::startAllParallel()
         QProcess *p = new QProcess(this);
         p->setProcessChannelMode(QProcess::MergedChannels);
 
-        connect(p, &QProcess::readyReadStandardOutput, this, [this, p, label]() {
-            append(QStringLiteral("[%1] ").arg(label) + decode(p->readAllStandardOutput()));
+        connect(p, &QProcess::readyReadStandardOutput, this, [this, p, label, i]() {
+            const QString chunk = decode(p->readAllStandardOutput());
+            if (i < m_paraOut.size())
+                m_paraOut[i] += chunk;      /* 同时留一份原文，收尾时按步骤重排 */
+            append(QStringLiteral("[%1] ").arg(label) + chunk);
         });
 
         connect(p, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
@@ -408,6 +413,8 @@ void ToolRunPage::checkParallelDone()
     m_watchdog->stop();
     m_btnRun->setEnabled(true);
     m_btnStop->setEnabled(false);
+    /* 先按步骤归位重排输出，再在末尾补汇总表（重排会清空实时区） */
+    renderParallelSummary();
     printSummary();
     m_status->setText(QStringLiteral("完成"));
     refreshReportButton();
@@ -444,6 +451,39 @@ void ToolRunPage::printSummary()
                      : QStringLiteral("共 %1 项未通过，见上方对应输出。").arg(bad));
     out << QString();
     append(out.join('\n'));
+}
+
+/* 并行模式收尾：把交错的实时输出按步骤归位重排。
+   8 个进程并行跑时实时区是「[A] xx[B] yy[A] zz」这种交错，事后根本分不清谁是谁。
+   重排规则：通过的步骤折叠成一行（行数 + 首行摘要），未通过的完整展开 —— 该看的那份一眼就看到。 */
+void ToolRunPage::renderParallelSummary()
+{
+    if (m_steps.size() < 2 || m_paraOut.size() != m_steps.size())
+        return;
+    QStringList out;
+    out << QStringLiteral("──────── 分步输出（并行跑，已按步骤归位）────────");
+    for (int i = 0; i < m_steps.size(); ++i) {
+        const int code = m_stepCodes.value(i, INT_MIN);
+        const bool pass = (code == 0);
+        const QString body = m_paraOut.at(i).trimmed();
+        out << QString();
+        out << QStringLiteral("┌─ %1 %2（退出码 %3）")
+                   .arg(pass ? QStringLiteral("[通过]") : QStringLiteral("[未通过]"),
+                        m_steps.at(i).label)
+                   .arg(code);
+        if (body.isEmpty()) {
+            out << QStringLiteral("└─ （无输出）");
+        } else if (pass) {
+            const QStringList ls = body.split(QLatin1Char('\n'));
+            out << QStringLiteral("└─ 通过，已折叠 %1 行；首行：%2")
+                       .arg(ls.size()).arg(ls.first().left(80));
+        } else {
+            out << body;               /* 未通过的完整展开，不用再翻上面 */
+        }
+    }
+    m_out->clear();
+    m_find->clear();
+    append(out.join(QLatin1Char('\n')) + QLatin1Char('\n'));
 }
 
 void ToolRunPage::copyAll()

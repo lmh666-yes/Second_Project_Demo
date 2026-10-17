@@ -43,6 +43,9 @@ public:
        供 --shot-overview 断言"交互已就绪"，避免命中区悄悄变空。 */
     int hitCount() const { return m_hits.size(); }
 
+    /* 上一轮被标成"未取到"的工具数（供 --shot-overview 的缺数断言）。 */
+    int failedCount() const { return m_failedKeys.size(); }
+
 protected:
     void paintEvent(QPaintEvent *e) override;
     void mouseMoveEvent(QMouseEvent *e) override;

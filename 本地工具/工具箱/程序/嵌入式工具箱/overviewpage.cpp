@@ -19,6 +19,7 @@
 #include <QLabel>
 #include <QProcess>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QScrollArea>
 #include <QShowEvent>
 #include <QTabWidget>
@@ -72,6 +73,20 @@ QString digest(const QString &text, int maxLines)
     return out.join(QLatin1Char('\n'));
 }
 
+/* 仓库根：向上找到含 EnvMonitor 或 .git 的那层（与 main.cpp 的 findRepoRoot 同判据）。
+   D3 用它把报告里的相对路径（脚本按仓库根相对打印）还原成绝对路径。 */
+QString repoRootOf(const QString &toolsDir)
+{
+    QDir d(toolsDir);
+    for (int i = 0; i < 8; ++i) {
+        if (d.exists(QStringLiteral("EnvMonitor")) || d.exists(QStringLiteral(".git")))
+            return d.absolutePath();
+        if (!d.cdUp())
+            break;
+    }
+    return toolsDir;
+}
+
 } // namespace
 
 OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
@@ -115,6 +130,30 @@ OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
 
     m_view = new QTextBrowser(this);
     m_view->setOpenExternalLinks(false);
+    /* D3：报告原文里把「文件:行」转成了 src:N 链接，点了打开对应源文件。
+       所以这里要拦住默认跳转，自己处理。 */
+    m_view->setOpenLinks(false);
+    connect(m_view, &QTextBrowser::anchorClicked, this, [this](const QUrl &u) {
+        const QString s = u.toString();
+        if (!s.startsWith(QStringLiteral("src:"))) {
+            if (u.scheme().startsWith(QStringLiteral("http")))
+                QDesktopServices::openUrl(u);      /* 报告里若带外链，仍按外部打开 */
+            return;
+        }
+        const int idx = s.mid(4).toInt();
+        if (idx < 0 || idx >= m_srcTargets.size())
+            return;
+        const QStringList parts = m_srcTargets.at(idx).split(QLatin1Char('|'));
+        const QString srcPath = parts.value(0);
+        if (!QFileInfo::exists(srcPath)) {
+            m_status->setText(QStringLiteral("找不到源文件：%1").arg(srcPath));
+            return;
+        }
+        /* 用系统默认编辑器打开；行号写进状态栏（QDesktopServices 不带行号定位） */
+        QDesktopServices::openUrl(QUrl::fromLocalFile(srcPath));
+        m_status->setText(QStringLiteral("已打开 %1（第 %2 行）")
+                              .arg(QFileInfo(srcPath).fileName(), parts.value(1)));
+    });
 
     m_tabs->addTab(sa, QStringLiteral("可视化仪表盘"));
     m_tabs->addTab(m_view, QStringLiteral("报告原文"));
@@ -188,6 +227,11 @@ void OverviewPage::refresh()
     for (const ToolDef &d : TOOLS) {
         const QString script = QDir(m_toolsDir).filePath(QString::fromUtf8(d.rel));
         const QString key = QString::fromUtf8(d.key);
+        /* 测试钩子：--shot-overview --drop 指定的键直接当"没取到"，不真起进程 */
+        if (m_dropKeys.contains(key)) {
+            m_failed << key;
+            continue;
+        }
         if (!QFileInfo::exists(script)) {
             m_failed << key;
             continue;
@@ -219,6 +263,11 @@ void OverviewPage::refresh()
         return;
     }
     m_status->setText(QStringLiteral("正在取数…（并行跑 %1 个检查器）").arg(m_pending));
+}
+
+void OverviewPage::setDropKeys(const QStringList &keys)
+{
+    m_dropKeys = keys;
 }
 
 void OverviewPage::onFetchFinished(const QString &key, QProcess *proc)
@@ -363,6 +412,30 @@ QStringList OverviewPage::computeDelta(const QVariantMap &prev, const QVariantMa
 
 void OverviewPage::loadTextReports()
 {
+    /* D3：报告里的「文件:行」转成可点链接 —— 点了直接用系统默认编辑器打开该源文件。
+       为什么用下标锚点（src:N）而不是把路径塞进 URL：这里的路径是 Windows 反斜杠相对路径，
+       直接当 URL 会被百分号编码搞得对不上。见 overviewpage.h 的 m_srcTargets。 */
+    m_srcTargets.clear();
+    const QString repoRoot = repoRootOf(m_toolsDir);
+    static const QRegularExpression re(QStringLiteral(
+        "`?([A-Za-z0-9_\\-./\\\\]+\\.(?:c|h|cpp|hpp|py|js|md|txt|s)):(\\d+)`?"));
+    auto linkify = [this, &repoRoot](const QString &s) {
+        QString out;
+        int last = 0;
+        auto it = re.globalMatch(s);
+        while (it.hasNext()) {
+            const QRegularExpressionMatch m = it.next();
+            out += s.mid(last, m.capturedStart() - last);
+            const QString rel = m.captured(1);
+            m_srcTargets << (QDir(repoRoot).filePath(rel) + QLatin1Char('|') + m.captured(2));
+            out += QStringLiteral("[%1:%2](src:%3)")
+                       .arg(rel, m.captured(2)).arg(m_srcTargets.size() - 1);
+            last = m.capturedEnd();
+        }
+        out += s.mid(last);
+        return out;
+    };
+
     QStringList md;
     md << QStringLiteral("# 工程体检总览") << QString();
     int found = 0;
@@ -386,7 +459,9 @@ void OverviewPage::loadTextReports()
                   .arg(QDir(m_toolsDir).relativeFilePath(path),
                        mt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")))
            << QString();
-        md << digest(text, 16);
+        /* 摘要从 16 行放宽到 60 行：报告里的「命中项表」（含 文件:行）一般在 25 行往后，
+           只取 16 行的话可点链接根本露不出来，D3 就成了摆设。 */
+        md << linkify(digest(text, 60));
         md << QStringLiteral("---") << QString();
     }
     m_view->setMarkdown(md.join(QLatin1Char('\n')));

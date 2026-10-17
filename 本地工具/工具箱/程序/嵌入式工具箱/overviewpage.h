@@ -25,6 +25,13 @@ class OverviewPage : public QWidget {
 public:
     explicit OverviewPage(const QString &toolsDir, QWidget *parent = nullptr);
 
+    /* 测试钩子：把这些工具键当作"没取到"（不真起进程）。
+       供 `--shot-overview --drop <键>` 断言"缺数不许画成绿色"。 */
+    void setDropKeys(const QStringList &keys);
+
+    /* 「报告原文」里已转成可点链接的文件位置数（供 --shot-overview 打印核对）。 */
+    int srcLinkCount() const { return m_srcTargets.size(); }
+
 protected:
     void showEvent(QShowEvent *e) override;
 
@@ -54,11 +61,15 @@ private:
     QTextBrowser    *m_view   = nullptr;
     QLabel          *m_status = nullptr;
     bool m_firstShown = false;
+    /* 「报告原文」里被转成链接的文件位置：下标 → "绝对路径|行号"（用下标做锚点，
+       避免把带反斜杠的 Windows 路径塞进 URL 被编码搅乱）。 */
+    QStringList m_srcTargets;
 
     /* 异步取数状态：各检查器并行跑，各自回来时累加，到齐后统一渲染。 */
     int         m_pending = 0;
     QVariantMap m_tools;
     QStringList m_failed;
+    QStringList m_dropKeys;    /* 测试钩子：这些键一律当"没取到" */
 };
 
 #endif // OVERVIEWPAGE_H

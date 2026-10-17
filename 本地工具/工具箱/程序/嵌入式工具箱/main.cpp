@@ -4,7 +4,9 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
 #include <QHash>
+#include <QProcess>
 #include <QString>
 #include <QStringConverter>
 #include <QStringList>
@@ -16,6 +18,7 @@
 #include "mainwindow.h"
 #include "overviewpage.h"
 #include "protocol.h"
+#include "pyfind.h"
 #include "rtosgen.h"
 #include "theme.h"
 #include "toolboxwindow.h"
@@ -90,6 +93,7 @@ static int runCli(const QStringList &args)
              && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/RTOS检查/rtos_check.py")))
              && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/引脚规划/pin_planner.py")))
              && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/LoRa检查/lora_check.py")))
+             && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/协议校验/protocol_check.py")))
              && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/固件预算/firmware_budget.py")))
              && QDir(tdir).exists(QStringLiteral("shared"));
     }
@@ -112,6 +116,72 @@ static int runCli(const QStringList &args)
             << (otaOk ? QString::fromUtf8("PASS") : QString::fromUtf8("FAIL")) << "\n";
         if (!otaOk)
             ++fail;
+    }
+
+    /* D1：把 8 个检查器自己的 --selftest 也挂进来跑。
+       为什么必须挂：`检查/RTOS检查/rtos_check.py` 曾因改造后断言失效而自检红灯
+       （27 项里 1 项 FAIL、退出码 1），但工具箱自检当时只查"脚本在不在"，
+       红灯完全看不见 —— 于是"每一轮都能抓到"变成了"靠人想起来才跑"。
+       这里逐个跑 --selftest，非 0 退出码直接计入失败项。 */
+    {
+        struct Checker { const char *name; const char *rel; };
+        const Checker checkers[] = {
+            {"进度扫描",     "检查/进度跟踪/progress_scan.py"},
+            {"引脚规划",     "检查/引脚规划/pin_planner.py"},
+            {"RTOS 检查",    "检查/RTOS检查/rtos_check.py"},
+            {"编码守卫",     "检查/编码守卫/encoding_guard.py"},
+            {"链路仿真",     "检查/链路仿真/link_sim.py"},
+            {"LoRa 检查",    "检查/LoRa检查/lora_check.py"},
+            {"协议校验",     "检查/协议校验/protocol_check.py"},
+            {"固件预算",     "检查/固件预算/firmware_budget.py"},
+        };
+        out << QString::fromUtf8("\n── 各检查器自检（--selftest）──\n");
+        out.flush();
+        const QStringList py = PyFind::detect();
+        if (py.isEmpty()) {
+            out << QString::fromUtf8("FAIL 未找到 Python，跑不了各检查器自检\n");
+            ++fail;
+        } else {
+            for (const Checker &c : checkers) {
+                const QString script = tdir.isEmpty()
+                                           ? QString()
+                                           : QDir(tdir).filePath(QString::fromUtf8(c.rel));
+                QString note;
+                bool ok = false;
+                if (script.isEmpty() || !QFile::exists(script)) {
+                    note = QString::fromUtf8("脚本不存在");
+                } else {
+                    QProcess p;
+                    p.setWorkingDirectory(QFileInfo(script).absolutePath());
+                    QStringList a = py.mid(1);
+                    a << script << QStringLiteral("--selftest");
+                    p.start(py.value(0), a);
+                    if (!p.waitForStarted(5000) || !p.waitForFinished(120000)) {
+                        p.kill();
+                        note = QString::fromUtf8("启动失败或超时");
+                    } else {
+                        ok = (p.exitStatus() == QProcess::NormalExit && p.exitCode() == 0);
+                        if (!ok) {
+                            /* 失败时把带 FAIL 的那一行摘出来，省得再手跑一遍 */
+                            for (const QString &ln :
+                                 QString::fromUtf8(p.readAllStandardOutput())
+                                     .split(QLatin1Char('\n'))) {
+                                if (ln.contains(QStringLiteral("FAIL"))) {
+                                    note = ln.trimmed();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                out << (ok ? QString::fromUtf8("PASS ") : QString::fromUtf8("FAIL "))
+                    << QString::fromUtf8(c.name)
+                    << (note.isEmpty() ? QString()
+                                       : QString::fromUtf8("（%1）").arg(note)) << "\n";
+                if (!ok)
+                    ++fail;
+            }
+        }
     }
 
     /* 单片机手册（原独立程序，已并入本工具箱）：数据装载、条目计数、
@@ -152,14 +222,23 @@ int main(int argc, char *argv[])
 
     /* 体检面板截图：直接构造总览页、同步取数、渲染成 PNG。
        用途：验证可视化面板真的画出了东西（GUI 冒烟只证明"没崩"，看不到画没画）。
-       用法：Toolbox.exe --shot-overview <输出.png> */
+       用法：Toolbox.exe --shot-overview <输出.png> [--drop <工具键,...>]
+             --drop 用于断言"给定的工具没取到数时，面板标成未取到而不是绿色正常"。 */
     if (args.contains(QStringLiteral("--shot-overview"))) {
         QString path = QStringLiteral("overview.png");
         for (int i = 0; i + 1 < args.size(); ++i) {
             if (args[i] == QStringLiteral("--shot-overview"))
                 path = args[i + 1];
         }
+        /* --drop <键,...>：故意让某几个工具"没取到"，断言面板把它标出来而不是画成绿色。
+           用法：--shot-overview out.png --drop protocol,rtos */
+        QStringList dropKeys;
+        for (int i = 0; i + 1 < args.size(); ++i) {
+            if (args[i] == QStringLiteral("--drop"))
+                dropKeys = args[i + 1].split(QLatin1Char(','), Qt::SkipEmptyParts);
+        }
         OverviewPage page(ToolboxWindow::toolsDirPath());
+        page.setDropKeys(dropKeys);
         page.resize(1180, 960);
         page.show();
         QMetaObject::invokeMethod(&page, "refresh", Qt::DirectConnection);
@@ -176,13 +255,24 @@ int main(int argc, char *argv[])
         }
         QApplication::processEvents();
 
-        /* 断言交互区域已登记：卡片 6 张 + 两板热力图格，取数成功时必然 > 6。
+        /* 报告原文里可点的「文件:行」链接数（D3）：为 0 说明没转成链接或报告里没有位置信息 */
+        QTextStream(stdout) << QString::fromUtf8("报告可点链接: ") << page.srcLinkCount() << "\n";
+
+        /* 断言交互区域已登记：健康度卡片 + 两板热力图格，取数成功时必然 > 6。
            命中区一旦变空，悬停与点击都会失灵，所以在这里兜住。 */
         if (canvas) {
             const int n = canvas->hitCount();
             QTextStream(stdout) << QString::fromUtf8("交互命中区: ") << n << "\n";
             if (n < 6)
                 return 2;
+            /* D4：--drop 指定的键必须被记成"未取到"（缺数不许画成绿色"正常"） */
+            if (!dropKeys.isEmpty()) {
+                const int dn = canvas->failedCount();
+                QTextStream(stdout) << QString::fromUtf8("缺数标记: ") << dn
+                                    << QString::fromUtf8(" / ") << dropKeys.size() << "\n";
+                if (dn != dropKeys.size())
+                    return 2;
+            }
         }
         return page.grab().save(path) ? 0 : 1;
     }

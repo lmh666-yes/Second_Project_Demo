@@ -74,6 +74,7 @@ private:
     void copyAll();
     void saveAs();
     void printSummary();        /* 多步时打印逐项状态汇总表 */
+    void renderParallelSummary(); /* 并行模式：把交错输出按步骤归位重排 */
 
     QString              m_report;
     QVector<RunStep>     m_steps;
@@ -84,6 +85,7 @@ private:
     bool                 m_parallel = false;                 /* 并行模式（全量检查） */
     QVector<QProcess *>  m_parallelProcs;                    /* 并行模式下的各步进程 */
     QVector<int>         m_stepCodes;   /* 每步退出码，用于末尾汇总 */
+    QVector<QString>     m_paraOut;     /* 并行模式：每步输出原文，收尾时按步骤归位重排 */
 
     QLabel         *m_alert   = nullptr;
     QLabel         *m_desc    = nullptr;
