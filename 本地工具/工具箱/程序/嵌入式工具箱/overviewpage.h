@@ -34,6 +34,9 @@ public:
     /* 「报告原文」里已转成可点链接的文件位置数（供 --shot-overview 打印核对）。 */
     int srcLinkCount() const { return m_srcTargets.size(); }
 
+    /* C1：报告原文里已转成可点的「条目名」数（手册直达链接）。 */
+    int docLinkCount() const { return m_docTargets.size(); }
+
     /* A1：历史回看下拉框里的快照轮数（供 --shot-overview 断言历史页真的建起来了）。 */
     int historyCount() const;
 
@@ -43,6 +46,9 @@ protected:
 signals:
     /* 请求工具箱主窗口跳到某个工具页（按页面标题）。 */
     void requestPage(const QString &title);
+
+    /* C1：请求主窗口把「单片机手册」跳到某个条目（报告里点了条目名）。 */
+    void requestDoc(const QString &term);
 
 private slots:
     void refresh();
@@ -76,6 +82,9 @@ private:
     /* 「报告原文」里被转成链接的文件位置：下标 → "绝对路径|行号"（用下标做锚点，
        避免把带反斜杠的 Windows 路径塞进 URL 被编码搅乱）。 */
     QStringList m_srcTargets;
+
+    /* C1：报告原文里被转成链接的条目名（点它跳「单片机手册」对应卡）。 */
+    QStringList m_docTargets;
 
     /* A1：历史回看页的下拉框与画布（与当前轮完全独立，互不干扰）。 */
     QComboBox       *m_histCombo  = nullptr;

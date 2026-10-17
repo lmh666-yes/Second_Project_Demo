@@ -25,7 +25,9 @@ ScaffoldPage::ScaffoldPage(const QString &toolsDir, QWidget *parent)
     auto *desc = new QLabel(QStringLiteral(
         "根据预设配置一键生成 STM32 工程骨架。"
         "寄存器风格 = 只输出 main.c，里面全是 RCC/GPIO/USART 寄存器操作，不依赖任何库；"
-        "驱动库风格 = 复制现有驱动 .h/.c，main.c 里调用库函数。"), this);
+        "驱动库风格 = 复制现有驱动 .h/.c，main.c 里调用库函数。\n"
+        "「自定义外设 / 自定义任务」填了就以它们为准，不再看预设 —— "
+        "起手助手的「一键生成工程骨架」就是往这两个框里填。"), this);
     desc->setWordWrap(true);
     layout->addWidget(desc);
 
@@ -47,6 +49,23 @@ ScaffoldPage::ScaffoldPage(const QString &toolsDir, QWidget *parent)
     m_style->addItem(QStringLiteral("驱动库调用（复制现有库文件）"), QStringLiteral("driver"));
     styleRow->addWidget(m_style, 1);
     layout->addLayout(styleRow);
+
+    /* 自定义外设 / 任务（C2：起手助手一键生成时填这里） */
+    auto *periphRow = new QHBoxLayout();
+    periphRow->addWidget(new QLabel(QStringLiteral("自定义外设："), this));
+    m_periph = new QLineEdit(this);
+    m_periph->setPlaceholderText(QStringLiteral(
+        "留空用上面的预设；填了就按它生成，如 usart,led,tim,adc,i2c,spi"));
+    periphRow->addWidget(m_periph, 1);
+    layout->addLayout(periphRow);
+
+    auto *tasksRow = new QHBoxLayout();
+    tasksRow->addWidget(new QLabel(QStringLiteral("自定义任务："), this));
+    m_tasks = new QLineEdit(this);
+    m_tasks->setPlaceholderText(QStringLiteral(
+        "留空=无任务；填了就按它生成，格式 Name:prio:stack（如 Sensor:3:256,Comm:4:256）"));
+    tasksRow->addWidget(m_tasks, 1);
+    layout->addLayout(tasksRow);
 
     /* 输出目录 */
     auto *outRow = new QHBoxLayout();
@@ -94,6 +113,28 @@ void ScaffoldPage::onPresetChanged(int /*idx*/)
     /* 可扩展：根据预设显示对应外设列表 */
 }
 
+void ScaffoldPage::prefillCustom(const QString &periphCsv, const QString &tasksCsv,
+                                 const QString &outDir)
+{
+    m_periph->setText(periphCsv);
+    m_tasks->setText(tasksCsv);
+    if (!outDir.isEmpty())
+        m_outDir->setText(outDir);
+    m_log->clear();
+    m_log->appendPlainText(
+        QStringLiteral("已从起手助手填入：\n  外设 %1\n  任务 %2\n输出目录 %3\n"
+                       "确认无误后点「生成工程」（外设/任务认不出来的一律不硬塞，"
+                       "生成后请核对 README 里的外设清单）。")
+            .arg(periphCsv.isEmpty() ? QStringLiteral("(无)") : periphCsv,
+                 tasksCsv.isEmpty() ? QStringLiteral("(无)") : tasksCsv,
+                 m_outDir->text().isEmpty() ? QStringLiteral("(未指定)") : m_outDir->text()));
+}
+
+void ScaffoldPage::generateNow()
+{
+    onGenerate();
+}
+
 void ScaffoldPage::onGenerate()
 {
     if (m_toolsDir.isEmpty()) {
@@ -107,6 +148,8 @@ void ScaffoldPage::onGenerate()
     }
 
     QString preset = m_preset->currentData().toString();
+    const QString per = m_periph->text().trimmed();
+    const QString tsk = m_tasks->text().trimmed();
     QString script = QDir(m_toolsDir).filePath(QStringLiteral("程序/工程模板/project_scaffold.py"));
     if (!QFileInfo::exists(script)) {
         m_log->appendPlainText(QStringLiteral("错误：生成器脚本不存在：%1").arg(script));
@@ -114,15 +157,31 @@ void ScaffoldPage::onGenerate()
     }
 
     m_log->clear();
-    m_log->appendPlainText(QStringLiteral("正在生成：preset=%1, style=%2, out=%3")
-                               .arg(preset, m_style->currentData().toString(), out));
+    if (!per.isEmpty() || !tsk.isEmpty()) {
+        m_log->appendPlainText(QStringLiteral("正在生成（自定义）：periph=%1, tasks=%2, style=%3, out=%4")
+                                   .arg(per.isEmpty() ? QStringLiteral("(无)") : per,
+                                        tsk.isEmpty() ? QStringLiteral("(无)") : tsk,
+                                        m_style->currentData().toString(), out));
+    } else {
+        m_log->appendPlainText(QStringLiteral("正在生成：preset=%1, style=%2, out=%3")
+                                   .arg(preset, m_style->currentData().toString(), out));
+    }
     m_btnGen->setEnabled(false);
 
     QProcess *proc = new QProcess(this);
     proc->setWorkingDirectory(QFileInfo(script).absolutePath());
     QStringList args;
-    args << script << QStringLiteral("--preset") << preset
-         << QStringLiteral("--style") << m_style->currentData().toString()
+    args << script;
+    if (!per.isEmpty() || !tsk.isEmpty()) {
+        /* 填了自定义就按它生成，不再看预设（preset 只是"没填时的快捷方式"） */
+        if (!per.isEmpty())
+            args << QStringLiteral("--periph") << per;
+        if (!tsk.isEmpty())
+            args << QStringLiteral("--tasks") << tsk;
+    } else {
+        args << QStringLiteral("--preset") << preset;
+    }
+    args << QStringLiteral("--style") << m_style->currentData().toString()
          << QStringLiteral("--out") << out;
     proc->start(QStringLiteral("python"), args);
 

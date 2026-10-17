@@ -15,6 +15,7 @@ class QStackedWidget;
 class QWidget;
 class KickStartWindow;
 class MainWindow;
+class ScaffoldPage;
 class WorkbenchWindow;
 
 class ToolboxWindow : public QMainWindow {

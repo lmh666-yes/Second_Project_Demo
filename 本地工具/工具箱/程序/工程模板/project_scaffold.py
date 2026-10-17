@@ -275,6 +275,156 @@ static void NVIC_Init(void)
 }''',
         'init': 'NVIC_Init();',
     },
+    'tim': {
+        'defs': '''/* ---------- TIM3 基本定时器（1kHz 更新） ---------- */
+static void TIM3_Init(void)
+{
+    RCC->APB1ENR |= RCC_APB1ENR_TIM3EN;
+
+    /* APB1 定时器时钟 = 84MHz（APB1 分频 ≠1 时时钟翻倍）
+       84MHz / 8400 = 10kHz，再 /10 → 1kHz（1ms 一拍） */
+    TIM3->PSC = 8400 - 1;
+    TIM3->ARR = 10 - 1;
+    TIM3->EGR = TIM_EGR_UG;      /* 立即把 PSC/ARR 装进影子寄存器 */
+    TIM3->SR  = 0;               /* 清更新标志（否则一开就带旧标志） */
+    TIM3->CR1 = TIM_CR1_CEN;     /* 启动计数 */
+}
+
+/* 1 = 本拍已过（读后自动清标志），轮询式用法；要中断就再开 TIM3->DIER |= TIM_DIER_UIE */
+static uint8_t TIM3_Tick(void)
+{
+    if (TIM3->SR & TIM_SR_UIF) {
+        TIM3->SR = ~TIM_SR_UIF;
+        return 1;
+    }
+    return 0;
+}''',
+        'init': 'TIM3_Init();',
+    },
+    'adc': {
+        'defs': '''/* ---------- ADC1（PA0 = 通道0，单次转换，12 位） ---------- */
+static void ADC1_Init(void)
+{
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
+    RCC->APB2ENR |= RCC_APB2ENR_ADC1EN;
+
+    GPIOA->MODER |= (3U << 0);        /* PA0 = 模拟输入（MODER = 11） */
+
+    ADC->CCR   = ADC_CCR_ADCPRE_0;    /* PCLK2/4 = 21MHz（上限 36MHz） */
+    ADC1->CR2  = 0;                   /* 先关掉再配 */
+    ADC1->CR1  = 0;                   /* 独立模式、12 位 */
+    ADC1->SQR1 = 0;                   /* 规则序列长度 = 1 */
+    ADC1->SQR3 = 0;                   /* 第 1 个转换 = 通道 0 */
+    ADC1->SMPR2 = (7U << 0);          /* 480 周期采样（高阻源要采久一点） */
+    ADC1->CR2 |= ADC_CR2_ADON;        /* 上电 */
+}
+
+static uint16_t ADC1_Read(void)
+{
+    ADC1->CR2 |= ADC_CR2_SWSTART;     /* 软件触发一次 */
+    while (!(ADC1->SR & ADC_SR_EOC)) { }
+    return (uint16_t)ADC1->DR;
+}''',
+        'init': 'ADC1_Init();',
+    },
+    'dma': {
+        'defs': '''/* ---------- DMA2 Stream0（外设 ← 内存 的模板） ----------
+   通道号 CHSEL、数据宽度、优先级要按你的外设补，这里只搭骨架。 */
+static void DMA2_Stream0_Init(void *periph_addr, void *mem_addr, uint16_t n)
+{
+    RCC->AHB1ENR |= RCC_AHB1ENR_DMA2EN;
+
+    DMA2_Stream0->CR = 0;
+    while (DMA2_Stream0->CR & DMA_SxCR_EN) { }   /* 改配置前必须先关流 */
+
+    DMA2_Stream0->PAR  = (uint32_t)periph_addr;  /* 外设数据寄存器地址 */
+    DMA2_Stream0->M0AR = (uint32_t)mem_addr;     /* 内存首地址 */
+    DMA2_Stream0->NDTR = n;                      /* 传输个数 */
+    DMA2_Stream0->FCR  = 0;                      /* 直接模式（不经过 FIFO） */
+    DMA2_Stream0->CR   = (3U << 6)               /* 方向 = 存储器 → 外设 */
+                       | DMA_SxCR_MINC           /* 内存地址自增 */
+                       | DMA_SxCR_TCIE;          /* 传完中断 */
+}
+
+static void DMA2_Stream0_Start(void) { DMA2_Stream0->CR |= DMA_SxCR_EN; }
+
+/* 1 = 传完（读后自动清标志） */
+static uint8_t DMA2_Stream0_Done(void)
+{
+    if (DMA2_LISR & DMA_LISR_TCIF0) {
+        DMA2_LIFCR = DMA_LIFCR_CTCIF0;
+        return 1;
+    }
+    return 0;
+}''',
+        'init': '/* DMA2_Stream0_Init(&USART1->DR, tx_buf, sizeof(tx_buf)); 按外设补 CHSEL */',
+    },
+    'i2c': {
+        'defs': '''/* ---------- I2C1（PB6 = SCL，PB7 = SDA，100kHz 标准模式） ---------- */
+static void I2C1_Init(void)
+{
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN;
+    RCC->APB1ENR |= RCC_APB1ENR_I2C1EN;
+
+    /* PB6/PB7 = 复用开漏 AF4 + 上拉（I2C 必须开漏，否则总线拉不低） */
+    GPIOB->MODER   &= ~((3U << 12) | (3U << 14));
+    GPIOB->MODER   |=  (2U << 12) | (2U << 14);
+    GPIOB->OTYPER  |=  (1U << 6)  | (1U << 7);
+    GPIOB->OSPEEDR |=  (3U << 12) | (3U << 14);
+    GPIOB->PUPDR   |=  (1U << 12) | (1U << 14);
+    GPIOB->AFR[0]  |=  (4U << 24) | (4U << 28);   /* AF4 = I2C1 */
+
+    I2C1->CR1   = 0;                  /* 配置前先关 */
+    I2C1->CR2   = 42;                 /* APB1 = 42MHz → TICK = 1us */
+    I2C1->CCR   = 210;                /* 100kHz：42MHz / (2 × 100k) = 210 */
+    I2C1->TRISE = 43;                 /* (1000ns + 1) × 42MHz ≈ 43 */
+    I2C1->CR1   = I2C_CR1_PE;         /* 使能（要 400kHz 就再置 FS 位并按公式改 CCR） */
+}
+
+/* 寄存器式写一字节：Start → 7 位地址(写) → 寄存器号 → 数据 → Stop */
+static void I2C1_WriteReg(uint8_t addr7, uint8_t reg, uint8_t val)
+{
+    I2C1->CR1 |= I2C_CR1_START;
+    while (!(I2C1->SR1 & I2C_SR1_SB)) { }
+    I2C1->DR = (uint8_t)(addr7 << 1);              /* 写方向 */
+    while (!(I2C1->SR1 & I2C_SR1_ADDR)) { }
+    (void)I2C1->SR1; (void)I2C1->SR2;              /* 读 SR1+SR2 清 ADDR */
+    I2C1->DR = reg;
+    while (!(I2C1->SR1 & I2C_SR1_TXE)) { }
+    I2C1->DR = val;
+    while (!(I2C1->SR1 & I2C_SR1_BTF)) { }
+    I2C1->CR1 |= I2C_CR1_STOP;
+}''',
+        'init': 'I2C1_Init();',
+    },
+    'spi': {
+        'defs': '''/* ---------- SPI1（PA5 = SCK，PA6 = MISO，PA7 = MOSI，主机） ---------- */
+static void SPI1_Init(void)
+{
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
+    RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
+
+    /* PA5/6/7 = 复用 AF5 */
+    GPIOA->MODER   &= ~((3U << 10) | (3U << 12) | (3U << 14));
+    GPIOA->MODER   |=  (2U << 10) | (2U << 12) | (2U << 14);
+    GPIOA->OSPEEDR |=  (3U << 10) | (3U << 12) | (3U << 14);
+    GPIOA->AFR[0]  |=  (5U << 20) | (5U << 24) | (5U << 28);   /* AF5 = SPI1 */
+
+    /* 主机 + 软件从机管理（SSM/SSI，省一根 NSS）；BR = 011 → 84MHz/16 ≈ 5.25MHz */
+    SPI1->CR1 = SPI_CR1_MSTR | SPI_CR1_SSM | SPI_CR1_SSI | (3U << 3);
+    SPI1->CR1 |= SPI_CR1_SPE;
+}
+
+/* 全双工交换一字节（发出去的同时收回来的） */
+static uint8_t SPI1_Xfer(uint8_t b)
+{
+    while (!(SPI1->SR & SPI_SR_TXE)) { }
+    *(volatile uint8_t *)&SPI1->DR = b;      /* DR 必须按字节访问（有 16 位模式） */
+    while (!(SPI1->SR & SPI_SR_RXNE)) { }
+    return *(volatile uint8_t *)&SPI1->DR;
+}''',
+        'init': 'SPI1_Init();',
+    },
 }
 
 
@@ -603,6 +753,12 @@ def run(board, periph_names, tasks, out_dir, style='driver'):
 
     if style == 'register':
         # 寄存器风格：只生成 main.c，不复制驱动库
+        skipped = [n for n in periph_names
+                   if ('systick' if n == 'tick' else n) not in REGISTER_PERIPH]
+        if skipped:
+            print('提示：寄存器风格还没有这些外设的模板，本次已跳过：%s'
+                  % ', '.join(skipped))
+            print('      （要它们就改用 --style driver，或用 --list 看支持清单）')
         main_path = generate_register_main_c(out_dir, board, periph_names, tasks)
         if tasks:
             generate_freertos_config(out_dir, board)
@@ -730,7 +886,7 @@ def main():
         for name, info in PERIPHERALS.items():
             print('  %-12s %s / %s' % (name, info[0], info[1]))
         print()
-        print('寄存器风格支持：usart, led, key, beep, delay, systick, nvic')
+        print('寄存器风格支持：%s' % ', '.join(sorted(REGISTER_PERIPH)))
         return
 
     if args.list_presets:

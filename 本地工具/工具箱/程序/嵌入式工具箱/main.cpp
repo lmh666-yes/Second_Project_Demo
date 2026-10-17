@@ -71,6 +71,37 @@ static int runCli(const QStringList &args)
     if (!docOk)
         ++fail;
 
+    /* C2：起手助手答案 → 工程模板参数。错例：认得出的外设/任务要齐；
+       反例：认不出的文本不许硬塞、缺列的任务行必须跳过（而不是编一个默认值）。 */
+    {
+        const QString per = scaffoldPeriphArg(
+            QStringLiteral("LoRa E22：USART3 / PB10-PB11 / 433 MHz\n"
+                           "LED：PF9\nW25QXX：SPI1 / CS"),
+            QStringLiteral("用 FreeRTOS。理由：采集与通信要并行"));
+        const bool perOk = per.contains(QStringLiteral("usart"))
+                        && per.contains(QStringLiteral("lora"))
+                        && per.contains(QStringLiteral("spi"))
+                        && per.contains(QStringLiteral("led"))
+                        && per.contains(QStringLiteral("nvic"));
+        const QString per2 = scaffoldPeriphArg(QStringLiteral("电源：3.3V LDO"),
+                                              QStringLiteral("不用 RTOS"));
+        const bool per2Ok = per2.contains(QStringLiteral("led"))
+                         && !per2.contains(QStringLiteral("lora"))
+                         && !per2.contains(QStringLiteral("nvic"));
+        QStringList skipped;
+        const QString tsk = scaffoldTasksArg(
+            QStringLiteral("vTaskSensor：2 s 周期 / 优先级 3 / 栈 256 字\n"
+                           "vTaskComm：队列触发 / 优先级 4 / 栈 256 字\n"
+                           "vTaskBug：优先级 3 但没写栈"), &skipped);
+        const bool tskOk = tsk == QStringLiteral("Sensor:3:256,Comm:4:256")
+                        && skipped.size() == 1;
+        const bool c2Ok = perOk && per2Ok && tskOk;
+        out << QString::fromUtf8("起手助手→工程模板参数：")
+            << (c2Ok ? QString::fromUtf8("PASS") : QString::fromUtf8("FAIL")) << "\n";
+        if (!c2Ok)
+            ++fail;
+    }
+
     QStringList rlog;
     const int rfail = RtosGen::selftest(rlog, findRepoRoot());
     out << QString::fromUtf8("RTOS 骨架生成自检：")
@@ -198,6 +229,16 @@ static int runCli(const QStringList &args)
         ++fail;
     } else {
         fail += lfail;
+        /* C1：报告里点条目名 → 手册直达。用真实数据验跳转 API：
+           错例（手册里有的词要定位得到）/ 反例（手册里没有的词要返回 0，不能乱指一个条目）。 */
+        const int hitDog = lw.jumpToTerm(QStringLiteral("看门狗"));
+        const int hitJunk = lw.jumpToTerm(QStringLiteral("这词手册里绝对没有_zzz"));
+        const bool c1Ok = hitDog > 0 && hitJunk == 0;
+        out << QString::fromUtf8("手册条目直达：")
+            << (c1Ok ? QString::fromUtf8("PASS") : QString::fromUtf8("FAIL"))
+            << QString::fromUtf8("（看门狗 %1 条 / 乱词 %2 条）\n").arg(hitDog).arg(hitJunk);
+        if (!c1Ok)
+            ++fail;
     }
 
     out << QString::fromUtf8("\n失败项 ") << fail << "\n";
@@ -259,6 +300,11 @@ int main(int argc, char *argv[])
 
         /* 报告原文里可点的「文件:行」链接数（D3）：为 0 说明没转成链接或报告里没有位置信息 */
         QTextStream(stdout) << QString::fromUtf8("报告可点链接: ") << page.srcLinkCount() << "\n";
+        /* C1：报告原文里可点的「条目名」链接数（跳单片机手册） */
+        const int docN = page.docLinkCount();
+        QTextStream(stdout) << QString::fromUtf8("手册可点条目: ") << docN << "\n";
+        if (docN < 1)
+            return 2;
         /* A1：历史回看下拉框里应至少有一轮快照（本轮刷新刚写的那份） */
         const int histN = page.historyCount();
         QTextStream(stdout) << QString::fromUtf8("历史快照轮数: ") << histN << "\n";

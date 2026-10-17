@@ -62,6 +62,11 @@ KickStartWindow::KickStartWindow(QWidget *parent)
     QPushButton *btnExport = new QPushButton(QStringLiteral("导出 Markdown"), central);
     QPushButton *btnLoad   = new QPushButton(QStringLiteral("载入草稿"), central);
     QPushButton *btnSave   = new QPushButton(QStringLiteral("保存草稿"), central);
+    /* C2：把答案里的外设清单与任务表喂给「工程模板」生成器 */
+    QPushButton *btnScaffold = new QPushButton(QStringLiteral("一键生成工程骨架…"), central);
+    btnScaffold->setToolTip(QStringLiteral(
+        "把上面填的「外设清单」与「任务表」转成工程模板生成器的参数，"
+        "跳到「工程模板」页并生成一份能编的骨架。"));
     bar->addWidget(m_btnPrev);
     bar->addWidget(m_btnNext);
     bar->addStretch(1);
@@ -69,6 +74,7 @@ KickStartWindow::KickStartWindow(QWidget *parent)
     bar->addWidget(btnSave);
     bar->addWidget(btnCopy);
     bar->addWidget(btnExport);
+    bar->addWidget(btnScaffold);
     right->addLayout(bar);
 
     root->addWidget(m_steps);
@@ -82,6 +88,14 @@ KickStartWindow::KickStartWindow(QWidget *parent)
     connect(btnExport, &QPushButton::clicked, this, &KickStartWindow::onExport);
     connect(btnSave, &QPushButton::clicked, this, &KickStartWindow::onSave);
     connect(btnLoad, &QPushButton::clicked, this, &KickStartWindow::onLoad);
+    /* C2：外设清单 + 任务表 → 生成器参数，交给主窗口去跳页并生成 */
+    connect(btnScaffold, &QPushButton::clicked, this, [this]() {
+        const QString per = scaffoldPeriphArg(answer(QStringLiteral("peripherals")),
+                                             answer(QStringLiteral("rtos")));
+        QStringList skipped;
+        const QString tsk = scaffoldTasksArg(answer(QStringLiteral("tasks")), &skipped);
+        emit scaffoldRequested(per, tsk, skipped);
+    });
 
     m_steps->setCurrentRow(0);
 }

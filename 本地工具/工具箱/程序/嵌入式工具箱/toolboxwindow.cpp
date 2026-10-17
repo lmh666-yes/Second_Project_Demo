@@ -18,6 +18,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
 #include <QFormLayout>
@@ -258,6 +259,29 @@ void ToolboxWindow::closeEvent(QCloseEvent *e)
 QWidget *ToolboxWindow::buildKickstartPage()
 {
     m_kickstart = new KickStartWindow(this);
+    /* C2：起手助手填完答案 → 一键跳到「工程模板」把外设/任务填进去并生成骨架 */
+    connect(m_kickstart, &KickStartWindow::scaffoldRequested, this,
+            [this](const QString &periph, const QString &tasks, const QStringList &skipped) {
+        ScaffoldPage *sp = m_pages->findChild<ScaffoldPage *>();
+        if (!sp) {
+            QMessageBox::warning(this, QStringLiteral("工程模板"),
+                                 QStringLiteral("找不到「工程模板」页。"));
+            return;
+        }
+        const QString out = QFileDialog::getExistingDirectory(
+            this, QStringLiteral("选择工程骨架的输出目录"), QDir::homePath());
+        jumpToPage(QStringLiteral("工程模板"));
+        sp->prefillCustom(periph, tasks, out);
+        if (!skipped.isEmpty()) {
+            QMessageBox::information(
+                this, QStringLiteral("有任务行没解析出来"),
+                QStringLiteral("这些任务行缺「优先级」或「栈」，已跳过：\n\n%1\n\n"
+                               "任务表四列（名称 / 周期或触发 / 优先级 / 栈）缺一不可，"
+                               "补齐后可以再点一次。").arg(skipped.join(QStringLiteral("\n"))));
+        }
+        if (!out.isEmpty())
+            sp->generateNow();
+    });
     return m_kickstart;
 }
 
@@ -600,6 +624,12 @@ QWidget *ToolboxWindow::buildOverviewPage()
     OverviewPage *p = new OverviewPage(m_toolsDir, this);
     /* 点面板上的健康度卡片 → 跳到对应工具页 */
     connect(p, &OverviewPage::requestPage, this, &ToolboxWindow::jumpToPage);
+    /* C1：报告里点了「条目名」→ 跳到「单片机手册」并把那个词搜/定位出来 */
+    connect(p, &OverviewPage::requestDoc, this, [this](const QString &term) {
+        jumpToPage(QStringLiteral("单片机手册"));
+        if (MainWindow *lw = m_pages->findChild<MainWindow *>())
+            lw->jumpToTerm(term);
+    });
     return p;
 }
 

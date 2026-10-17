@@ -556,6 +556,44 @@ void MainWindow::jumpToName(const QString &name)
     }
 }
 
+int MainWindow::jumpToTerm(const QString &term)
+{
+    const QString t = term.trimmed();
+    if (t.isEmpty())
+        return 0;
+    if (!m_engine)                       /* 数据懒加载：还没装就先装一次 */
+        loadData();
+    /* 先按条目名精确找（报告里的 SYS_FRAME_Build 这类多半就是条目名） */
+    if (m_ds.indexOfName(t) >= 0) {
+        jumpToName(t);
+        return 1;
+    }
+    /* 没有同名条目就退回搜索：填进搜索框、按当前板块跑一遍，命中就定位第一条。
+       「项目引导」板块列的是手册阶段卡、不走搜索，所以在那里搜不到时要切回「资料查询」
+       再搜一遍 —— 报告里点一个函数名，就该在资料里找到它，不该因为当时停在引导页而落空。 */
+    m_searchTimer->stop();
+    m_search->blockSignals(true);
+    m_search->setText(t);
+    m_search->blockSignals(false);
+    if (m_section == int(Card::Build))
+        onSectionClicked(int(Card::Ref));
+    refreshList();
+    if (m_shown.isEmpty() && m_section != int(Card::Ref)) {
+        onSectionClicked(int(Card::Ref));      /* onSectionClicked 里会 refreshList */
+    }
+    if (!m_shown.isEmpty()) {
+        m_list->setCurrentRow(0);
+        if (QListWidgetItem *it = m_list->item(0))
+            m_list->scrollToItem(it);
+        statusBar()->showMessage(QStringLiteral("「%1」命中 %2 条，已定位第一条")
+                                     .arg(t).arg(m_shown.size()), 3000);
+    } else {
+        statusBar()->showMessage(QStringLiteral("手册里没有「%1」").arg(t), 3000);
+    }
+    return m_shown.size();
+}
+
+
 void MainWindow::onThemeToggled()
 {
     Theme::toggle();

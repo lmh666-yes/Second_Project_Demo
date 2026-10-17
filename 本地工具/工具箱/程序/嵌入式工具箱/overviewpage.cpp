@@ -155,6 +155,13 @@ OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
     m_view->setOpenLinks(false);
     connect(m_view, &QTextBrowser::anchorClicked, this, [this](const QUrl &u) {
         const QString s = u.toString();
+        if (s.startsWith(QStringLiteral("doc:"))) {
+            /* C1：点了报告里的条目名 → 让主窗口把「单片机手册」跳到该条目 */
+            const int idx = s.mid(4).toInt();
+            if (idx >= 0 && idx < m_docTargets.size())
+                emit requestDoc(m_docTargets.at(idx));
+            return;
+        }
         if (!s.startsWith(QStringLiteral("src:"))) {
             if (u.scheme().startsWith(QStringLiteral("http")))
                 QDesktopServices::openUrl(u);      /* 报告里若带外链，仍按外部打开 */
@@ -478,11 +485,16 @@ void OverviewPage::loadTextReports()
 {
     /* D3：报告里的「文件:行」转成可点链接 —— 点了直接用系统默认编辑器打开该源文件。
        为什么用下标锚点（src:N）而不是把路径塞进 URL：这里的路径是 Windows 反斜杠相对路径，
-       直接当 URL 会被百分号编码搞得对不上。见 overviewpage.h 的 m_srcTargets。 */
+       直接当 URL 会被百分号编码搞得对不上。见 overviewpage.h 的 m_srcTargets。
+       C1：同一次扫描里把「条目名」（全大写的下划线标识符，如 SYS_FRAME_BuildEnv）也转成
+       可点链接（doc:N），点了跳「单片机手册」对应卡。两件事必须一趟做完 —— 分两趟的话
+       第二趟会扫进第一趟生成的 [x](src:1)，把链接本身改坏。 */
     m_srcTargets.clear();
+    m_docTargets.clear();
     const QString repoRoot = repoRootOf(m_toolsDir);
     static const QRegularExpression re(QStringLiteral(
-        "`?([A-Za-z0-9_\\-./\\\\]+\\.(?:c|h|cpp|hpp|py|js|md|txt|s)):(\\d+)`?"));
+        "`?([A-Za-z0-9_\\-./\\\\]+\\.(?:c|h|cpp|hpp|py|js|md|txt|s)):(\\d+)`?"
+        "|\\b([A-Z][A-Z0-9]{1,}(?:_[A-Za-z0-9]+)+)\\b"));
     auto linkify = [this, &repoRoot](const QString &s) {
         QString out;
         int last = 0;
@@ -490,10 +502,17 @@ void OverviewPage::loadTextReports()
         while (it.hasNext()) {
             const QRegularExpressionMatch m = it.next();
             out += s.mid(last, m.capturedStart() - last);
-            const QString rel = m.captured(1);
-            m_srcTargets << (QDir(repoRoot).filePath(rel) + QLatin1Char('|') + m.captured(2));
-            out += QStringLiteral("[%1:%2](src:%3)")
-                       .arg(rel, m.captured(2)).arg(m_srcTargets.size() - 1);
+            if (!m.captured(1).isEmpty()) {
+                const QString rel = m.captured(1);
+                m_srcTargets << (QDir(repoRoot).filePath(rel) + QLatin1Char('|') + m.captured(2));
+                out += QStringLiteral("[%1:%2](src:%3)")
+                           .arg(rel, m.captured(2)).arg(m_srcTargets.size() - 1);
+            } else {
+                const QString term = m.captured(3);
+                m_docTargets << term;
+                out += QStringLiteral("[%1](doc:%2)")
+                           .arg(term).arg(m_docTargets.size() - 1);
+            }
             last = m.capturedEnd();
         }
         out += s.mid(last);

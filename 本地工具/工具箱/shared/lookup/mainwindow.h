@@ -35,6 +35,10 @@ public:
     /* 落地页 HTML（供 --selftest 做结构自检；判"什么时候显示"在 refreshList 里） */
     QString landingHtml() const;
 
+    /* C1：报告里的条目名直达 —— 外部（工程体检总览页）点条目名时调这个：
+       把词填进搜索框、按当前板块跑一遍，命中就选中第一条。返回本次命中条数。 */
+    int jumpToTerm(const QString &term);
+
 signals:
     /* 本页的「🌗 主题」按钮切的是工具箱全局主题（与侧栏那个是同一份 QSS），
        切完得让侧栏把自己的按钮文字刷新一下，否则两处显示不一致。 */

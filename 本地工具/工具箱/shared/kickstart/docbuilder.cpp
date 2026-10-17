@@ -1,5 +1,8 @@
 #include "docbuilder.h"
 
+#include <QRegularExpression>
+#include <QStringList>
+
 /* 起手式步骤。顺序对应资深工程师起项目时的一般顺序：
    先把目标和边界说清，再依次落到需求、框图、硬件、软件、并发、接口、计划。
 
@@ -273,4 +276,90 @@ QString renderMarkdown(const QString &name, const QHash<QString, QString> &answe
     out << QString();
 
     return out.join('\n');
+}
+
+
+/* ---------------- C2：答案 → 工程模板生成器的参数 ---------------- */
+
+QString scaffoldPeriphArg(const QString &peripheralsText, const QString &rtosText)
+{
+    const QString t = peripheralsText.toLower();
+
+    /* 只在文本里认关键词。宁可按字面认、也不猜：认错的后果是生成一份用不上的外设代码，
+       而"多一个初始化函数"比"少一个你其实要用的"更容易被发现（README 里也列了外设清单）。 */
+    struct Map { QString needle; QString periph; };
+    static const Map kMap[] = {
+        {QStringLiteral("usart"), QStringLiteral("usart")},
+        {QStringLiteral("uart"),  QStringLiteral("usart")},
+        {QStringLiteral("串口"),   QStringLiteral("usart")},
+        {QStringLiteral("i2c"),   QStringLiteral("i2c")},
+        {QStringLiteral("spi"),   QStringLiteral("spi")},
+        {QStringLiteral("w25q"),  QStringLiteral("spi")},
+        {QStringLiteral("adc"),   QStringLiteral("adc")},
+        {QStringLiteral("mq135"), QStringLiteral("adc")},
+        {QStringLiteral("dma"),   QStringLiteral("dma")},
+        {QStringLiteral("tim"),   QStringLiteral("tim")},
+        {QStringLiteral("定时器"), QStringLiteral("tim")},
+        {QStringLiteral("rtc"),   QStringLiteral("rtc")},
+        {QStringLiteral("lora"),  QStringLiteral("lora")},
+        {QStringLiteral("e22"),   QStringLiteral("lora")},
+        {QStringLiteral("eth"),   QStringLiteral("eth")},
+        {QStringLiteral("rs485"), QStringLiteral("rs485")},
+        {QStringLiteral("led"),   QStringLiteral("led")},
+        {QStringLiteral("key"),   QStringLiteral("key")},
+        {QStringLiteral("按键"),   QStringLiteral("key")},
+        {QStringLiteral("beep"),  QStringLiteral("beep")},
+        {QStringLiteral("蜂鸣"),   QStringLiteral("beep")},
+    };
+
+    QStringList out;
+    for (const Map &m : kMap) {
+        if (t.contains(m.needle) && !out.contains(m.periph))
+            out << m.periph;
+    }
+    /* 用了 RTOS 就得配 NVIC 优先级分组（FreeRTOS 要求 4 位抢占）。
+       注意「不用」/「裸机」里的"用"字会骗过朴素判断，先排除掉。 */
+    const QString rt = rtosText;
+    const bool usesRtos = rt.contains(QStringLiteral("用"))
+                       && !rt.contains(QStringLiteral("不用"))
+                       && !rt.contains(QStringLiteral("裸机"));
+    if (usesRtos && !out.contains(QStringLiteral("nvic")))
+        out << QStringLiteral("nvic");
+    /* 一个外设都没认出来时给最小可跑的一组，别生成一个空的 main.c */
+    if (out.isEmpty())
+        out << QStringLiteral("tick") << QStringLiteral("led") << QStringLiteral("delay");
+    return out.join(QStringLiteral(","));
+}
+
+QString scaffoldTasksArg(const QString &tasksText, QStringList *skipped)
+{
+    QStringList out;
+    for (const QString &raw : tasksText.split(QLatin1Char('\n'))) {
+        const QString line = raw.trimmed();
+        if (line.isEmpty())
+            continue;
+        /* 名字取到第一个 '：' 或 ':' 之前 */
+        int cut = line.indexOf(QStringLiteral("："));
+        const int c2 = line.indexOf(QLatin1Char(':'));
+        if (cut < 0 || (c2 >= 0 && c2 < cut))
+            cut = c2;
+        QString name = cut > 0 ? line.left(cut).trimmed() : QString();
+        if (name.isEmpty() || !(name.at(0).isLetter() || name.at(0) == QLatin1Char('_')))
+            continue;
+        /* 去掉 vTask 前缀：生成器会自己加 Task_ 前缀，带着会拼成 Task_vTaskSensor */
+        if (name.startsWith(QStringLiteral("vTask")))
+            name = name.mid(5);
+
+        static const QRegularExpression rePrio(QStringLiteral("优先级\\s*[:：]?\\s*(\\d+)"));
+        static const QRegularExpression reStack(QStringLiteral("栈\\s*[:：]?\\s*(\\d+)"));
+        const QRegularExpressionMatch mp = rePrio.match(line);
+        const QRegularExpressionMatch ms = reStack.match(line);
+        if (!mp.hasMatch() || !ms.hasMatch()) {
+            if (skipped)
+                *skipped << line;
+            continue;
+        }
+        out << QStringLiteral("%1:%2:%3").arg(name).arg(mp.captured(1)).arg(ms.captured(1));
+    }
+    return out.join(QStringLiteral(","));
 }
