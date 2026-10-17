@@ -11,6 +11,12 @@
    再拿它当标记会让 INI 落到 exe 旁（build/release 下），各页状态记不住。 */
 static QString resolveIniPath()
 {
+    /* 测试 / 量测出口的沙箱开关：设了 TOOLBOX_INI 就整份走它（见 程序\嵌入式工具箱\main.cpp）。
+       冒烟会点界面开关，写的就是这份 ini，别动用户那份。 */
+    const QByteArray box = qgetenv("TOOLBOX_INI");
+    if (!box.isEmpty())
+        return QString::fromLocal8Bit(box);
+
     QDir d(QCoreApplication::applicationDirPath());
     for (int i = 0; i < 8; ++i) {
         if (d.exists(QStringLiteral("程序")) && d.exists(QStringLiteral("检查"))

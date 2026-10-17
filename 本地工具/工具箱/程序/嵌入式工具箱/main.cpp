@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <functional>
 
+#include "apppaths.h"
 #include "dashboardcanvas.h"
 #include "docbuilder.h"
 #include "lookupcli.h"
@@ -271,6 +272,35 @@ int main(int argc, char *argv[])
     QStringList args;
     for (int i = 1; i < argc; ++i)
         args << QString::fromLocal8Bit(argv[i]);
+
+    /* 带参数运行 = 测试 / 量测出口。这些出口会点界面开关、走遍所有页面，而它们写的是
+       **用户自己的**两份本机状态：
+         · _toolbox.ini（主题、行尾检查、窗口位置）
+         · 速查数据\_stm32lookup.ini（速查页主题、当前板块、"最近浏览"历史）
+       实测跑一轮 --gui-smoke 就把 enc/eol 从 false 改成 true、ui/theme 1→0，
+       还把速查的"最近浏览"换成冒烟自己的遍历顺序 —— 等于替用户改了设置、丢了他的记录。
+       所以这里把两份 ini 各拷一份到临时目录，再让本进程读写都落在副本上：
+       读到的仍是用户那份的内容（主题/页号口径不变），写完只写副本，用户文件一个字节不动。
+       （项目里对 ui/welcomeShown 早就提防过同一件事，见 toolboxwindow.h 的说明。） */
+    if (!args.isEmpty()) {
+        Settings st;
+        const QString boxDir =
+            QDir(QDir::tempPath()).filePath(QStringLiteral("toolbox_probe_ini"));
+        QDir().mkpath(boxDir);
+        struct { const char *env; QString src; } boxes[2] = {
+            { "TOOLBOX_INI",        st.filePath()       },
+            { "TOOLBOX_LOOKUP_INI", AppPaths::iniPath() },
+        };
+        for (const auto &b : boxes) {
+            if (b.src.isEmpty())
+                continue;
+            const QString dst = QDir(boxDir).filePath(QFileInfo(b.src).fileName());
+            QFile::remove(dst);
+            if (QFileInfo::exists(b.src))
+                QFile::copy(b.src, dst);      /* 先拷用户那份，读起来与平时一致 */
+            qputenv(b.env, dst.toLocal8Bit());
+        }
+    }
 
     /* GUI 崩溃冒烟：开窗口、遍历页面与控件、点一遍安全按钮（见 uismoke.h） */
     if (args.contains(QStringLiteral("--gui-smoke"))) {

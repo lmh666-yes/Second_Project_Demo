@@ -68,6 +68,13 @@ QString AppPaths::datasetPath()
 
 QString AppPaths::iniPath()
 {
+    /* 测试 / 量测出口的沙箱开关：设了 TOOLBOX_LOOKUP_INI 就整份走它（见
+       程序\嵌入式工具箱\main.cpp）。冒烟会走遍速查页，写的就是这份 ini
+       （主题 / 当前板块 / "最近浏览"），别动用户那份。 */
+    const QByteArray box = qgetenv("TOOLBOX_LOOKUP_INI");
+    if (!box.isEmpty())
+        return QString::fromLocal8Bit(box);
+
     const QString r = toolRoot();
     if (!r.isEmpty())
         return QDir(r).filePath(QStringLiteral("_stm32lookup.ini"));
