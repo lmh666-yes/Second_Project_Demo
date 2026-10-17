@@ -117,7 +117,7 @@ static int runCli(const QStringList &args)
     bool dirOk = !tdir.isEmpty();
     if (dirOk) {
         /* 抽查每个运行器页真正要用的脚本：漏一个就等于"该页点了运行才发现脚本不在"。
-           新增工具时这里要同步补上（LoRa 检查 / 固件预算 就是这么补进来的）。 */
+           新增工具时这里要同步补上（LoRa 检查 / 协议校验 / 断网缓存 就是这么补进来的）。 */
         dirOk = QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/进度跟踪/progress_scan.py")))
              && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/链路仿真/link_sim.py")))
              && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/编码守卫/encoding_guard.py")))
@@ -125,7 +125,6 @@ static int runCli(const QStringList &args)
              && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/引脚规划/pin_planner.py")))
              && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/LoRa检查/lora_check.py")))
              && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/协议校验/protocol_check.py")))
-             && QFile::exists(QDir(tdir).filePath(QStringLiteral("检查/固件预算/firmware_budget.py")))
              && QDir(tdir).exists(QStringLiteral("shared"));
     }
     out << QString::fromUtf8("工具箱目录解析：")
@@ -164,7 +163,6 @@ static int runCli(const QStringList &args)
             {"链路仿真",     "检查/链路仿真/link_sim.py"},
             {"LoRa 检查",    "检查/LoRa检查/lora_check.py"},
             {"协议校验",     "检查/协议校验/protocol_check.py"},
-            {"固件预算",     "检查/固件预算/firmware_budget.py"},
             {"断网缓存",     "检查/断网缓存/cache_check.py"},
         };
         out << QString::fromUtf8("\n── 各检查器自检（--selftest）──\n");

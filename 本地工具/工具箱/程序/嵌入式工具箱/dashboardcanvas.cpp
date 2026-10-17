@@ -187,7 +187,7 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
     QVector<Item> items;
     /* 与下面 append 顺序一一对应，点卡片按此 key 跳工具页 */
     static const char *const kCardKeys[] = {"pin", "rtos", "enc", "lora", "protocol",
-                                            "firmware", "cache", "progress"};
+                                            "cache", "progress"};
 
     /* A2 阈值红黄线：数量类指标 1~4 处算「注意」（黄），≥5 处算「严重」（红）。
        阈值取自清单示例「引脚冲突 ≥ 5 处转红」，其余同口径 —— 免得每次自己盯数字。
@@ -255,13 +255,6 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
         items.append({QStringLiteral("协议校验"),
                       n ? QStringLiteral("%1 问题").arg(n) : QStringLiteral("通过"),
                       level(n), QStringLiteral("1~2 处黄 · ≥3 处红")});
-    }
-    {
-        const QVariantMap m = m_tools.value(QStringLiteral("firmware")).toMap();
-        const int n = m.value(QStringLiteral("issues")).toList().size();
-        items.append({QStringLiteral("固件预算"),
-                      n ? QStringLiteral("%1 问题").arg(n) : QStringLiteral("正常"),
-                      level(n), QStringLiteral("1~4 处黄 · ≥5 处红")});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("cache")).toMap();

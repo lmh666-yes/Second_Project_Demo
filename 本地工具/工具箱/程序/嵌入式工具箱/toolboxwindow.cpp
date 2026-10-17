@@ -132,7 +132,6 @@ ToolboxWindow::ToolboxWindow(QWidget *parent)
         {"链路仿真",     buildLinkPage()},
         {"LoRa 检查",    buildLoraPage()},
         {"OTA 台架",     buildOtaPage()},
-        {"固件预算",     buildFirmwareBudgetPage()},
         {"断网缓存",     buildCachePage()},
         {"工程模板",     buildScaffoldPage()},
     };
@@ -633,67 +632,6 @@ QWidget *ToolboxWindow::buildOverviewPage()
     return p;
 }
 
-/* 固件预算：把 检查/固件预算/firmware_budget.py 包成界面。
-   一个文件输入框按扩展名自动选模式（.map/.bin/.hex），留空则跑"分区表自检"。
-   与 OTA 台架的分工：台架负责"把固件推下去"，本页负责"推之前先算账/复核头"。 */
-QWidget *ToolboxWindow::buildFirmwareBudgetPage()
-{
-    ToolRunPage *p = new ToolRunPage(
-        QStringLiteral("固件预算"),
-        QStringLiteral(
-            "核 OTA 分区与固件体积。填一个文件就按扩展名自动选模式：\n"
-            "  · .map  Keil 链接 map：取 Code / RO / RW / ZI 与 Flash 合计，对照分区上限判越界；\n"
-            "  · .bin  裸固件：算 CRC16 并按 ota_part.h 生成 16 字节固件头，输出可直接下发的包；\n"
-            "  · .hex  Intel HEX：判地址范围是否落在预期分区（防刷过界、防盖掉 Boot）。\n"
-            "留空则只做分区表自检（Boot/App/下载区/参数区不重叠、下载区 ≥ App、镜像上限 ≤ App）——"
-            "「全量检查」跑的就是这一项。\n"
-            "分区常量取自仓库根 OTA/OTA1/ota/ota_part.h（唯一事实来源），本工具不写死。\n"
-            "文件可给绝对路径，也可给相对仓库根的路径（如 OTA/OTA1/Objects/标准模板.map）。\n"
-            "报告写到 工具箱/检查/固件预算/固件预算报告.md。"),
-        this);
-
-    QLineEdit *file = new QLineEdit(this);
-    file->setPlaceholderText(QStringLiteral("可选：.map / .bin / .hex；留空则只做分区表自检"));
-    QComboBox *part = new QComboBox(this);
-    part->addItems({QStringLiteral("App 运行区"), QStringLiteral("Boot 区"), QStringLiteral("下载区")});
-
-    Settings st;
-    file->setText(st.value(QStringLiteral("fwb/file")).toString());
-    part->setCurrentIndex(st.value(QStringLiteral("fwb/part"), 0).toInt());
-    connect(file, &QLineEdit::textChanged, this,
-            [file](const QString &t) { Settings().setValue(QStringLiteral("fwb/file"), t); });
-    connect(part, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            [](int i) { Settings().setValue(QStringLiteral("fwb/part"), i); });
-
-    QHBoxLayout *opt = p->optionsLayout();
-    opt->insertWidget(0, new QLabel(QStringLiteral("文件"), this));
-    opt->insertWidget(1, file);
-    opt->insertWidget(2, new QLabel(QStringLiteral("分区"), this));
-    opt->insertWidget(3, part);
-
-    p->setSteps({{QStringLiteral("固件预算"),
-                  py(m_toolsDir, QStringLiteral("检查/固件预算/firmware_budget.py")),
-                  [file, part]() {
-                      QStringList a;
-                      const QString f = file->text().trimmed();
-                      const QString low = f.toLower();
-                      if (low.endsWith(QStringLiteral(".map")))
-                          a << QStringLiteral("--map") << f;
-                      else if (low.endsWith(QStringLiteral(".hex")))
-                          a << QStringLiteral("--hex") << f;
-                      else if (low.endsWith(QStringLiteral(".bin")))
-                          a << QStringLiteral("--bin") << f;
-                      if (part->currentIndex() == 1)
-                          a << QStringLiteral("--part") << QStringLiteral("boot");
-                      else if (part->currentIndex() == 2)
-                          a << QStringLiteral("--part") << QStringLiteral("dl");
-                      return a;
-                  }}});
-    p->setReportPath(py(m_toolsDir, QStringLiteral("检查/固件预算/固件预算报告.md")));
-    m_warnTargets.append(p);
-    return p;
-}
-
 /* 断网缓存：把 检查/断网缓存/cache_check.py 包成界面。
    缓存几何（槽位 / 扇区 / 分区上界）自动读板2 的 w25qxx_log.h 与 w25qxx.h；
    上传周期 / 补传节奏 / 记录长度按工程实际填（默认值只是示例）。 */
@@ -766,7 +704,7 @@ QWidget *ToolboxWindow::buildFullCheckPage()
     ToolRunPage *p = new ToolRunPage(
         QStringLiteral("全量检查"),
         QStringLiteral("依次运行各命令行检查（编码守卫 / RTOS / 引脚规划 / LoRa / 协议校验 / "
-                       "固件预算 / 断网缓存 / 进度扫描 / 链路仿真自检），输出合并显示。"
+                       "断网缓存 / 进度扫描 / 链路仿真自检），输出合并显示。"
                        "写完代码收尾前跑一遍。"), this);
 
     QVector<RunStep> steps;
@@ -780,9 +718,6 @@ QWidget *ToolboxWindow::buildFullCheckPage()
                      py(m_toolsDir, QStringLiteral("检查/LoRa检查/lora_check.py")), nullptr};
     steps << RunStep{QStringLiteral("协议校验"),
                      py(m_toolsDir, QStringLiteral("检查/协议校验/protocol_check.py")), nullptr};
-    /* 固件预算不带参数 = 只做分区表自检（无输入也能跑，成果照样落报告） */
-    steps << RunStep{QStringLiteral("固件预算"),
-                     py(m_toolsDir, QStringLiteral("检查/固件预算/firmware_budget.py")), nullptr};
     /* 断网缓存不带参数 = 用默认的上传周期/补传节奏做核算（要按实测改就在页内填） */
     steps << RunStep{QStringLiteral("断网缓存"),
                      py(m_toolsDir, QStringLiteral("检查/断网缓存/cache_check.py")), nullptr};

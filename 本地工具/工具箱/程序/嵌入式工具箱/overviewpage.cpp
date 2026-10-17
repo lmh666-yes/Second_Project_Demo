@@ -43,7 +43,6 @@ const ReportDef REPORTS[] = {
     {"编码守卫", "检查/编码守卫/编码守卫报告.md"},
     {"LoRa 检查", "检查/LoRa检查/LoRa检查报告.md"},
     {"协议校验", "检查/协议校验/协议校验报告.md"},
-    {"固件预算", "检查/固件预算/固件预算报告.md"},
     {"断网缓存", "检查/断网缓存/断网缓存报告.md"},
 };
 
@@ -60,7 +59,6 @@ const ToolDef TOOLS[] = {
     {"progress", "检查/进度跟踪/progress_scan.py"},
     {"lora",     "检查/LoRa检查/lora_check.py"},
     {"protocol", "检查/协议校验/protocol_check.py"},
-    {"firmware", "检查/固件预算/firmware_budget.py"},
     {"cache",    "检查/断网缓存/cache_check.py"},
 };
 
@@ -99,7 +97,6 @@ QString pageOfTool(const QString &key)
         {QStringLiteral("enc"),      QStringLiteral("编码守卫")},
         {QStringLiteral("lora"),     QStringLiteral("LoRa 检查")},
         {QStringLiteral("protocol"), QStringLiteral("协议校验")},
-        {QStringLiteral("firmware"), QStringLiteral("固件预算")},
         {QStringLiteral("cache"),    QStringLiteral("断网缓存")},
         {QStringLiteral("progress"), QStringLiteral("进度扫描")},
     };
