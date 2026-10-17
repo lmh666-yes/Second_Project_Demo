@@ -68,7 +68,7 @@ RtosGenPage::RtosGenPage(QWidget *parent)
        实测页面最小尺寸 1021×921，会把整个工具箱窗口顶到 1265×939、缩不小。
        套一层滚动区：窗口可以随意缩小，内容放不下时出滚动条。 */
     QVBoxLayout *outer = new QVBoxLayout(this);
-    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setContentsMargins(9, 9, 9, 9);   /* F2：本页原来是 0/0，是全界面唯一"贴边"的页 */
     QScrollArea *scroll = new QScrollArea(this);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);

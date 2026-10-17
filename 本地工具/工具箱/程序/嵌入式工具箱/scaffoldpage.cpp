@@ -15,7 +15,7 @@ ScaffoldPage::ScaffoldPage(const QString &toolsDir, QWidget *parent)
     : QWidget(parent), m_toolsDir(toolsDir)
 {
     auto *layout = new QVBoxLayout(this);
-    layout->setSpacing(8);
+    layout->setSpacing(6);          /* F2：与其余页统一（原来是 8） */
 
     m_alert = new QLabel(this);
     m_alert->setStyleSheet(QStringLiteral("color:#e74c3c;"));

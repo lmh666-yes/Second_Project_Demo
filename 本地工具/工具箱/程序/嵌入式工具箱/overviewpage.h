@@ -27,6 +27,8 @@ class OverviewPage : public QWidget {
     Q_OBJECT
 public:
     explicit OverviewPage(const QString &toolsDir, QWidget *parent = nullptr);
+    /* 退出时把还在跑的取数进程收干净（见 .cpp 里的说明：不收会以 0xC0000374 堆损坏结束）。 */
+    ~OverviewPage() override;
 
     /* 测试钩子：把这些工具键当作"没取到"（不真起进程）。
        供 `--shot-overview --drop <键>` 断言"缺数不许画成绿色"。 */

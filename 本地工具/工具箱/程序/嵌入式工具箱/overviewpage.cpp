@@ -426,6 +426,22 @@ void OverviewPage::refresh()
     m_status->setText(QStringLiteral("正在取数…（并行跑 %1 个检查器）").arg(m_pending));
 }
 
+/* 退出时收干净还在跑的取数进程。
+   实测（F2 量测时发现）：切到本页会触发一次取数（并行起 7 个 Python），若这时关掉工具箱，
+   进程与它们的 30s 兜底定时器都还在，Qt 在窗口销毁阶段清理这种"进程还在跑 + 信号还连着"的
+   状态会以 0xC0000374（STATUS_HEAP_CORRUPTION）结束 —— 用户"打开总览页后立刻关窗口"就会撞上。
+   这里在析构时先断信号、再 kill 并等一小会儿，让进程体面结束。 */
+OverviewPage::~OverviewPage()
+{
+    for (QProcess *p : findChildren<QProcess *>()) {
+        p->disconnect(this);
+        if (p->state() != QProcess::NotRunning) {
+            p->kill();
+            p->waitForFinished(200);
+        }
+    }
+}
+
 void OverviewPage::setDropKeys(const QStringList &keys)
 {
     m_dropKeys = keys;

@@ -1033,8 +1033,8 @@ QWidget *ToolboxWindow::buildSettingsPage()
 {
     QWidget *w = new QWidget;
     QVBoxLayout *lay = new QVBoxLayout(w);
-    lay->setContentsMargins(18, 16, 18, 16);
-    lay->setSpacing(12);
+    lay->setContentsMargins(9, 9, 9, 9);   /* F2：与其余页统一（原 18/16，全界面唯一的例外） */
+    lay->setSpacing(6);                    /* F2：与其余页统一（原 12） */
 
     QLabel *title = new QLabel(QStringLiteral("设置"));
     QFont tf = title->font();

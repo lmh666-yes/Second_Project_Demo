@@ -555,13 +555,30 @@ int main(int argc, char *argv[])
             }
         }
         if (side) {
-            QStackedWidget *pgStack = side->parentWidget()
-                                          ? side->parentWidget()->findChild<QStackedWidget *>()
-                                          : nullptr;
-            /* 只量"当前可见那一页"。**实测：连续切完十几个页面会在退出阶段报堆损坏
-               （0xC0000374），所以这里刻意不切页**（要跨页量请静态查源码或用界面手点）。
-               这条限制本身是个待查问题，已记进 升级进度.md 的 F2 量测一节。 */
-            measure(pgStack ? pgStack->currentWidget() : nullptr);
+            /* 找主堆栈：页数 == 侧栏里"可选行"数（分组头不算），比靠父子关系猜更稳。 */
+            int rows = 0;
+            for (int r = 0; r < side->count(); ++r)
+                if (side->item(r)->flags() != Qt::NoItemFlags)
+                    ++rows;
+            QStackedWidget *pgStack = nullptr;
+            for (QStackedWidget *s : w.findChildren<QStackedWidget *>())
+                if (s->count() == rows) {
+                    pgStack = s;
+                    break;
+                }
+            for (int r = 0; r < side->count(); ++r) {
+                if (side->item(r)->flags() == Qt::NoItemFlags)   /* 分组头，不可选 */
+                    continue;
+                /* 手册页也会量（它已不再导致崩溃——根因是"取数进程还在跑就退出"，已在
+                   OverviewPage 析构里收干净）。保留开关只是为了对比诊断用。 */
+                if (side->item(r)->text() == QStringLiteral("单片机手册")
+                    && !args.contains(QStringLiteral("--with-lookup")))
+                    continue;
+                side->setCurrentRow(r);
+                QApplication::processEvents();
+                measure(pgStack ? pgStack->currentWidget() : nullptr);
+            }
+            side->setCurrentRow(0);
         } else {
             measure(w.findChild<QStackedWidget *>() ? w.findChild<QStackedWidget *>()->currentWidget()
                                                    : nullptr);

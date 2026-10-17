@@ -72,11 +72,12 @@ QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px;
     color: @DIM@; font-weight: 600; }
 
 QPushButton { background: @SURF2@; color: @TEXT@; border: 1px solid @BORDER@;
-    border-radius: 6px; padding: 6px 14px; }
+    border-radius: 6px; padding: 6px 14px; min-height: 22px; max-height: 22px; }
 QPushButton:hover { background: @HOVER@; border-color: @ACCENT@; }
 QPushButton:pressed { background: @SEL@; }
 QPushButton:disabled { color: @DIM@; border-color: @BORDER@; background: @SURF@; }
-QPushButton#primary { background: @ACCENT@; color: @ACCTEXT@; border: none; font-weight: 600; }
+QPushButton#primary { background: @ACCENT@; color: @ACCTEXT@;
+    border: 1px solid @ACCENT@; font-weight: 600; }   /* 边框与普通按钮同为 1px，总高才一致 */
 QPushButton#primary:hover { background: @ACCDIM@; color: @ACCTEXT@; }
 
 QLineEdit, QPlainTextEdit, QTextBrowser, QTextEdit, QSpinBox, QComboBox {
