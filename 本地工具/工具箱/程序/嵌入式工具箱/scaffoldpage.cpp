@@ -157,9 +157,11 @@ void ScaffoldPage::onGenerate()
         return;
     }
 
-    /* E1 防呆：输出目录已有东西就问一句，免得把同名的 main.c 直接盖掉 */
+    /* E1 防呆：输出目录已有东西就问一句，免得把同名的 main.c 直接盖掉。
+       连隐藏文件也算"有东西"（.git 之类），否则建在已有工程目录上会静默覆盖。 */
     const QDir od(out);
-    if (od.exists() && !od.entryList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot).isEmpty()) {
+    if (od.exists()
+        && !od.entryList(QDir::Files | QDir::Dirs | QDir::Hidden | QDir::NoDotAndDotDot).isEmpty()) {
         const auto ans = QMessageBox::question(
             this, QStringLiteral("输出目录不是空的"),
             QStringLiteral("「%1」里已经有文件了。生成会**覆盖同名的** main.c / README.md / "

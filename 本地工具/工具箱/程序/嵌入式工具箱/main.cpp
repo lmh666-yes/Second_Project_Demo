@@ -300,10 +300,12 @@ int main(int argc, char *argv[])
 
         /* 报告原文里可点的「文件:行」链接数（D3）：为 0 说明没转成链接或报告里没有位置信息 */
         QTextStream(stdout) << QString::fromUtf8("报告可点链接: ") << page.srcLinkCount() << "\n";
-        /* C1：报告原文里可点的「条目名」链接数（跳单片机手册） */
+        /* C1：报告原文里可点的「条目名」链接数（跳单片机手册）。
+           报告属检查产物、不入库，全新克隆上可能一份都没有 —— 所以只在"明明有报告
+           （有 file:行 链接）却一条条目名链接都没有"时才判失败，避免误伤。 */
         const int docN = page.docLinkCount();
         QTextStream(stdout) << QString::fromUtf8("手册可点条目: ") << docN << "\n";
-        if (docN < 1)
+        if (docN < 1 && page.srcLinkCount() > 0)
             return 2;
         /* A1：历史回看下拉框里应至少有一轮快照（本轮刷新刚写的那份） */
         const int histN = page.historyCount();

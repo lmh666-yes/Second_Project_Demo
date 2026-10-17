@@ -124,6 +124,10 @@ ISR_REENTRANT_RISK = {
 # 这里按名字判：delay_* 系列与 HAL_Delay；新版项目若改名，改这一处即可。
 ISR_BUSY_DELAY_PREFIX = ('delay_', 'Delay_', 'SYS_DELAY_', 'SYS_Delay')
 ISR_BUSY_DELAY = {'HAL_Delay', 'delay_ms_dwt'}
+# 光看前缀会把 delay_dwt_init()（初始化 DWT，不是延时）也算成忙等 —— 所以前置
+# 排除"初始化/配置"，并要求名字里带延时量纲（_ms / _us / _ns / _cycles / _loop）。
+BUSY_DELAY_EXCLUDE = ('init', 'config', 'setup')
+BUSY_DELAY_HINTS = ('_ms', '_us', '_ns', '_cycle', '_loop', 'delay')
 
 # B3：中断里用浮点 —— Cortex-M4 的 ISR 默认不保存 FPU 寄存器（惰性压栈），
 # 在 ISR 里做浮点运算要额外确认 FPU 上下文；改用定点最省心。
@@ -425,12 +429,26 @@ def risky_api(api):
     return None
 
 
+def is_busy_delay(api):
+    """B3：这个调用是不是"忙等延时"。
+    只看前缀会把 delay_dwt_init() 这类初始化函数误判成延时，所以再要求：
+    名字里带延时量纲（_ms/_us/_ns/_cycles/_loop）或就是名为 *delay*；初始化/配置一律排除。"""
+    if api in ISR_BUSY_DELAY:
+        return True
+    if not api.startswith(ISR_BUSY_DELAY_PREFIX):
+        return False
+    low = api.lower()
+    if any(x in low for x in BUSY_DELAY_EXCLUDE):
+        return False
+    return any(h in low for h in BUSY_DELAY_HINTS)
+
+
 def isr_costly_call(api):
     """B3：中断上下文里"长耗时 / 不可重入"的调用。返回 (等级, 原因) 或 (None, '')。"""
     if api in ISR_REENTRANT_RISK:
         return '严重', ('它在 ISR 里既慢又不可重入 —— printf 会一路阻塞到串口发完，'
                         '堆分配在 FreeRTOS 下要先挂起调度器才安全')
-    if api in ISR_BUSY_DELAY or api.startswith(ISR_BUSY_DELAY_PREFIX):
+    if is_busy_delay(api):
         return '注意', '它是忙等延时，时长由参数决定、运行时关不掉，会把中断响应拖长'
     return None, ''
 
@@ -1096,6 +1114,14 @@ def selftest():
            any(lv == '注意' and 'delay_ms' in m
                for lv, m, _ in b3_of(mkproj('b3_delay',
                    'void EXTI0_IRQHandler(void)\n{\n    delay_ms(5);\n}\n'))))
+        ck('B3 反例：delay_dwt_init() 是初始化、不是延时，不许误报',
+           not any('delay_dwt_init' in m
+                   for lv, m, _ in b3_of(mkproj('b3_dwt',
+                       'void EXTI0_IRQHandler(void)\n{\n    delay_dwt_init();\n}\n'))))
+        ck('B3 正例：delay_us / delay_cycles / delay_loop 仍判忙等（量纲识别没放松过头）',
+           all(any(lv == '注意' and name in m for lv, m, _ in b3_of(
+                   mkproj('b3_d_' + name, 'void TIM9_IRQHandler(void)\n{\n    %s(1);\n}\n' % name)))
+               for name in ('delay_us', 'delay_cycles', 'delay_loop')))
         ck('B3 错例：ISR 里用浮点判注意',
            any(lv == '注意' and '浮点' in m
                for lv, m, _ in b3_of(mkproj('b3_float',

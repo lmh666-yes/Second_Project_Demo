@@ -61,6 +61,8 @@ private:
     void refreshList();
     void showCard(int cardIndex);
     void updateCounts();
+    /* 复位「模块」筛选（按名字跳 / 报告里点条目名之前都调，免得条目被筛掉） */
+    void resetModuleFilter();
     /* 按条目名跳转（收藏 / 最近 / 相关与联动都走这里） */
     void jumpToName(const QString &name);
 

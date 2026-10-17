@@ -519,6 +519,17 @@ void MainWindow::onRecentClicked()
     menu.exec(m_btnRecent->mapToGlobal(QPoint(0, m_btnRecent->height())));
 }
 
+void MainWindow::resetModuleFilter()
+{
+    /* 模块筛选会把不在该模块里的条目滤掉，导致"明明有却搜不到"。
+       按名字跳 / 报告里点条目名时都要先把它复位。 */
+    if (m_module->currentIndex() != 0) {
+        m_module->blockSignals(true);
+        m_module->setCurrentIndex(0);
+        m_module->blockSignals(false);
+    }
+}
+
 void MainWindow::jumpToName(const QString &name)
 {
     const int idx = m_ds.indexOfName(name);
@@ -539,11 +550,7 @@ void MainWindow::jumpToName(const QString &name)
         m_search->blockSignals(false);
     }
     /* 模块筛选同样可能把它滤掉 */
-    if (m_module->currentIndex() != 0) {
-        m_module->blockSignals(true);
-        m_module->setCurrentIndex(0);
-        m_module->blockSignals(false);
-    }
+    resetModuleFilter();
     refreshList();
 
     const int row = m_shown.indexOf(idx);
@@ -575,6 +582,7 @@ int MainWindow::jumpToTerm(const QString &term)
     m_search->blockSignals(true);
     m_search->setText(t);
     m_search->blockSignals(false);
+    resetModuleFilter();      /* 模块筛选不做的话，不在该模块的条目会被滤掉 → 误报"没有" */
     if (m_section == int(Card::Build))
         onSectionClicked(int(Card::Ref));
     refreshList();

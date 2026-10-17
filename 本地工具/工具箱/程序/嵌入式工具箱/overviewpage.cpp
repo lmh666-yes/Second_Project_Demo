@@ -438,8 +438,10 @@ void OverviewPage::writeSnapshot(const QVariantMap &tools)
     for (auto it = tools.constBegin(); it != tools.constEnd(); ++it)
         obj.insert(it.key(), QJsonValue::fromVariant(it.value()));
 
+    /* 文件名带毫秒：同一秒内连点两次「刷新」会写两份快照，只到秒的话后一份会把前一份
+       覆盖掉 —— 于是 A1 历史回看里少了那一轮、"较上次"还会拿自己跟自己比。 */
     QFile f(QDir(dir).filePath(
-        QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss"))
+        QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss_zzz"))
         + QStringLiteral(".json")));
     if (f.open(QIODevice::WriteOnly))
         f.write(QJsonDocument(obj).toJson(QJsonDocument::Compact));
@@ -597,7 +599,10 @@ void OverviewPage::reloadHistory()
     m_histCombo->clear();
     for (int i = files.size() - 1; i >= 0; --i) {   /* 最新的排最前 */
         const QString base = QFileInfo(files.at(i)).completeBaseName();
-        const QDateTime dt = QDateTime::fromString(base, QStringLiteral("yyyyMMdd_HHmmss"));
+        /* 新快照名带毫秒；老快照（不带毫秒）仍按原格式解析，两边都能显示成时间 */
+        QDateTime dt = QDateTime::fromString(base, QStringLiteral("yyyyMMdd_HHmmss_zzz"));
+        if (!dt.isValid())
+            dt = QDateTime::fromString(base, QStringLiteral("yyyyMMdd_HHmmss"));
         m_histCombo->addItem(dt.isValid()
                                  ? dt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))
                                  : base,
