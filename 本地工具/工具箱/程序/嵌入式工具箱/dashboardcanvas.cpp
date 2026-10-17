@@ -186,7 +186,8 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
     struct Item { QString name; QString detail; QColor col; QString thr; };
     QVector<Item> items;
     /* 与下面 append 顺序一一对应，点卡片按此 key 跳工具页 */
-    static const char *const kCardKeys[] = {"pin", "rtos", "enc", "lora", "protocol", "firmware", "progress"};
+    static const char *const kCardKeys[] = {"pin", "rtos", "enc", "lora", "protocol",
+                                            "firmware", "cache", "progress"};
 
     /* A2 阈值红黄线：数量类指标 1~4 处算「注意」（黄），≥5 处算「严重」（红）。
        阈值取自清单示例「引脚冲突 ≥ 5 处转红」，其余同口径 —— 免得每次自己盯数字。
@@ -199,12 +200,21 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
 
     {
         const QVariantMap m = m_tools.value(QStringLiteral("pin")).toMap();
-        int conflicts = 0;
-        for (const QVariant &b : m.value(QStringLiteral("boards")).toList())
-            conflicts += b.toMap().value(QStringLiteral("conflicts")).toMap().size();
-        items.append({QStringLiteral("引脚规划"),
-                      conflicts ? QStringLiteral("%1 处冲突").arg(conflicts) : QStringLiteral("无冲突"),
-                      level(conflicts), QStringLiteral("1~4 处黄 · ≥5 处红")});
+        int conflicts = 0, dbg = 0;
+        for (const QVariant &b : m.value(QStringLiteral("boards")).toList()) {
+            const QVariantMap bm = b.toMap();
+            conflicts += bm.value(QStringLiteral("conflicts")).toMap().size();
+            dbg += bm.value(QStringLiteral("debug_used")).toList().size();
+        }
+        /* B1：调试口被业务宏占了算严重，卡片直接转红（报告里有专节讲怎么办）。
+           字要短：8 张卡一行，长文本会被裁掉，明细看悬停提示。 */
+        QString detail = conflicts ? QStringLiteral("%1 冲突").arg(conflicts)
+                                   : QStringLiteral("无冲突");
+        if (dbg)
+            detail += QStringLiteral(" · 调试口%1").arg(dbg);
+        items.append({QStringLiteral("引脚规划"), detail,
+                      (dbg || conflicts >= 5) ? pal.err : (conflicts ? pal.warn : pal.ok),
+                      QStringLiteral("1~4 处黄 · ≥5 处红 · 调试口被占即红")});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("rtos")).toMap();
@@ -252,6 +262,18 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
         items.append({QStringLiteral("固件预算"),
                       n ? QStringLiteral("%1 问题").arg(n) : QStringLiteral("正常"),
                       level(n), QStringLiteral("1~4 处黄 · ≥5 处红")});
+    }
+    {
+        const QVariantMap m = m_tools.value(QStringLiteral("cache")).toMap();
+        const int sv = m.value(QStringLiteral("severe")).toInt();
+        const QString hold = m.value(QStringLiteral("hold_text")).toString();
+        /* 只有"补传慢于写入 / 越界 / 记录塞不下"这类才红；扇区粒度与追平时间是固有提示，
+           不该把卡片长期染成黄色（否则天天黄 = 天天没人看）。 */
+        items.append({QStringLiteral("断网缓存"),
+                      hold.isEmpty() ? QStringLiteral("未核算")
+                                     : QStringLiteral("可扛 %1").arg(hold),
+                      sv ? pal.err : pal.ok,
+                      QStringLiteral("补传慢于写入即红")});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("progress")).toMap();

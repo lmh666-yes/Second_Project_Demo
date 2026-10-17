@@ -44,6 +44,7 @@ const ReportDef REPORTS[] = {
     {"LoRa 检查", "检查/LoRa检查/LoRa检查报告.md"},
     {"协议校验", "检查/协议校验/协议校验报告.md"},
     {"固件预算", "检查/固件预算/固件预算报告.md"},
+    {"断网缓存", "检查/断网缓存/断网缓存报告.md"},
 };
 
 /* 可视化取数用的工具表：key = 传给画布的键，rel = 脚本相对工具箱目录。 */
@@ -60,6 +61,7 @@ const ToolDef TOOLS[] = {
     {"lora",     "检查/LoRa检查/lora_check.py"},
     {"protocol", "检查/协议校验/protocol_check.py"},
     {"firmware", "检查/固件预算/firmware_budget.py"},
+    {"cache",    "检查/断网缓存/cache_check.py"},
 };
 
 /* 取报告前若干行做摘要：这些报告的开头都是总览表。 */
@@ -98,6 +100,7 @@ QString pageOfTool(const QString &key)
         {QStringLiteral("lora"),     QStringLiteral("LoRa 检查")},
         {QStringLiteral("protocol"), QStringLiteral("协议校验")},
         {QStringLiteral("firmware"), QStringLiteral("固件预算")},
+        {QStringLiteral("cache"),    QStringLiteral("断网缓存")},
         {QStringLiteral("progress"), QStringLiteral("进度扫描")},
     };
     return pageOf.value(key);

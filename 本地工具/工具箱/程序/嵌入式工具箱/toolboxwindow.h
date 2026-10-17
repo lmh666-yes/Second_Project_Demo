@@ -42,6 +42,7 @@ private:
     QWidget *buildLoraPage();           /* LoRa 检查：配置一致性 / 引脚成对 / 波特率合法 */
     QWidget *buildOtaPage();            /* OTA 台架：包 OTA/tools/ota_send.py 串口直连模式 */
     QWidget *buildFirmwareBudgetPage(); /* 固件预算：分区上限 / 体积 / 固件头与 Intel HEX 复核 */
+    QWidget *buildCachePage();          /* 断网缓存：W25QXX 环形日志容量与补传节奏核算 */
     QWidget *buildScaffoldPage();       /* 工程模板：一键生成 STM32 工程骨架 */
     QWidget *buildFullCheckPage();
     QWidget *buildOverviewPage();

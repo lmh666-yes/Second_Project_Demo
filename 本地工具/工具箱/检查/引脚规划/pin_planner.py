@@ -67,6 +67,9 @@ PORTS = ['A', 'B', 'C', 'D', 'E', 'F', 'G']
 PINS_PER_PORT = 16
 ALL_PINS = set((p, b) for p in PORTS for b in range(PINS_PER_PORT))
 
+# 调试口（SWD/JTAG）：业务宏一旦占了这几脚，就等于自断下载/在线调试通道（B1 判严重）。
+DEBUG_PINS = {'PA13', 'PA14', 'PA15', 'PB3', 'PB4'}
+
 RE_PORT = re.compile(r'^\s*#\s*define\s+([A-Za-z_]\w*?)_PORT\s+(GPIO[A-Z])\s*(?:/\*.*)?$')
 RE_PIN = re.compile(r'^\s*#\s*define\s+([A-Za-z_]\w*?)_PIN\s+((?:GPIO_Pin_\d+)(?:\s*\|\s*GPIO_Pin_\d+)*)\s*(?:/\*.*)?$')
 RE_BIT = re.compile(r'GPIO_Pin_(\d+)')
@@ -509,6 +512,25 @@ def render_board(title, inc_dir, use_list, result):
         out.append('无。')
     out.append('')
 
+    # 调试口被占用（B1）：SWD/JTAG 的脚被业务宏占了，按严重报出。
+    dbg = sorted(((fmt_pin(pb), sorted(set(owners[pb]))) for pb in owners
+                  if fmt_pin(pb) in DEBUG_PINS), key=lambda kv: kv[0])
+    out.append('### 调试口被占用（严重）')
+    out.append('')
+    if dbg:
+        for name, mods in dbg:
+            out.append('- %s ← %s' % (name, '、'.join(mods)))
+        out.append('')
+        out.append('> SWD/JTAG 的脚被业务宏占了，等于自断下载与在线调试通道。'
+                   '**PA13（SWDIO）/ PA14（SWCLK）任何时候都不能动**；'
+                   'PA15（JTDI）/ PB3（JTDO）/ PB4（NJTRST）只有在代码里关掉 JTAG 复用'
+                   '（只保留 SW/D）之后才可用，而且关了就没法用 JTAG 调试。'
+                   '处理方向：① 把业务宏改到别的脚（用上面的无人认领/声明未用脚当候选）；'
+                   '② 确实要用 PB3/PB4 时，明确在代码里关掉 JTAG，并写清取舍。')
+    else:
+        out.append('无。')
+    out.append('')
+
     out.append('### 无人认领引脚')
     out.append('')
     out.append('  ' + '  '.join(fmt_pin(pb) for pb in free) if free else '无。')
@@ -590,6 +612,7 @@ def to_json(results):
                     {'base': base, 'loc': info['loc']})
         decl_unused = sorted(unused_pin_map(bases, scan_unused_decls(
             os.path.dirname(os.path.dirname(inc)), bases)))
+        debug_used = sorted(fmt_pin(pb) for pb in owners if fmt_pin(pb) in DEBUG_PINS)
         boards.append({
             'title': title,
             'files': nfiles,
@@ -597,9 +620,10 @@ def to_json(results):
             'conflicts': conflicts,
             'free': [fmt_pin(pb) for pb in free],
             'decl_unused': decl_unused,
+            'debug_used': debug_used,
             'pin_detail': detail,
         })
-    ok = all(not b['conflicts'] for b in boards)
+    ok = all(not b['conflicts'] and not b['debug_used'] for b in boards)
     return {'tool': 'pin_planner', 'schema': 1, 'ok': ok, 'boards': boards}
 
 
@@ -633,7 +657,8 @@ def selftest():
                 f.write(text)
 
         # 引脚宏：LORA_E22 与 W25QXX 故意抢同一个 PB5；TFT 独占 PC7 且被引用（反例：
-        # 不该被判成"声明未用"）；ADC 只有 _PORT 不成对；ADC_LIGHT 独占 PA3 且无人引用（错例）。
+        # 不该被判成"声明未用"）；ADC 只有 _PORT 不成对；ADC_LIGHT 独占 PA3 且无人引用（错例）；
+        # KEY1 占 PA13（SWDIO）且被引用 —— B1 调试口错例（占了调试口必须报严重）。
         wr(os.path.join(inc, 'pin_cfg.h'),
            '#define LORA_E22_PORT   GPIOB\n'
            '#define LORA_E22_PIN    GPIO_Pin_5\n'
@@ -643,6 +668,8 @@ def selftest():
            '#define TFT_PIN         GPIO_Pin_7\n'
            '#define ADC_LIGHT_PORT  GPIOA\n'
            '#define ADC_LIGHT_PIN   GPIO_Pin_3\n'
+           '#define KEY1_PORT       GPIOA\n'
+           '#define KEY1_PIN        GPIO_Pin_13\n'
            '#define ADC_PORT        GPIOA\n')
         wr(os.path.join(inc, 'prio_cfg.h'),
            '#define SYS_USART1_PRE_PRIO  4\n'
@@ -665,7 +692,8 @@ def selftest():
            '#define FOO_DMA_IRQ      DMA1_Stream5_IRQn\n'
            '#define BAR_DMA_STREAM   DMA2_Stream3\n')
         wr(os.path.join(src, 'a.c'),
-           'void Bsp_A_Init(void) { DMA_DeInit(DMA2_Stream0); GPIO_Init(TFT_PORT, &cfg); }\n')
+           'void Bsp_A_Init(void) { DMA_DeInit(DMA2_Stream0); GPIO_Init(TFT_PORT, &cfg); '
+           'GPIO_Init(KEY1_PORT, &cfg); }\n')
         wr(os.path.join(src, 'b.c'),
            'void Bsp_B_Init(void) { DMA_DeInit(DMA2_Stream0); p->dma_ch = DMA_Channel_2; }\n')
         wr(os.path.join(src, 'c.c'),
@@ -684,8 +712,8 @@ def selftest():
            len(conflicts) == 1 and sorted(conflicts[0][1]) == ['LORA_E22', 'W25QXX'],
            '、'.join(conflicts[0][1]) if conflicts else '无')
         ck('不成对的宏被列出（ADC）', unpaired == ['ADC'], '、'.join(unpaired) or '无')
-        ck('模块与占用脚计数正确（4 个模块 / 3 个脚）',
-           len(bases) == 4 and len(owners) == 3 and nfiles == 3,
+        ck('模块与占用脚计数正确（5 个模块 / 4 个脚）',
+           len(bases) == 5 and len(owners) == 4 and nfiles == 3,
            '%d / %d / %d' % (len(bases), len(owners), nfiles))
 
         max_syscall = read_max_syscall(os.path.join(cfgdir, 'FreeRTOSConfig.h'))
@@ -705,6 +733,11 @@ def selftest():
         ck('方案检查报出选中模块之间的冲突',
            '选中模块之间的冲突' in txt and 'PB5' in txt and 'LORA_E22' in txt)
         ck('报告渲染不炸且含中断资源表', '### 中断资源' in txt and 'USART1_IRQn' in txt)
+
+        # B1 调试口被占：错例（PA13 ← KEY1 必须报严重并写进报告）/
+        # 反例（业务脚 PB5 / PC7 / PA3 不该被算成调试口）
+        ck('调试口被占被判严重（PA13 ← KEY1）且写进报告',
+           '### 调试口被占用（严重）' in txt and '- PA13 ← KEY1' in txt)
 
         # A3 声明了但没人用：错例（三个没人引用的基名必须被抓到）/
         # 反例（被 a.c 引用的 TFT 必须不报，不能把"用过"的也算成僵尸）
@@ -758,6 +791,24 @@ def selftest():
            and 'PB5' in j['boards'][0]['decl_unused']
            and 'PC7' not in j['boards'][0]['decl_unused'],
            str(j['boards'][0]['decl_unused']))
+        ck('JSON 带调试口占用（debug_used == [PA13]）且整板 ok 为 False',
+           j['boards'][0]['debug_used'] == ['PA13'] and j['ok'] is False,
+           str(j['boards'][0]['debug_used']))
+        ck('反例：业务脚 PB5 / PC7 / PA3 不算调试口误报',
+           not ({'PB5', 'PC7', 'PA3'} & set(j['boards'][0]['debug_used'])),
+           str(j['boards'][0]['debug_used']))
+        # B6 JSON 契约：面板读 occupied/conflicts/free/decl_unused/debug_used/pin_detail，
+        # 字段一漂移（今天修过的那类问题）这里先红
+        ck('JSON 契约：面板读取的字段名/类型都在',
+           set(j) == {'tool', 'schema', 'ok', 'boards'}
+           and set(j['boards'][0]) == {'title', 'files', 'occupied', 'conflicts', 'free',
+                                       'decl_unused', 'debug_used', 'pin_detail'}
+           and isinstance(j['boards'][0]['conflicts'], dict)
+           and isinstance(j['boards'][0]['free'], list)
+           and isinstance(j['boards'][0]['decl_unused'], list)
+           and isinstance(j['boards'][0]['debug_used'], list)
+           and isinstance(j['boards'][0]['pin_detail'], dict),
+           '、'.join(sorted(j['boards'][0])))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

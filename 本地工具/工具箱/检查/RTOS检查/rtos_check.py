@@ -111,6 +111,24 @@ ISR_UNSAFE_CRITICAL = {
 # STM32F4 擦一个 64KB 扇区约 1s 量级，留够余量（擦 + 写 + 校验）。
 WDG_SAFE_MS = 8000
 
+# B3：中断里干"又慢又不可重入"的活 —— printf 家族与堆分配。
+# printf 会一路走到串口阻塞（中断里等 TXE 等于丢掉实时性），堆分配在 FreeRTOS 里
+# 要挂起调度器才安全，ISR 里直接调会破坏堆结构。
+ISR_REENTRANT_RISK = {
+    'printf', 'sprintf', 'snprintf', 'vsnprintf', 'vprintf', 'fprintf',
+    'puts', 'putchar', 'fputc',
+    'malloc', 'calloc', 'realloc', 'free', 'pvPortMalloc', 'vPortFree',
+}
+
+# B3：中断里的忙等延时（时长由参数决定，运行时关不掉）。
+# 这里按名字判：delay_* 系列与 HAL_Delay；新版项目若改名，改这一处即可。
+ISR_BUSY_DELAY_PREFIX = ('delay_', 'Delay_', 'SYS_DELAY_', 'SYS_Delay')
+ISR_BUSY_DELAY = {'HAL_Delay', 'delay_ms_dwt'}
+
+# B3：中断里用浮点 —— Cortex-M4 的 ISR 默认不保存 FPU 寄存器（惰性压栈），
+# 在 ISR 里做浮点运算要额外确认 FPU 上下文；改用定点最省心。
+RE_FLOAT_USE = re.compile(r'\b(?:float|double)\b|\d+\.\d+[fF]?')
+
 # 工程里会做长耗时 Flash 擦写的接口（定义在 FWLIB/sys_flash.c，这里只认"调用"）
 FLASH_LONG_OPS = ('SYS_FLASH_EraseSector', 'SYS_FLASH_ErasePage',
                   'SYS_FLASH_SaveParams', 'SYS_FLASH_Write')
@@ -173,6 +191,13 @@ PRINCIPLE = {
                  '（< 8s）又做长擦写时，务必在擦除前后各 SYS_WDG_Feed() 一次，'
                  '或把超时放到 8s 以上（IWDG 最大约 32.8s）。'
                  '探针判"没把握喂狗"只是提示，人工确认擦除路径上有喂狗即可忽略。',
+    'isr_cost': 'ISR 里别做长耗时或不可重入的活：printf 会一路阻塞到串口把整串发完，'
+                '堆分配（malloc / pvPortMalloc）在 FreeRTOS 下要先挂起调度器才安全；'
+                '忙等延时（delay_*）的时长由参数决定、运行时关不掉。'
+                '正确做法是在 ISR 里只置标志 / 投消息，把打印与分配放到任务里做。',
+    'isr_float': 'Cortex-M4 的 ISR 默认不保存 FPU 寄存器（靠惰性压栈），ISR 里做浮点运算'
+                 '要额外确认：要么改成定点（本项目线上传定点整数就是为这个），'
+                 '要么明确 portTASK_USES_FLOATING_POINT 与 FPU 上下文的取舍。',
 }
 
 
@@ -400,6 +425,16 @@ def risky_api(api):
     return None
 
 
+def isr_costly_call(api):
+    """B3：中断上下文里"长耗时 / 不可重入"的调用。返回 (等级, 原因) 或 (None, '')。"""
+    if api in ISR_REENTRANT_RISK:
+        return '严重', ('它在 ISR 里既慢又不可重入 —— printf 会一路阻塞到串口发完，'
+                        '堆分配在 FreeRTOS 下要先挂起调度器才安全')
+    if api in ISR_BUSY_DELAY or api.startswith(ISR_BUSY_DELAY_PREFIX):
+        return '注意', '它是忙等延时，时长由参数决定、运行时关不掉，会把中断响应拖长'
+    return None, ''
+
+
 RE_IRQ_SET = re.compile(r'SYS_NVIC_SetPriority\s*\(\s*([A-Za-z_]\w*)\s*,\s*'
                         r'([A-Za-z_]\w*|\d+)\s*,\s*([A-Za-z_]\w*|\d+)\s*\)')
 RE_IRQ_CH = re.compile(r'NVIC_IRQChannel\s*=\s*([A-Za-z_]\w*)')
@@ -565,6 +600,12 @@ def check_board(title, proj):
             continue
         isr_rel, isr_line, isr_body = defs[0]
         loc = '%s:%d' % (isr_rel, isr_line)
+        # B3：ISR 自己的函数体里用了浮点（关键字或浮点字面量）
+        if RE_FLOAT_USE.search(isr_body):
+            findings.append(('注意', loc,
+                             'ISR（%s）函数体里用了浮点：Cortex-M4 的 ISR 默认不保存 FPU 寄存器'
+                             '（惰性压栈），要么改成定点运算，要么确认 FPU 上下文与 '
+                             'portTASK_USES_FLOATING_POINT 的取舍' % isr_name, 'isr_float'))
         queue = [(isr_body, [(isr_name, isr_rel, isr_line)], 0)]
         for _ in range(500):        # 防失控上限，正常调用链远到不了
             if not queue:
@@ -590,6 +631,20 @@ def check_board(title, proj):
                         msg = 'ISR 上下文（%s）经 %s 转发调用了 %s%s' % (
                             isr_name, hops, api, suffix)
                     findings.append((lv, loc, msg, 'isr_api'))
+                    continue
+                clv, cwhy = isr_costly_call(api)
+                if clv:
+                    key = (loc, 'costly:' + api, tuple(c[0] for c in chain))
+                    if key in reported:
+                        continue
+                    reported.add(key)
+                    if len(chain) == 1:
+                        msg = 'ISR 上下文（%s）里调用了 %s：%s' % (isr_name, api, cwhy)
+                    else:
+                        hops = ' → '.join('%s(%s:%d)' % (c[0], c[1], c[2]) for c in chain[1:])
+                        msg = 'ISR 上下文（%s）经 %s 转发调用了 %s：%s' % (
+                            isr_name, hops, api, cwhy)
+                    findings.append((clv, loc, msg, 'isr_cost'))
                     continue
                 mb = macros.get(api)
                 if mb is not None:
@@ -1023,12 +1078,53 @@ def selftest():
            'void SYS_WDG_Init(uint32_t ms)\n{\n    (void)ms;\n}\n')
         ck('反例：sys_wdg.c / sys_flash.c 里的实现本身不算"在用"', not fires(lib_proj))
 
+        # ---- B3：中断里的长耗时 / 不可重入调用 + 浮点 ----
+        def b3_of(proj):
+            """只挑 B3 两类（isr_cost / isr_float），避免被无关规则（如 NVIC 分组提示）干扰。"""
+            _, ff, _ = check_board('x', proj)
+            return [(lv, m, k) for lv, _, m, k in ff if k in ('isr_cost', 'isr_float')]
+
+        ck('B3 错例：ISR 里调 printf 判严重',
+           any(lv == '严重' and 'printf' in m
+               for lv, m, _ in b3_of(mkproj('b3_printf',
+                   'void USART1_IRQHandler(void)\n{\n    printf("x=%d\\n", g);\n}\n'))))
+        ck('B3 错例：ISR 里调 pvPortMalloc 判严重',
+           any(lv == '严重' and 'pvPortMalloc' in m
+               for lv, m, _ in b3_of(mkproj('b3_malloc',
+                   'void TIM2_IRQHandler(void)\n{\n    p = pvPortMalloc(8);\n}\n'))))
+        ck('B3 错例：ISR 里调忙等延时判注意',
+           any(lv == '注意' and 'delay_ms' in m
+               for lv, m, _ in b3_of(mkproj('b3_delay',
+                   'void EXTI0_IRQHandler(void)\n{\n    delay_ms(5);\n}\n'))))
+        ck('B3 错例：ISR 里用浮点判注意',
+           any(lv == '注意' and '浮点' in m
+               for lv, m, _ in b3_of(mkproj('b3_float',
+                   'void TIM3_IRQHandler(void)\n{\n    float v = 1.5f;\n    g = (int)v;\n}\n'))))
+        ck('B3 反例：任务态函数里调 printf / delay / 浮点都不报',
+           not b3_of(mkproj('b3_ok',
+               'void App_Print(void)\n{\n    printf("ok\\n");\n'
+               '    delay_ms(1);\n    float v = 2.5f;\n    (void)v;\n}\n')))
+        ck('B3 反例：ISR 里只置标志 + FromISR 投递 → 不报',
+           not b3_of(mkproj('b3_pos',
+               'void TIM4_IRQHandler(void)\n{\n    g_flag = 1;\n'
+               '    xQueueSendFromISR(q, &d, &w);\n}\n')))
+
         j = to_json([('板X', None, [('严重', 'loc', 'msg', 'assert')], [('f.c', 1, 't', 128, 3)])])
         ck('JSON 结构正确（工具名/板数/ok）',
            j['tool'] == 'rtos_check' and len(j['boards']) == 1 and j['ok'] is False)
         ck('JSON 任务与 findings 映射正确',
            j['boards'][0]['tasks'][0]['name'] == 't' and j['boards'][0]['tasks'][0]['prio'] == 3
            and j['boards'][0]['findings'][0]['key'] == 'assert')
+        # B6 JSON 契约：面板读 severe/warn/tasks，字段名/类型一改就红
+        ck('JSON 契约：面板读取的字段名/类型都在',
+           set(j) == {'tool', 'schema', 'ok', 'boards'}
+           and set(j['boards'][0]) == {'title', 'severe', 'warn', 'config',
+                                       'tasks', 'findings'}
+           and isinstance(j['boards'][0]['severe'], int)
+           and isinstance(j['boards'][0]['warn'], int)
+           and set(j['boards'][0]['tasks'][0]) == {'file', 'line', 'name', 'stack', 'prio'}
+           and set(j['boards'][0]['findings'][0]) == {'level', 'loc', 'msg', 'key'},
+           '、'.join(sorted(j['boards'][0])))
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

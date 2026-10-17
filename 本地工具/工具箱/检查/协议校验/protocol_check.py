@@ -17,6 +17,11 @@ r"""协议端到端校验（幂等，只读源码，不改任何文件）。
   5) CRC 范围：组帧与校验是否都覆盖 CMD+LEN+DATA（不含帧头/帧尾）
   6) 帧头帧尾是否互为反序（0xAA55 ↔ 0x55AA）
   7) 文件编码是否可识别
+  8) 帧长 vs 上限（B2）：各 `*_LEN` 是否 <= SYS_FRAME_MAX_PAYLOAD、各 `*_OFF`
+     是否落在数据段内；收帧缓冲是否按 MAX_PAYLOAD 定尺、组帧/收帧是否有按
+     MAX_PAYLOAD 的长度上界护栏、帧长是否按 OVERHEAD 算
+  9) 两板命令字表（B2）：同名命令字取值是否一致、同板内是否"撞车"（两个名字
+     同一个值）；只在一板出现的命令字列进报告对照表，不算问题（两板角色不同）
 
 报告写到脚本同目录的 协议校验报告.md，并在控制台打印摘要。
 
@@ -99,6 +104,15 @@ ENV_OFFSET_MACROS = [
 RE_DEFINE_HEX = re.compile(r'^\s*#\s*define\s+([A-Za-z_]\w*)\s+(0x[0-9A-Fa-f]+|\d+)U?')
 RE_DEFINE_NUM = re.compile(r'^\s*#\s*define\s+([A-Za-z_]\w*)\s+(\d+)U?')
 
+# B2：命令字 / 帧数据段长度 / 字段偏移 三类宏（用于命令字表对照与上限核算）
+RE_CMD_NAME = re.compile(r'^SYS_FRAME_(?:CMD_\w+|\w+_CMD)$')
+RE_LEN_NAME = re.compile(r'^SYS_FRAME_\w+_LEN$')
+RE_OFF_NAME = re.compile(r'^SYS_FRAME_\w+_OFF$')
+# 收帧缓冲按 MAX_PAYLOAD 定尺（如 data[SYS_FRAME_MAX_PAYLOAD]）
+RE_C_SIZED = re.compile(r'\[[^\]]*SYS_FRAME_MAX_PAYLOAD[^\]]*\]')
+# 长度上界护栏：if (len > SYS_FRAME_MAX_PAYLOAD) 这类比较
+RE_C_GUARD = re.compile(r'if\s*\([^)]{0,120}SYS_FRAME_MAX_PAYLOAD')
+
 
 def read_text(path):
     if not os.path.exists(path):
@@ -114,21 +128,43 @@ def read_text(path):
 
 
 def parse_header(text):
-    """解析 sys_frame.h，返回 (宏值字典, 问题列表)。"""
+    """解析 sys_frame.h，返回 (关键常量, B2 宏表, 问题列表)。
+
+    B2 宏表收三类：命令字（SYS_FRAME_CMD_* / SYS_FRAME_*_CMD）、
+    帧数据段长度（SYS_FRAME_*_LEN）、字段偏移（SYS_FRAME_*_OFF）。
+    取值写成宏表达式（如 ACK_CMD = CMD_REPLAY | ACK_FLAG）的，静态算不出数值，
+    直接跳过不猜。"""
     vals = {}
+    extra = {}
     issues = []
     for i, line in enumerate(text.splitlines(), 1):
         m = RE_DEFINE_HEX.match(line)
         if not m:
             m = RE_DEFINE_NUM.match(line)
-        if m:
-            k, v = m.group(1), m.group(2)
-            if k in PROTOCOL_MACROS or k in ENV_OFFSET_MACROS:
-                try:
-                    vals[k] = int(v, 0)
-                except ValueError:
-                    issues.append(('宏解析失败', '%s = %s（第 %d 行）' % (k, v, i)))
-    return vals, issues
+        if not m:
+            continue
+        k, v = m.group(1), m.group(2)
+        try:
+            num = int(v, 0)
+        except ValueError:
+            issues.append(('宏解析失败', '%s = %s（第 %d 行）' % (k, v, i)))
+            continue
+        if k in PROTOCOL_MACROS or k in ENV_OFFSET_MACROS:
+            vals[k] = num
+        elif RE_CMD_NAME.match(k) or RE_LEN_NAME.match(k) or RE_OFF_NAME.match(k):
+            extra[k] = num
+    return vals, extra, issues
+
+
+def cmd_table_of(vals, extra):
+    """命令字表：extra 里的 CMD_* 宏 + vals 里被列为关键常量的命令字
+    （SYS_FRAME_CMD_ENV 属 PROTOCOL_MACROS，落在 vals 里，必须一并算进来，
+    否则"同名不同值 / 撞车"会漏判）。"""
+    d = {k: v for k, v in extra.items() if RE_CMD_NAME.match(k)}
+    for k, v in vals.items():
+        if RE_CMD_NAME.match(k):
+            d[k] = v
+    return d
 
 
 def parse_c_byteorder(text):
@@ -169,9 +205,9 @@ def check_board(name, h_path, c_path):
     h_text, h_enc = read_text(h_path)
     if h_text is None:
         findings.append(('严重', h_path, '头文件缺失', 'protocol'))
-        return {'findings': findings, 'vals': {}}
+        return {'findings': findings, 'vals': {}, 'extra': {}}
 
-    vals, h_issues = parse_header(h_text)
+    vals, extra, h_issues = parse_header(h_text)
     for iss in h_issues:
         findings.append(('注意', h_path, iss[1], 'protocol'))
 
@@ -216,13 +252,41 @@ def check_board(name, h_path, c_path):
                              'CRC 计算范围疑似未覆盖 CMD+LEN+DATA（frame_crc16 调用: %s）'
                              % str(crc_calls), 'protocol'))
 
-    return {'findings': findings, 'vals': vals}
+    # B2 —— 帧长 vs 上限：各命令帧声明的数据段长度 / 字段偏移是否落在上限内
+    maxp = vals.get('SYS_FRAME_MAX_PAYLOAD')
+    if maxp:
+        for k in sorted(extra):
+            v = extra[k]
+            if RE_LEN_NAME.match(k) and v > maxp:
+                findings.append(('严重', h_path,
+                                 '%s = %d 超过 SYS_FRAME_MAX_PAYLOAD(%d)：收帧缓冲装不下这条数据段'
+                                 % (k, v, maxp), 'frame_len'))
+            if RE_OFF_NAME.match(k) and v >= maxp:
+                findings.append(('严重', h_path,
+                                 '%s = %d 不在数据段范围内（上限 %d）' % (k, v, maxp),
+                                 'frame_len'))
+        # B2 —— 收帧缓冲定尺 / 组帧收帧上界护栏 / 帧长按 OVERHEAD 算
+        if c_text is not None:
+            if not RE_C_SIZED.search(c_text):
+                findings.append(('严重', c_path,
+                                 '收帧缓冲没有按 SYS_FRAME_MAX_PAYLOAD 定尺（数据段最长 %d 字节）'
+                                 % maxp, 'frame_len'))
+            if not RE_C_GUARD.search(c_text):
+                findings.append(('严重', c_path,
+                                 '找不到"长度 > SYS_FRAME_MAX_PAYLOAD 就拒绝"的上界护栏',
+                                 'frame_len'))
+            if 'SYS_FRAME_OVERHEAD' not in c_text:
+                findings.append(('严重', c_path,
+                                 '帧长没有按 SYS_FRAME_OVERHEAD 计算', 'frame_len'))
+
+    return {'findings': findings, 'vals': vals, 'extra': extra}
 
 
 def run(root, quiet=False):
     findings = []
     details = []
     all_vals = []
+    all_extra = []
 
     for name, h_rel, c_rel in BOARDS:
         h_path = os.path.join(root, h_rel)
@@ -230,11 +294,13 @@ def run(root, quiet=False):
         d = check_board(name, h_path, c_path)
         findings.extend(d['findings'])
         all_vals.append((name, d['vals']))
+        all_extra.append((name, d['extra']))
         details.append({
             'board': name,
             'h_file': h_rel,
             'c_file': c_rel,
             'macros': d['vals'],
+            'cmd_table': cmd_table_of(d['vals'], d['extra']),
             'issues': len(d['findings']),
         })
 
@@ -254,6 +320,24 @@ def run(root, quiet=False):
                 findings.append(('严重', '%s ↔ %s' % (n1, n2),
                                  '字段偏移 %s 不一致：%s=%d / %s=%d'
                                  % (macro, n1, a, n2, b), 'protocol'))
+
+        # B2 —— 两板命令字表：同名取值必须一致；同板内两个名字同值 = 撞车
+        cmds1 = cmd_table_of(all_vals[0][1], all_extra[0][1])
+        cmds2 = cmd_table_of(all_vals[1][1], all_extra[1][1])
+        for k in sorted(set(cmds1) & set(cmds2)):
+            if cmds1[k] != cmds2[k]:
+                findings.append(('严重', '%s ↔ %s' % (n1, n2),
+                                 '命令字 %s 不一致：%s=0x%02X / %s=0x%02X'
+                                 % (k, n1, cmds1[k], n2, cmds2[k]), 'cmd_table'))
+        for nm, cmds in ((n1, cmds1), (n2, cmds2)):
+            rev = {}
+            for k, v in sorted(cmds.items()):
+                rev.setdefault(v, []).append(k)
+            for v, ks in sorted(rev.items()):
+                if len(ks) > 1:
+                    findings.append(('严重', nm,
+                                     '命令字撞车：%s 都是 0x%02X，对端无法区分'
+                                     % (' 与 '.join(ks), v), 'cmd_table'))
 
     ok = not any(f[0] == '严重' for f in findings)
 
@@ -282,7 +366,27 @@ def run(root, quiet=False):
         s1 = '0x%02X' % v1 if v1 is not None else '—'
         s2 = '0x%02X' % v2 if v2 is not None else '—'
         match = '✓' if v1 == v2 and v1 is not None else ('✗' if v1 != v2 else '?')
-        lines.append('| %s | %s | %s | %s' % (macro, s1, s2, match))
+        lines.append('| %s | %s | %s | %s |' % (macro, s1, s2, match))
+    lines.append('')
+
+    # B2：命令字表（只在一板出现的列出来，但不算问题——两板角色不同）
+    c1 = cmd_table_of(all_vals[0][1], all_extra[0][1])
+    c2 = cmd_table_of(all_vals[1][1], all_extra[1][1])
+    lines.append('## 命令字表')
+    lines.append('| 命令字 | %s | %s | 说明 |' % (all_vals[0][0], all_vals[1][0]))
+    lines.append('|------|------|------|------|')
+    for k in sorted(set(c1) | set(c2)):
+        s1 = '0x%02X' % c1[k] if k in c1 else '—'
+        s2 = '0x%02X' % c2[k] if k in c2 else '—'
+        if k in c1 and k in c2:
+            note = '一致' if c1[k] == c2[k] else '**不一致**'
+        else:
+            only = all_vals[0][0] if k in c1 else all_vals[1][0]
+            note = '只在 %s 出现（两板角色不同，未必是错；对端若要认这条命令字就得补齐）' % only
+        lines.append('| %s | %s | %s | %s |' % (k, s1, s2, note))
+    lines.append('')
+    lines.append('> 只在一板出现不算问题：板2 收上位机的控制命令，板1 不需要解析它们。'
+                 '真正要抓的是"同名取值不一致"和同板内"两个命令字同值"。')
     lines.append('')
 
     out_dir = os.path.dirname(os.path.abspath(__file__))
@@ -319,6 +423,7 @@ def selftest():
             '#define SYS_FRAME_OVERHEAD      8U\n'
             '#define SYS_FRAME_MAX_PAYLOAD   64U\n'
             '#define SYS_FRAME_CMD_ENV       0x01U\n'
+            '#define SYS_FRAME_CMD_QUERY     0x12U\n'
             '#define SYS_FRAME_ENV_LEN       0x0CU\n'
             '#define SYS_FRAME_ENV_TEMP_OFF   0U\n'
             '#define SYS_FRAME_ENV_HUMI_OFF   2U\n'
@@ -328,19 +433,34 @@ def selftest():
             '#define SYS_FRAME_ENV_MQ135_OFF 10U\n'
         )
 
-        # 板1：标准
+        # 板1：标准 + 三个 B2 错例 ——
+        #   CMD_ALIAS 与 CMD_ENV 同值（同板命令字撞车）
+        #   BIG_LEN 80 > MAX_PAYLOAD 64（数据段超上限）
+        #   BIG_OFF 64 不在数据段内（偏移越界）
+        h_extra_bad = (
+            '#define SYS_FRAME_CMD_ALIAS   0x01U\n'
+            '#define SYS_FRAME_BIG_LEN     80U\n'
+            '#define SYS_FRAME_BIG_OFF     64U\n'
+        )
         with open(os.path.join(base1, 'sys_frame.h'), 'w', encoding='utf-8', newline='\n') as f:
-            f.write(h_common)
+            f.write(h_common + h_extra_bad)
 
-        # 板2：TEMP 偏移改为 1（模拟不一致）
+        # 板2：TEMP 偏移改为 1（模拟字段偏移不一致）+ QUERY 命令字改成 0x13
+        #   （模拟"同名命令字两板取值不一致"）
         with open(os.path.join(base2, 'sys_frame.h'), 'w', encoding='utf-8', newline='\n') as f:
             f.write(h_common.replace('#define SYS_FRAME_ENV_TEMP_OFF   0U',
-                                       '#define SYS_FRAME_ENV_TEMP_OFF   1U'))
+                                     '#define SYS_FRAME_ENV_TEMP_OFF   1U')
+                           .replace('#define SYS_FRAME_CMD_QUERY     0x12U',
+                                    '#define SYS_FRAME_CMD_QUERY     0x13U'))
 
+        # 反例素材：c 里收帧缓冲按 MAX_PAYLOAD 定尺、有上界护栏、帧长按 OVERHEAD 算
         c_common = (
+            'static uint8_t g_rx[SYS_FRAME_MAX_PAYLOAD];\n'
             'static void frame_put_u16_be(uint8_t *p, uint16_t v) { p[0]=v>>8; p[1]=v; }\n'
             'static uint16_t frame_get_u16_be(const uint8_t *p) { return (p[0]<<8)|p[1]; }\n'
             'uint16_t SYS_FRAME_Build(uint8_t cmd, const uint8_t *payload, uint16_t len, uint8_t *out, uint16_t cap) {\n'
+            '    if (len > SYS_FRAME_MAX_PAYLOAD) return 0U;\n'
+            '    if (cap < (uint16_t)(len + SYS_FRAME_OVERHEAD)) return 0U;\n'
             '    crc = frame_crc16(&out[2], len+2);\n'
             '    return len+8;\n'
             '}\n'
@@ -373,6 +493,34 @@ def selftest():
 
         ck('能发现字段偏移不一致', any('SYS_FRAME_ENV_TEMP_OFF' in m and '不一致' in m for m in msgs))
         ck('自检时报告不通过', not ok)
+        ck('能发现命令字跨板不一致（QUERY 0x12 vs 0x13）',
+           any('命令字' in m and 'QUERY' in m and '不一致' in m for m in msgs))
+        ck('能发现同板命令字撞车（CMD_ALIAS 与 CMD_ENV 同为 0x01）',
+           any('撞车' in m and 'CMD_ALIAS' in m for m in msgs))
+        ck('能发现数据段长度超上限（BIG_LEN 80 > MAX_PAYLOAD 64）',
+           any('BIG_LEN' in m and '超过' in m for m in msgs))
+        ck('能发现字段偏移越出数据段（BIG_OFF = 64）',
+           any('BIG_OFF' in m and '不在数据段' in m for m in msgs))
+        ck('反例：收帧缓冲按 MAX_PAYLOAD 定尺 / 有上界护栏 / 帧长按 OVERHEAD 算 → 不误报',
+           not any(('没有按 SYS_FRAME_MAX_PAYLOAD 定尺' in m) or ('上界护栏' in m)
+                   or ('OVERHEAD 计算' in m) for m in msgs))
+        ck('反例：合规的 ENV_LEN 与 ENV 字段偏移不误报',
+           not any('SYS_FRAME_ENV_LEN' in m for m in msgs))
+
+        # B6 JSON 契约：面板读 boards[].issues 与 findings，字段名/类型一改就红
+        _, j_findings, j_details = run(d, quiet=True)
+        j = {'tool': 'protocol_check', 'schema': '1.0',
+             'ok': not any(f[0] == '严重' for f in j_findings),
+             'boards': j_details,
+             'findings': [{'lvl': f[0], 'loc': f[1], 'msg': f[2], 'cat': f[3]}
+                          for f in j_findings]}
+        ck('JSON 契约：面板读取的字段名/类型都在',
+           set(j) == {'tool', 'schema', 'ok', 'boards', 'findings'}
+           and set(j['boards'][0]) == {'board', 'h_file', 'c_file', 'macros',
+                                       'cmd_table', 'issues'}
+           and isinstance(j['boards'][0]['issues'], int)
+           and isinstance(j['findings'], list)
+           and set(j['findings'][0]) == {'lvl', 'loc', 'msg', 'cat'})
 
         for name, passed in checks:
             print('    [%s] %s' % ('PASS' if passed else 'FAIL', name))

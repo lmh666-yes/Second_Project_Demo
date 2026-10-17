@@ -359,6 +359,13 @@ def selftest():
         ck('JSON 含引脚对与数值宏',
            j['boards'][0]['pins'].get('SYS_LORA_M0') == ['GPIOB', 'GPIO_Pin_0']
            and j['boards'][0]['nums'].get('SYS_LORA_BAUD') == 9600)
+        # B6 JSON 契约：面板读的字段名/类型固化（字段一改名，这里先红）
+        ck('JSON 契约：顶层与板级字段名/类型都在',
+           set(j) == {'tool', 'schema', 'ok', 'boards', 'cross'}
+           and all(set(b) == {'title', 'issues', 'nums', 'pins'} for b in j['boards'])
+           and isinstance(j['boards'][0]['issues'], list)
+           and isinstance(j['cross'], list),
+           '、'.join(sorted(j)) + ' / ' + '、'.join(sorted(j['boards'][0])))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

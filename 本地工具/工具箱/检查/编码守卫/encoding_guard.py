@@ -86,6 +86,14 @@ EXCLUDE_DIR = {
 }
 EXCLUDE_FILE = re.compile(r'(^qcustomplot\.|^moc_|^ui_|^rcc_|Makefile$)')
 
+# B4：注释体检（单独一节，仅提示，不计入违规）
+#  · 全角标点：中文注释的习惯写法，不影响编译，列出来是为了统一风格时有个清单；
+#  · GBK / 乱码残留：UTF-8 字节被当 GBK 解出来的经典签名（如"锟斤拷"），这才是真损坏；
+#  · 替换字符 U+FFFD：已经按"乱码"计入违规，这里再按"注释区"点一次名便于定位。
+FULLWIDTH_PUNCT = set('，。！？；：、（）【】《》“”‘’…—～·〈〉「」『』')
+GBK_MOJIBAKE_SIGNS = ('锟斤拷', '锟')
+CODE_EXT = {'.c', '.h', '.cpp', '.hpp', '.cc', '.hh'}
+
 # Keil 复编日志（内存快照来源）。路径相对脚本自身定位，工具箱整体挪动后仍然有效；
 # 找不到时会在报告里显式提示，而不是静默留空。
 # (标题, 日志文件名候选, 芯片 Flash KB, 芯片 RAM KB)
@@ -169,6 +177,62 @@ def git_index_eol():
     return mp, True
 
 
+def comment_text(text):
+    """抽出 C 系源码里的注释区文本（// 整行 与 /* */ 块），字符串与代码都跳过。
+    B4 只在这些区域里查乱码与全角标点 —— 代码区出现全角标点属于语法问题，
+    由编译器直接拦，不必在这儿判。"""
+    chunks = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '/' and i + 1 < n and text[i + 1] == '/':
+            j = i
+            while i < n and text[i] != '\n':
+                i += 1
+            chunks.append(text[j:i])
+        elif c == '/' and i + 1 < n and text[i + 1] == '*':
+            j = i
+            i += 2
+            while i < n and not (text[i] == '*' and i + 1 < n and text[i + 1] == '/'):
+                i += 1
+            i = min(i + 2, n)
+            chunks.append(text[j:i])
+        elif c == '"' or c == "'":
+            q = c
+            i += 1
+            while i < n and text[i] != q:
+                if text[i] == '\\' and i + 1 < n:
+                    i += 2
+                else:
+                    i += 1
+            i += 1
+        else:
+            i += 1
+    return '\n'.join(chunks)
+
+
+def comment_notes(text, ext):
+    """B4：注释区的提示项。返回 [( '注释', 说明 )]，没有就返回空。"""
+    if ext not in CODE_EXT:
+        return []
+    cet = comment_text(text)
+    if not cet:
+        return []
+    notes = []
+    fw = sorted({ch for ch in cet if ch in FULLWIDTH_PUNCT})
+    if fw:
+        notes.append(('注释', '注释里用了全角标点 %s（中文注释的习惯写法，不影响编译）'
+                      % ''.join(fw)))
+    bad = sum(cet.count(s) for s in GBK_MOJIBAKE_SIGNS)
+    if bad:
+        notes.append(('注释', '注释里出现 %d 处 GBK / 乱码残留签名（如"锟斤拷"），'
+                      '多半是编码转换留下的，建议重打这段注释' % bad))
+    rep = cet.count('\ufffd')
+    if rep:
+        notes.append(('注释', '注释区有 %d 个替换字符 U+FFFD（乱码残留）' % rep))
+    return notes
+
+
 def check_file(path, index_eol, do_eol):
     issues = []
     with open(path, 'rb') as f:
@@ -205,6 +269,8 @@ def check_file(path, index_eol, do_eol):
                 as_utf8 = None
             if as_utf8 is not None and re.search(r'[\u4e00-\u9fff]', as_utf8):
                 issues.append(('编码', '可按 GBK 解码，但内容更像 UTF-8（含中文），疑似被另存为 UTF-8'))
+        # B4：注释区体检（kind = '注释'，由 main 分拣出去，不计入违规）
+        issues.extend(comment_notes(text, os.path.splitext(path)[1].lower()))
 
     if do_eol and index_eol:
         rel = os.path.relpath(path, ROOT).replace('\\', '/')
@@ -230,7 +296,7 @@ def keil_snapshot():
     return rows, missing
 
 
-def render(scanned, bad_files, enc_stat, do_eol):
+def render(scanned, bad_files, enc_stat, do_eol, comment_list=None):
     out = ['# 编码守卫报告', '',
            '来源：`encoding_guard.py`（只读扫描，可重复运行）', '']
     out.append('## 0. 总览')
@@ -256,6 +322,28 @@ def render(scanned, bad_files, enc_stat, do_eol):
         for rel, issues in bad_files:
             for kind, detail in issues:
                 out.append('| `%s` | %s | %s |' % (rel, kind, detail.replace('|', '\\|')))
+        out.append('')
+
+    out.append('## 1b. 注释体检（全角标点 / 乱码残留；仅提示，不计入违规）')
+    out.append('')
+    cl = comment_list or []
+    if not cl:
+        out.append('无。')
+        out.append('')
+    else:
+        shown = cl[:25]
+        out.append('| 文件 | 提示 |')
+        out.append('|---|---|')
+        for rel, notes in shown:
+            for _, detail in notes:
+                out.append('| `%s` | %s |' % (rel, detail.replace('|', '\\|')))
+        out.append('')
+        if len(cl) > len(shown):
+            out.append('另有 %d 个文件同类（注释里用全角标点属中文注释习惯，'
+                       '不影响编译，不逐条列出）。' % (len(cl) - len(shown)))
+            out.append('')
+        out.append('注：这一节只做提示。全角标点在注释里是习惯问题；真正按"违规"处理的'
+                   '只有编码/BOM/换行/替换字符那些（见上一节）。')
         out.append('')
 
     out.append('## 2. 内存占用快照（取自 Keil 构建日志）')
@@ -301,7 +389,7 @@ def render(scanned, bad_files, enc_stat, do_eol):
     return '\n'.join(out)
 
 
-def to_json(scanned, bad_files, enc_stat, do_eol):
+def to_json(scanned, bad_files, enc_stat, do_eol, comment_list=None):
     """结构化输出，供工具箱的可视化体检面板读取。"""
     rows, missing = keil_snapshot()
     memory = []
@@ -317,6 +405,9 @@ def to_json(scanned, bad_files, enc_stat, do_eol):
         'violations_list': [
             {'file': rel, 'issues': [{'kind': k, 'detail': d} for k, d in iss]}
             for rel, iss in bad_files],
+        'comment_notes': [
+            {'file': rel, 'notes': [{'kind': k, 'detail': d} for k, d in ns]}
+            for rel, ns in (comment_list or [])],
         'encoding_stat': enc_stat,
         'memory': memory,
         'memory_missing': missing,
@@ -352,10 +443,44 @@ def selftest():
     results.append(('UTF-8 BOM 应报 BOM',
                     any(k == 'BOM' for k, _ in check_file(p3, {}, False))))
 
+    # 4) B4：注释区体检 —— 全角标点 / GBK 乱码残留签名（只提示，不算违规）
+    p4 = os.path.join(d, 'comm.c')
+    with open(p4, 'wb') as f:
+        f.write('/* 温度，湿度。 */\nint x;\n'.encode('utf-8'))
+    results.append(('B4 错例：注释里的全角标点被列出（提示）',
+                    any('全角标点' in d2 for _, d2 in comment_notes('/* 温度，湿度。 */\nint x;', '.c'))))
+    results.append(('B4 反例：注释里没有全角标点 / 乱码时不提示',
+                    comment_notes('/* temp, humi. */\nint x;', '.c') == []))
+    results.append(('B4 错例：GBK 乱码残留签名（锟斤拷）被列出',
+                    any('乱码残留' in d2 for _, d2 in comment_notes('/* \u951f\u65a4\u62f7 */\n', '.c'))))
+    results.append(('B4 反例：非 C 系文件（md/txt）不做注释体检',
+                    comment_notes('温度，湿度。', '.md') == []
+                    and comment_notes('温度，湿度。', '.txt') == []))
+    results.append(('B4 注释提示在 check_file 里以 kind=注释 返回（供 main 分拣，不计违规）',
+                    any(k == '注释' for k, _ in check_file(p4, {}, False))))
+
     j = to_json(3, [(p1, [('编码', 'x')])], {'utf-8': 2}, False)
     results.append(('JSON 输出结构正确',
                     j['tool'] == 'encoding_guard' and j['scanned'] == 3
                     and j['violations'] == 1 and j['ok'] is False))
+    j2 = to_json(1, [(p1, [('编码', 'x')])], {'utf-8': 1}, False,
+                 [(p2, comment_notes('/* 温度，湿度。 */', '.c'))])
+    results.append(('JSON 带 comment_notes 字段（B4，且与违规分开）',
+                    'comment_notes' in j2 and len(j2['comment_notes']) == 1))
+    # B6 JSON 契约：面板读 violations 与 memory 里那串字段，名字一改就红
+    results.append(('JSON 契约：面板读取的字段名/类型都在',
+                    set(j) == {'tool', 'schema', 'ok', 'scanned', 'violations',
+                               'violations_list', 'comment_notes', 'encoding_stat',
+                               'memory', 'memory_missing', 'eol_checked'}
+                    and isinstance(j['violations'], int)
+                    and isinstance(j['memory'], list)))
+
+    jm = to_json(1, [], {'utf-8': 1}, False)
+    jm['memory'] = [{'title': 't', 'code': 1, 'ro': 2, 'rw': 3, 'zi': 4,
+                     'flash_kb': 512, 'ram_kb': 192, 'flash_used': 5, 'ram_used': 6}]
+    results.append(('JSON 契约：memory 项字段（面板占用条要用 flash_used/ram_used）',
+                    set(jm['memory'][0]) == {'title', 'code', 'ro', 'rw', 'zi',
+                                             'flash_kb', 'ram_kb', 'flash_used', 'ram_used'}))
 
     ok = all(r[1] for r in results)
     print('编码守卫自检：%s' % ('PASS' if ok else 'FAIL'))
@@ -408,20 +533,28 @@ def main(argv):
 
     scanned = 0
     bad_files = []
+    comment_list = []
     enc_stat = {}
     for path in iter_files(PROJECT):
         scanned += 1
         enc = expected_encoding(path)
         enc_stat[enc] = enc_stat.get(enc, 0) + 1
         issues = check_file(path, index_eol, do_eol)
+        # B4：把注释区的提示项拣出来单独成节 —— 全角标点是习惯问题，不该算"违规文件"
+        notes = [x for x in issues if x[0] == '注释']
+        issues = [x for x in issues if x[0] != '注释']
+        rel = os.path.relpath(path, ROOT)
         if issues:
-            bad_files.append((os.path.relpath(path, ROOT), issues))
+            bad_files.append((rel, issues))
+        if notes:
+            comment_list.append((rel, notes))
 
     if json_mode:
-        print(json.dumps(to_json(scanned, bad_files, enc_stat, do_eol), ensure_ascii=False))
+        print(json.dumps(to_json(scanned, bad_files, enc_stat, do_eol, comment_list),
+                         ensure_ascii=False))
         return 1 if bad_files else 0
 
-    report = render(scanned, bad_files, enc_stat, do_eol)
+    report = render(scanned, bad_files, enc_stat, do_eol, comment_list)
     with open(out_path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(report)
 
@@ -429,6 +562,7 @@ def main(argv):
     print('  仓库根  : %s' % ROOT)
     print('  扫描文件: %d' % scanned)
     print('  违规文件: %d' % len(bad_files))
+    print('  注释体检: %d 个文件有提示（仅提示，不计违规，见报告 1b 节）' % len(comment_list))
     print('  换行检查: %s' % ('开' if do_eol else '关（加 --eol）'))
     print('  报告    : %s' % out_path)
     if not quiet and bad_files:

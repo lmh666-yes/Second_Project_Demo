@@ -132,6 +132,7 @@ ToolboxWindow::ToolboxWindow(QWidget *parent)
         {"LoRa 检查",    buildLoraPage()},
         {"OTA 台架",     buildOtaPage()},
         {"固件预算",     buildFirmwareBudgetPage()},
+        {"断网缓存",     buildCachePage()},
         {"工程模板",     buildScaffoldPage()},
     };
     const Item wrap[] = {
@@ -663,6 +664,66 @@ QWidget *ToolboxWindow::buildFirmwareBudgetPage()
     return p;
 }
 
+/* 断网缓存：把 检查/断网缓存/cache_check.py 包成界面。
+   缓存几何（槽位 / 扇区 / 分区上界）自动读板2 的 w25qxx_log.h 与 w25qxx.h；
+   上传周期 / 补传节奏 / 记录长度按工程实际填（默认值只是示例）。 */
+QWidget *ToolboxWindow::buildCachePage()
+{
+    ToolRunPage *p = new ToolRunPage(
+        QStringLiteral("断网缓存"),
+        QStringLiteral(
+            "核算板2 W25QXX 滚动日志的两件事：\n"
+            "  · 断网能扛多久 —— 容量条数 × 上传周期；\n"
+            "  · 补传会不会比写入慢 —— 慢了就会「边补边覆盖」，丢掉还没补上的数据\n"
+            "    （就是 w25qxx_log.h 里 W25QXX_LogLost 非 0 的那种现象）。\n"
+            "缓存几何（槽位大小 / 扇区数 / 分区上界）自动读板2 FWLIB/inc 的\n"
+            "  w25qxx_log.h 与 w25qxx.h，不写死；宏算不出来时会报严重而不是静默通过。\n"
+            "下面三个框是「工程事实」，请按实际填 —— 默认值只是示例，填错就白算。\n"
+            "报告写到 工具箱/检查/断网缓存/断网缓存报告.md。"),
+        this);
+
+    QSpinBox *period = new QSpinBox(this);
+    period->setRange(1, 3600000);
+    period->setSuffix(QStringLiteral(" ms"));
+    QSpinBox *replay = new QSpinBox(this);
+    replay->setRange(1, 3600000);
+    replay->setSuffix(QStringLiteral(" ms"));
+    QSpinBox *rec = new QSpinBox(this);
+    rec->setRange(1, 255);
+    rec->setSuffix(QStringLiteral(" B"));
+
+    Settings st;
+    period->setValue(st.value(QStringLiteral("cache/period"), 1000).toInt());
+    replay->setValue(st.value(QStringLiteral("cache/replay"), 50).toInt());
+    rec->setValue(st.value(QStringLiteral("cache/record"), 20).toInt());
+    connect(period, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [](int v) { Settings().setValue(QStringLiteral("cache/period"), v); });
+    connect(replay, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [](int v) { Settings().setValue(QStringLiteral("cache/replay"), v); });
+    connect(rec, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [](int v) { Settings().setValue(QStringLiteral("cache/record"), v); });
+
+    QHBoxLayout *opt = p->optionsLayout();
+    opt->insertWidget(0, new QLabel(QStringLiteral("上传周期"), this));
+    opt->insertWidget(1, period);
+    opt->insertWidget(2, new QLabel(QStringLiteral("补传每条"), this));
+    opt->insertWidget(3, replay);
+    opt->insertWidget(4, new QLabel(QStringLiteral("记录字节"), this));
+    opt->insertWidget(5, rec);
+
+    p->setSteps({{QStringLiteral("断网缓存"),
+                  py(m_toolsDir, QStringLiteral("检查/断网缓存/cache_check.py")),
+                  [period, replay, rec]() {
+                      return QStringList{
+                          QStringLiteral("--period-ms"), QString::number(period->value()),
+                          QStringLiteral("--replay-ms"), QString::number(replay->value()),
+                          QStringLiteral("--record-bytes"), QString::number(rec->value())};
+                  }}});
+    p->setReportPath(py(m_toolsDir, QStringLiteral("检查/断网缓存/断网缓存报告.md")));
+    m_warnTargets.append(p);
+    return p;
+}
+
 QWidget *ToolboxWindow::buildScaffoldPage()
 {
     ScaffoldPage *p = new ScaffoldPage(m_toolsDir, this);
@@ -674,8 +735,9 @@ QWidget *ToolboxWindow::buildFullCheckPage()
 {
     ToolRunPage *p = new ToolRunPage(
         QStringLiteral("全量检查"),
-        QStringLiteral("依次运行各命令行检查（编码守卫 / RTOS / 引脚规划 / LoRa / 固件预算 / "
-                       "进度扫描 / 链路仿真自检），输出合并显示。写完代码收尾前跑一遍。"), this);
+        QStringLiteral("依次运行各命令行检查（编码守卫 / RTOS / 引脚规划 / LoRa / 协议校验 / "
+                       "固件预算 / 断网缓存 / 进度扫描 / 链路仿真自检），输出合并显示。"
+                       "写完代码收尾前跑一遍。"), this);
 
     QVector<RunStep> steps;
     steps << RunStep{QStringLiteral("编码守卫"),
@@ -691,6 +753,9 @@ QWidget *ToolboxWindow::buildFullCheckPage()
     /* 固件预算不带参数 = 只做分区表自检（无输入也能跑，成果照样落报告） */
     steps << RunStep{QStringLiteral("固件预算"),
                      py(m_toolsDir, QStringLiteral("检查/固件预算/firmware_budget.py")), nullptr};
+    /* 断网缓存不带参数 = 用默认的上传周期/补传节奏做核算（要按实测改就在页内填） */
+    steps << RunStep{QStringLiteral("断网缓存"),
+                     py(m_toolsDir, QStringLiteral("检查/断网缓存/cache_check.py")), nullptr};
     steps << RunStep{QStringLiteral("进度扫描"),
                      py(m_toolsDir, QStringLiteral("检查/进度跟踪/progress_scan.py")),
                      []() { return QStringList{QStringLiteral("--quiet")}; }};

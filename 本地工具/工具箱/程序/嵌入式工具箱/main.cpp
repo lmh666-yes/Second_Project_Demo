@@ -134,6 +134,7 @@ static int runCli(const QStringList &args)
             {"LoRa 检查",    "检查/LoRa检查/lora_check.py"},
             {"协议校验",     "检查/协议校验/protocol_check.py"},
             {"固件预算",     "检查/固件预算/firmware_budget.py"},
+            {"断网缓存",     "检查/断网缓存/cache_check.py"},
         };
         out << QString::fromUtf8("\n── 各检查器自检（--selftest）──\n");
         out.flush();

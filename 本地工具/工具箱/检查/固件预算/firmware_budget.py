@@ -557,6 +557,12 @@ def selftest():
         ck('JSON 结构正确（工具名/mode/parts）',
            j['tool'] == 'firmware_budget' and j['mode'] == 'parts'
            and j['ok'] is True and 'app_addr' in j['parts'])
+        # B6 JSON 契约：面板读 issues 列表，名字/类型一改就红
+        ck('JSON 契约：面板读取的字段名/类型都在',
+           set(j) == {'tool', 'schema', 'ok', 'mode', 'parts', 'issues', 'notes', 'res'}
+           and isinstance(j['issues'], list) and isinstance(j['notes'], list)
+           and isinstance(j['parts'], dict),
+           '、'.join(sorted(j)))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

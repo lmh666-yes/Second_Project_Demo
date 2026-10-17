@@ -599,6 +599,13 @@ def selftest():
            and j['markers'] == 1 and j['stubs'] == 2 and j['noop'] == 1
            and len(j['stub_files']) == 2,
            str({k: j[k] for k in ('files', 'markers', 'stubs', 'noop')}))
+        # B6 JSON 契约：面板读 markers/stubs/history 等字段，名字一改就红
+        ck('JSON 契约：面板读取的字段名/类型都在',
+           set(j) == {'tool', 'schema', 'ok', 'root', 'files', 'markers', 'stubs',
+                      'noop', 'history', 'stub_files', 'enc_stat'}
+           and isinstance(j['markers'], int) and isinstance(j['stubs'], int)
+           and isinstance(j['history'], list) and isinstance(j['stub_files'], dict),
+           '、'.join(sorted(j)))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
