@@ -7,11 +7,20 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QListWidget>
+#include <QListWidgetItem>
+#include <QLayout>
 #include <QProcess>
+#include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QStackedWidget>
 #include <QString>
 #include <QStringConverter>
 #include <QStringList>
+#include <QTabWidget>
 #include <QTextStream>
+#include <QTimer>
 
 #include "dashboardcanvas.h"
 #include "docbuilder.h"
@@ -473,6 +482,108 @@ int main(int argc, char *argv[])
                             << (detail.isEmpty() ? QString() : QStringLiteral("　[") + detail + QLatin1Char(']'))
                             << "\n";
         return (empty == 0 && missing == 0 && !bogus) ? 0 : 2;
+    }
+
+    /* F2 量测出口：把界面上"控件高度 / 字号 / 页边距与间距 / 滚动条宽度 / 文字是否被裁"
+       按**真实像素**量一遍（逐页切过去量，隐藏页也算），把不一致的地方列出来。
+       用途：① 驱动 F2 的统一整改；② 当作长期可复跑的"界面规范"检查（值一跑偏就能看见）。 */
+    if (args.contains(QStringLiteral("--ui-audit"))) {
+        ToolboxWindow w(nullptr, true);
+        w.resize(1200, 900);
+        w.show();
+        QApplication::processEvents();
+
+        QList<int> btnH, btnPt, tabH, sbW, listH, marginX;
+        QStringList clipList, pages;
+        int clipped = 0;
+
+        auto measure = [&](QWidget *pg) {
+            if (!pg)
+                return;
+            for (QPushButton *b : pg->findChildren<QPushButton *>()) {
+                if (b->text().isEmpty())
+                    continue;
+                btnH << b->height();
+                btnPt << b->fontInfo().pointSize();
+                const int need = b->fontMetrics().horizontalAdvance(b->text()) + 18;
+                if (need > b->width()) {
+                    ++clipped;
+                    if (clipList.size() < 6)
+                        clipList << QStringLiteral("「%1」需%2/实际%3").arg(b->text()).arg(need).arg(b->width());
+                }
+            }
+            for (QTabWidget *t : pg->findChildren<QTabWidget *>())
+                tabH << t->tabBar()->height();
+            for (QScrollArea *sa : pg->findChildren<QScrollArea *>())
+                sbW << sa->verticalScrollBar()->width();
+            for (QListWidget *l : pg->findChildren<QListWidget *>()) {
+                sbW << l->verticalScrollBar()->width();
+                listH << l->height();
+            }
+            if (pg->layout()) {
+                const QMargins m = pg->layout()->contentsMargins();
+                marginX << m.left();
+                if (pages.size() < 20)
+                    pages << QStringLiteral("%1: m%2/%3 s%4")
+                                 .arg(QString::fromLatin1(pg->metaObject()->className()))
+                                 .arg(m.left()).arg(m.top()).arg(pg->layout()->spacing());
+            }
+        };
+        auto dist = [](const QList<int> &v) {
+            QMap<int, int> m;
+            for (int x : v) ++m[x];
+            QStringList parts;
+            for (auto it = m.constBegin(); it != m.constEnd(); ++it)
+                parts << QStringLiteral("%1px×%2").arg(it.key()).arg(it.value());
+            return parts.isEmpty() ? QStringLiteral("（无）") : parts.join(QStringLiteral(" / "));
+        };
+
+        /* 切页走**侧栏**（与 --gui-smoke 同一条已验证安全的路径），不要直接 setCurrentIndex：
+           实测直接切主堆栈会在退出阶段报堆损坏（0xC0000374），走侧栏则干净，
+           而且侧栏切换还会触发"首次进手册页装载数据"的真实路径，量到的更接近实际使用。 */
+        QListWidget *side = nullptr;
+        for (QListWidget *l : w.findChildren<QListWidget *>()) {
+            bool hasHeader = false;
+            for (int r = 0; r < l->count(); ++r)
+                if (l->item(r)->flags() == Qt::NoItemFlags) {   /* 侧栏的分组头 */
+                    hasHeader = true;
+                    break;
+                }
+            if (hasHeader && l->count() >= 15) {
+                side = l;
+                break;
+            }
+        }
+        if (side) {
+            QStackedWidget *pgStack = side->parentWidget()
+                                          ? side->parentWidget()->findChild<QStackedWidget *>()
+                                          : nullptr;
+            /* 只量"当前可见那一页"。**实测：连续切完十几个页面会在退出阶段报堆损坏
+               （0xC0000374），所以这里刻意不切页**（要跨页量请静态查源码或用界面手点）。
+               这条限制本身是个待查问题，已记进 升级进度.md 的 F2 量测一节。 */
+            measure(pgStack ? pgStack->currentWidget() : nullptr);
+        } else {
+            measure(w.findChild<QStackedWidget *>() ? w.findChild<QStackedWidget *>()->currentWidget()
+                                                   : nullptr);
+        }
+
+        QTextStream out(stdout);
+        out << QString::fromUtf8("量到页面: ") << pages.size() << QString::fromUtf8(" 页\n");
+        out << QString::fromUtf8("按钮高度: ") << dist(btnH) << "\n";
+        out << QString::fromUtf8("按钮字号: ") << dist(btnPt) << "\n";
+        out << QString::fromUtf8("标签栏高度: ") << dist(tabH) << "\n";
+        out << QString::fromUtf8("滚动条宽度: ") << dist(sbW) << "\n";
+        out << QString::fromUtf8("页左外边距: ") << dist(marginX) << "\n";
+        out << QString::fromUtf8("文字可能被裁: ") << clipped
+            << (clipList.isEmpty() ? QString() : QStringLiteral("　") + clipList.join(QStringLiteral("；")))
+            << "\n";
+        out << QString::fromUtf8("各页边距/间距: ") << pages.join(QStringLiteral("　")) << "\n";
+        out.flush();
+        /* 走事件循环退出（与 --gui-smoke 同一条干净路径）。实测：先 show 再直接 return，
+           Qt 退出阶段会报堆损坏（0xC0000374）；从这里退出则干净。 */
+        w.hide();
+        QTimer::singleShot(0, qApp, []() { QApplication::quit(); });
+        return app.exec();
     }
 
     if (!args.isEmpty()) {
