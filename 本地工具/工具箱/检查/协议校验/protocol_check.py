@@ -26,6 +26,9 @@ r"""协议端到端校验（幂等，只读源码，不改任何文件）。
      `REPLAY_ACK_CMD = CMD_REPLAY | ACK_FLAG`）也能算出来；核对命名规范
      （SYS_FRAME_CMD_<大写下划线>）与"应答 CMD = 请求 CMD | ACK_FLAG"约定，
      并把两板命令字并集落成模板 `速查数据/rules/frame_commands.json`
+ 11) 两板端到端回放（C3）：按**板1 的字段偏移**组一条环境帧，交给**板2 的常量**
+     拆帧并解出物理量，两边对得上才算通（比单纯比常量更接近联调现场）。
+     `--replay <link_xxx.hex>` 可直接回放链路仿真导出的字节流。
 
 报告写到脚本同目录的 协议校验报告.md，并在控制台打印摘要。
 
@@ -33,6 +36,7 @@ r"""协议端到端校验（幂等，只读源码，不改任何文件）。
     python 本地工具\工具箱\检查\协议校验\protocol_check.py
     python 本地工具\工具箱\检查\协议校验\protocol_check.py --quiet
     python 本地工具\工具箱\检查\协议校验\protocol_check.py --json
+    python 本地工具\工具箱\检查\协议校验\protocol_check.py --replay 产物\link_normal.hex
     python 本地工具\工具箱\检查\协议校验\protocol_check.py --selftest
 """
 import json
@@ -285,6 +289,136 @@ def cmd_table_of(vals, extra):
     return d
 
 
+# ---------- C3 两板端到端回放：板1 组帧 → 板2 解帧 ----------
+
+def crc16_modbus(data):
+    """与固件同一套：初值 0xFFFF、多项式 0xA001（0x8005 反射）、结果不异或。"""
+    crc = 0xFFFF
+    for b in data:
+        crc ^= b
+        for _ in range(8):
+            crc = (crc >> 1) ^ 0xA001 if crc & 1 else crc >> 1
+    return crc
+
+
+def build_env_payload(vals, temp_c=25.50, humi=60.00, press=1013.2,
+                      light=1234, tvoc=300, mq=800):
+    """用**板1 的字段偏移**把物理量打包成环境帧数据段（板1 组帧）。"""
+    def s16(v):
+        return bytes([(v >> 8) & 0xFF, v & 0xFF])
+
+    ln = vals['SYS_FRAME_ENV_LEN']
+    buf = bytearray(ln)
+    pairs = [('SYS_FRAME_ENV_TEMP_OFF', int(round(temp_c * 100))),
+             ('SYS_FRAME_ENV_HUMI_OFF', int(round(humi * 100))),
+             ('SYS_FRAME_ENV_PRESS_OFF', int(round(press * 10))),
+             ('SYS_FRAME_ENV_LIGHT_OFF', light),
+             ('SYS_FRAME_ENV_TVOC_OFF', tvoc),
+             ('SYS_FRAME_ENV_MQ135_OFF', mq)]
+    for key, v in pairs:
+        off = vals[key]
+        buf[off:off + 2] = s16(v & 0xFFFF)
+    return bytes(buf)
+
+
+def build_frame(vals, cmd, payload):
+    """按 FAT 帧格式组一帧：AA 55 | CMD | LEN | DATA | CRC(低在前) | 55 AA。"""
+    head = bytes([vals['SYS_FRAME_HEAD_HI'], vals['SYS_FRAME_HEAD_LO']])
+    tail = bytes([vals['SYS_FRAME_TAIL_HI'], vals['SYS_FRAME_TAIL_LO']])
+    body = bytes([cmd & 0xFF, len(payload) & 0xFF]) + payload
+    c = crc16_modbus(body)                       # CRC 覆盖 CMD+LEN+DATA
+    return head + body + bytes([c & 0xFF, (c >> 8) & 0xFF]) + tail
+
+
+def unpack_stream(stream, vals, max_frames=1000):
+    """按给定板的常量拆字节流（板2 解帧用）。
+    返回每帧 {ok, pos, cmd, data, why, noise}；帧头没对上就逐字节前移，能测重同步。
+    `noise=True` 的项是"看到 AA 55 但 LEN 超上限"——多半是噪声撞出来的假帧头，
+    单列出来便于排查，但计失败时不计入（链路丢包/噪声场景里这是正常的）。"""
+    head = (vals['SYS_FRAME_HEAD_HI'], vals['SYS_FRAME_HEAD_LO'])
+    tail = (vals['SYS_FRAME_TAIL_HI'], vals['SYS_FRAME_TAIL_LO'])
+    maxp = vals['SYS_FRAME_MAX_PAYLOAD']
+    overhead = vals['SYS_FRAME_OVERHEAD']
+    out = []
+    i, n = 0, len(stream)
+    while i + 1 < n and len(out) < max_frames:
+        if stream[i] != head[0] or stream[i + 1] != head[1]:
+            i += 1
+            continue
+        if i + 3 >= n:
+            break
+        cmd, ln = stream[i + 2], stream[i + 3]
+        if ln > maxp:
+            out.append({'ok': False, 'noise': True, 'pos': i, 'cmd': cmd,
+                        'why': 'AA 55 之后 LEN %d 超过 MAX_PAYLOAD %d（多半是噪声假帧头，跳过）'
+                               % (ln, maxp)})
+            i += 1                                # 头不对，往后找
+            continue
+        total = overhead + ln
+        if i + total > n:
+            out.append({'ok': False, 'noise': False, 'pos': i, 'cmd': cmd,
+                        'why': '帧不完整（流在此结束）'})
+            break
+        raw = stream[i:i + total]
+        tail_ok = raw[total - 2] == tail[0] and raw[total - 1] == tail[1]
+        calc = crc16_modbus(raw[2:4 + ln])
+        got = raw[4 + ln] | (raw[5 + ln] << 8)
+        data = bytes(raw[4:4 + ln])
+        why = ''
+        if not tail_ok:
+            why = '帧尾不符（期望 %02X%02X）' % tail
+        elif calc != got:
+            why = 'CRC 不符（算得 %04X / 帧内 %04X）' % (calc, got)
+        out.append({'ok': tail_ok and calc == got, 'noise': False,
+                    'pos': i, 'cmd': cmd, 'data': data, 'why': why})
+        i += total
+    return out
+
+
+def decode_env(vals, data):
+    """按**板2 的字段偏移**解出物理量（板2 解帧）。"""
+    def u16(off):
+        return (data[off] << 8) | data[off + 1]
+
+    temp = u16(vals['SYS_FRAME_ENV_TEMP_OFF'])
+    if temp & 0x8000:
+        temp -= 0x10000
+    return {'temp': temp / 100.0,
+            'humi': u16(vals['SYS_FRAME_ENV_HUMI_OFF']) / 100.0,
+            'press': u16(vals['SYS_FRAME_ENV_PRESS_OFF']) / 10.0,
+            'light': u16(vals['SYS_FRAME_ENV_LIGHT_OFF']),
+            'tvoc': u16(vals['SYS_FRAME_ENV_TVOC_OFF']),
+            'mq135': u16(vals['SYS_FRAME_ENV_MQ135_OFF'])}
+
+
+def roundtrip_two_boards(vals1, vals2):
+    """C3：板1 组帧 → 板2 解帧 的闭环。
+    两条同样的环境帧，前后各夹一个噪声字节（顺带验证接收侧重同步）。
+    返回 (frames, decoded, ok)。"""
+    payload = build_env_payload(vals1)                       # 板1 按自己的偏移打包
+    frame = build_frame(vals1, vals1['SYS_FRAME_CMD_ENV'], payload)
+    stream = b'\x00' + frame + b'\x7E' + frame               # 噪声夹在前后
+    frames = unpack_stream(stream, vals2)                    # 板2 按自己的常量拆
+    good = [f for f in frames if f['ok']]
+    decoded = [decode_env(vals2, f['data']) for f in good
+               if f['cmd'] == vals2['SYS_FRAME_CMD_ENV']]
+    ok = (len(good) == 2 and len(decoded) == 2
+          and abs(decoded[0]['temp'] - 25.50) < 0.005
+          and abs(decoded[0]['humi'] - 60.00) < 0.005
+          and abs(decoded[0]['press'] - 1013.2) < 0.05
+          and decoded[0]['light'] == 1234 and decoded[0]['tvoc'] == 300
+          and decoded[0]['mq135'] == 800)
+    return frames, decoded, ok
+
+
+def read_hex_stream(text):
+    """把 .hex 文本（连续十六进制，可带空格/换行）读成 bytes。"""
+    out = bytearray()
+    for tok in re.findall(r'[0-9A-Fa-f]{2}', text):
+        out.append(int(tok, 16))
+    return bytes(out)
+
+
 def parse_c_byteorder(text):
     """检查 .c 中是否大端存取（高字节在前）。"""
     ok = False
@@ -406,6 +540,7 @@ def run(root, quiet=False):
     all_vals = []
     all_extra = []
     template_path = os.path.join(root, CMD_TEMPLATE_REL)
+    rt_frames, rt_decoded, rt_ok = [], [], False      # C3 回放结果（两板齐全时才算）
 
     for name, h_rel, c_rel in BOARDS:
         h_path = os.path.join(root, h_rel)
@@ -468,6 +603,22 @@ def run(root, quiet=False):
         findings.extend(cmd_convention_issues(n2, cmds2, ack_flag))
         # B3 —— 命令字全集模板：两板并集落一份 JSON，新增命令字会在这里出现
         template_path = write_cmd_template(root, [(n1, cmds1), (n2, cmds2)], ack_flag)
+
+        # C3 —— 两板端到端回放：板1 按自己的偏移组帧 → 板2 按自己的常量拆帧并解出物理量。
+        # 只有"组帧/解帧两边都自洽"才算通，比单纯比常量更接近联调现场。
+        try:
+            rt_frames, rt_decoded, rt_ok = roundtrip_two_boards(all_vals[0][1], all_vals[1][1])
+            if not rt_ok:
+                real = [f for f in rt_frames if not f.get('noise')]
+                findings.append(('严重', '%s → %s' % (n1, n2),
+                                 '两板端到端回放不通过：板1 组的环境帧用板2 的常量解不出来'
+                                 '（拆出 %d 帧 / 通过 %d 帧）'
+                                 % (len(real), sum(1 for f in real if f['ok'])),
+                                 'roundtrip'))
+        except KeyError as e:
+            rt_frames, rt_decoded, rt_ok = [], [], False
+            findings.append(('注意', '%s → %s' % (n1, n2),
+                             '两板端到端回放跳过：环境帧偏移宏不全（缺 %s）' % e, 'roundtrip'))
 
     ok = not any(f[0] == '严重' for f in findings)
 
@@ -537,6 +688,26 @@ def run(root, quiet=False):
         shown = template_path
     lines.append('- 命令字全集模板：`%s`（每次运行刷新；两板命令字并集都在这里，'
                  '新增一条就会在模板里多一行）。' % shown)
+    lines.append('')
+
+    # C3：两板端到端回放结果
+    lines.append('## 两板端到端回放（板1 组帧 → 板2 解帧）')
+    lines.append('')
+    if not all_vals:
+        lines.append('两板头文件都没读到，跳过回放。')
+    else:
+        lines.append('- 做法：按**板1 的字段偏移**打包一条环境帧，交给'
+                     '**板2 的常量**拆帧与解码，两边都得对得上才算通。')
+        real = [f for f in rt_frames if not f.get('noise')]
+        lines.append('- 拆出帧：%d，通过 %d。' % (len(real), sum(1 for f in real if f['ok'])))
+        if rt_decoded:
+            d0 = rt_decoded[0]
+            lines.append('- 解出物理量（第 1 帧）：温度 %.2f ℃ / 湿度 %.2f %%RH / 气压 %.1f hPa / '
+                         '光照 %d lx / TVOC %d ppb / MQ135 %d'
+                         % (d0['temp'], d0['humi'], d0['press'], d0['light'], d0['tvoc'], d0['mq135']))
+        lines.append('- 结论：**%s**' % ('通过' if rt_ok else '不通过'))
+        lines.append('')
+        lines.append('> 想拿链路仿真的实际产物回放：`python protocol_check.py --replay <link_xxx.hex>`。')
     lines.append('')
 
     out_dir = os.path.dirname(os.path.abspath(__file__))
@@ -686,6 +857,32 @@ def selftest():
            and 'SYS_FRAME_REPLAY_ACK_CMD'
            in open(os.path.join(d, CMD_TEMPLATE_REL), encoding='utf-8').read())
 
+        # C3 两板端到端回放：
+        #  错例：两板字段偏移不一致时回放必须失败（抓得到）；反例：一致时通过、物理量对得上。
+        v1 = det[0]['macros']
+        v2 = det[1]['macros']
+        _, _, bad_rt = roundtrip_two_boards(v1, v2)
+        ck('错例：两板字段偏移不一致 → 端到端回放不通过（抓得到）', bad_rt is False)
+        v2ok = dict(v2)
+        v2ok['SYS_FRAME_ENV_TEMP_OFF'] = v1['SYS_FRAME_ENV_TEMP_OFF']
+        frames_ok, decoded_ok, good_rt = roundtrip_two_boards(v1, v2ok)
+        ck('反例：偏移一致时回放通过，温度/湿度/气压都对得上',
+           good_rt and decoded_ok and abs(decoded_ok[0]['temp'] - 25.50) < 0.01)
+        ck('反例：回放能穿过前后噪声字节（重同步）',
+           sum(1 for f in frames_ok if f['ok']) == 2
+           and all(not f['noise'] for f in frames_ok))
+        bad_fr = bytearray(build_frame(v1, 0x01, build_env_payload(v1)))
+        bad_fr[5] ^= 0xFF                              # 改坏数据段一个字节 → CRC 必不符
+        bad_frames = unpack_stream(bytes(bad_fr), v2ok)
+        ck('错例：CRC 被改坏 → 拆帧判失败并点明"CRC 不符"',
+           bool(bad_frames) and not bad_frames[0]['ok'] and 'CRC' in bad_frames[0]['why'])
+        trunc = unpack_stream(bytes(bad_fr[:10]), v2ok)
+        ck('错例：帧被截断 → 判"帧不完整"',
+           bool(trunc) and trunc[-1]['why'].startswith('帧不完整'))
+        ck('反例：假帧头（LEN 超上限）标成 noise、不算真失败',
+           (lambda fs: bool(fs) and fs[0]['noise'])
+           (unpack_stream(bytes([0xAA, 0x55, 0x01, 0xFF, 0x00]), v2ok)))
+
         # B6 JSON 契约：面板读 boards[].issues 与 findings，字段名/类型一改就红
         _, j_findings, j_details = run(d, quiet=True)
         j = {'tool': 'protocol_check', 'schema': '1.0',
@@ -711,6 +908,52 @@ def selftest():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def board_vals(idx):
+    """读某一块板的 sys_frame.h 关键常量（--replay 用；不跑全套检查）。"""
+    name, h_rel, c_rel = BOARDS[idx]
+    text, _ = read_text(os.path.join(ROOT, h_rel))
+    if text is None:
+        return {}
+    vals, _extra, _issues = parse_header(text)
+    return vals
+
+
+def replay(path):
+    """C3：把链路仿真导出的 .hex 字节流喂给板2 的拆包器，验"板1 组帧 → 板2 解帧"闭环。"""
+    if not os.path.exists(path):
+        print('找不到回放文件：%s' % path)
+        return 2
+    text, _ = read_text(path)
+    stream = read_hex_stream(text or '')
+    vals2 = board_vals(1)
+    if not vals2:
+        print('读不到板2 的 sys_frame.h，无法拆帧。')
+        return 2
+
+    frames = unpack_stream(stream, vals2)
+    real = [f for f in frames if not f.get('noise')]
+    noise = [f for f in frames if f.get('noise')]
+    bad = [f for f in real if not f['ok']]
+    print('回放文件：%s' % path)
+    print('  字节数  : %d' % len(stream))
+    print('  拆出帧  : %d（通过 %d / 失败 %d；噪声假帧头 %d）'
+          % (len(real), len(real) - len(bad), len(bad), len(noise)))
+    envn = 0
+    for f in real:
+        if f['ok'] and f['cmd'] == vals2.get('SYS_FRAME_CMD_ENV'):
+            d = decode_env(vals2, f['data'])
+            envn += 1
+            if envn <= 3:
+                print('  ENV #%d: 温度 %.2f ℃ / 湿度 %.2f %%RH / 气压 %.1f hPa / 光照 %d lx'
+                      % (envn, d['temp'], d['humi'], d['press'], d['light']))
+        elif not f['ok']:
+            print('  失败 @%d：%s' % (f['pos'], f['why']))
+    if not real:
+        print('  没拆出任何帧：字节流里没有 AA 55 帧头（或这个文件不是十六进制导出）。')
+        return 1
+    return 0 if not bad else 1
+
+
 def main():
     quiet = '--quiet' in sys.argv
     json_out = '--json' in sys.argv
@@ -719,6 +962,13 @@ def main():
     if selftest_mode:
         passed = selftest()
         sys.exit(0 if passed else 1)
+
+    if '--replay' in sys.argv:
+        i = sys.argv.index('--replay')
+        if i + 1 >= len(sys.argv):
+            print('--replay 缺少文件路径。用法：--replay <link_xxx.hex>')
+            sys.exit(2)
+        sys.exit(replay(sys.argv[i + 1]))
 
     ok, findings, details = run(ROOT, quiet=quiet or json_out)
 

@@ -357,6 +357,41 @@ int main(int argc, char *argv[])
         return page.grab().save(path) ? 0 : 1;
     }
 
+    /* C1 全局搜索（Ctrl+K）探针：直接调 paletteHits，断言三类候选都搜得到、乱词搜不到。
+       错例：页面名 / 手册条目必须命中（搜不到 → 面板等于坏了）；报告在时「检查项」也要命中。
+       反例：乱词必须 0 条；空查询不许把上千条手册条目倒出来。 */
+    if (args.contains(QStringLiteral("--palette-probe"))) {
+        ToolboxWindow w;
+        const QStringList pageHit = w.paletteHits(QStringLiteral("引脚规划"));
+        const QStringList findHit = w.paletteHits(QStringLiteral("冲突"));
+        const QStringList manHit  = w.paletteHits(QStringLiteral("USART"));
+        const QStringList bogus   = w.paletteHits(QStringLiteral("zzzqqq乱词xyz"));
+        const QStringList blank   = w.paletteHits(QString());
+        bool hasFinding = false;
+        for (const QString &h : findHit)
+            if (h.startsWith(QStringLiteral("检查项|")))
+                hasFinding = true;
+        const QString pinReport =
+            QDir(ToolboxWindow::toolsDirPath()).filePath(QStringLiteral("检查/引脚规划/引脚规划报告.md"));
+        const bool reportsExist = QFileInfo::exists(pinReport);
+
+        QTextStream(stdout) << QString::fromUtf8("页面命中: ") << pageHit.size()
+                            << QString::fromUtf8("　检查项命中: ") << findHit.size()
+                            << QString::fromUtf8("　手册命中: ") << manHit.size()
+                            << QString::fromUtf8("　乱词命中: ") << bogus.size()
+                            << QString::fromUtf8("　报告在: ") << (reportsExist ? "是" : "否") << "\n";
+        bool ok = pageHit.contains(QStringLiteral("页面|引脚规划"))
+                  && !manHit.isEmpty()
+                  && bogus.isEmpty()
+                  && !blank.isEmpty();
+        for (const QString &h : blank)               /* 反例：空查询不该列手册条目 */
+            if (h.startsWith(QStringLiteral("手册|")))
+                ok = false;
+        if (reportsExist && !hasFinding)              /* 错例：有报告却没列出「检查项」 */
+            ok = false;
+        return ok ? 0 : 2;                            /* 探针跑完就退，别掉进后面的 GUI 事件循环 */
+    }
+
     if (!args.isEmpty()) {
         const int r = runCli(args);
         if (r >= 0)

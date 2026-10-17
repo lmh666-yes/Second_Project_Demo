@@ -16,6 +16,7 @@
 #include <QColor>
 #include <QComboBox>
 #include <QDesktopServices>
+#include <QDialog>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -33,6 +34,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QScreen>
+#include <QShortcut>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStackedWidget>
@@ -200,6 +202,14 @@ ToolboxWindow::ToolboxWindow(QWidget *parent)
         }
     });
 
+    /* C1：Ctrl+K 全局搜索 —— 一个框同时搜「页面名 / 检查项 / 手册条目」，回车直达。
+       不必先搞清侧栏那 15 个页面在哪一栏。 */
+    {
+        QShortcut *sc = new QShortcut(QKeySequence(QStringLiteral("Ctrl+K")), this);
+        sc->setContext(Qt::ApplicationShortcut);
+        connect(sc, &QShortcut::activated, this, &ToolboxWindow::showPalette);
+    }
+
     /* 目录解析失败：所有运行器页显式告警，而不是点了运行才报错 */
     if (m_toolsDir.isEmpty()) {
         for (QWidget *w : m_warnTargets) {
@@ -363,6 +373,120 @@ void ToolboxWindow::jumpToPage(const QString &title)
             m_list->setCurrentRow(row);
             return;
         }
+    }
+}
+
+/* C1：全局搜索的候选。类别用 "类别|文本" 前缀区分，供面板分组显示与回车分流。
+   页面名取侧栏所有可选项；检查项取各报告的命中项小节；手册条目查速查数据集。 */
+QStringList ToolboxWindow::paletteHits(const QString &query) const
+{
+    const QString q = query.trimmed();
+    QStringList out;
+
+    /* ① 页面名（跳过分组头） */
+    for (int row = 0; row < m_list->count(); ++row) {
+        QListWidgetItem *it = m_list->item(row);
+        if (!it || it->flags() == Qt::NoItemFlags)
+            continue;
+        const QString t = it->text();
+        if (q.isEmpty() || t.contains(q, Qt::CaseInsensitive))
+            out << QStringLiteral("页面|") + t;
+    }
+
+    /* ② 检查项：各报告的命中项小节标题（报告没生成时为空，不影响其余两类） */
+    if (m_overview) {
+        for (const QString &h : m_overview->findingHeadings())
+            if (q.isEmpty() || h.contains(q, Qt::CaseInsensitive))
+                out << QStringLiteral("检查项|") + h;
+    }
+
+    /* ③ 手册条目：查速查数据集（首次调用装载 4MB，之后复用索引）。
+       查询为空时不搜 —— 否则会把上千条条目全列出来。 */
+    if (!q.isEmpty() && m_lookup) {
+        if (!m_lookup->dataset().isLoaded())
+            m_lookup->loadData();
+        if (SearchEngine *eng = m_lookup->engine()) {
+            const Dataset &ds = m_lookup->dataset();
+            QStringList seen;
+            for (int sec = 0; sec <= int(Card::Build) && out.size() < 40; ++sec) {
+                const SearchEngine::Result r = eng->run(q, sec);
+                for (int k = 0; k < r.order.size() && out.size() < 40; ++k) {
+                    const Card &c = ds.at(r.order.at(k));
+                    if (seen.contains(c.n))
+                        continue;
+                    seen << c.n;
+                    out << QStringLiteral("手册|") + c.n;
+                }
+            }
+        }
+    }
+    return out;
+}
+
+/* C1：Ctrl+K 弹出的全局搜索面板。回车直达：页面名切页、检查项定位报告、
+   手册条目跳单片机手册并定位该条目。 */
+void ToolboxWindow::showPalette()
+{
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("全局搜索"));
+    dlg.resize(580, 440);
+    QVBoxLayout *lay = new QVBoxLayout(&dlg);
+
+    QLineEdit *edit = new QLineEdit(&dlg);
+    edit->setPlaceholderText(QStringLiteral("搜「页面名 / 检查项 / 手册条目」，回车直达…"));
+    QListWidget *list = new QListWidget(&dlg);
+    QLabel *hint = new QLabel(
+        QStringLiteral("↑↓ 选择　回车直达　Esc 取消　·　页面=切页，检查项=定位报告，手册=查手册"), &dlg);
+    hint->setStyleSheet(QStringLiteral("color:rgba(127,127,127,255);"));
+    lay->addWidget(edit);
+    lay->addWidget(list, 1);
+    lay->addWidget(hint);
+
+    QString chosen;
+    auto refill = [&](const QString &q) {
+        list->clear();
+        for (const QString &hit : paletteHits(q)) {
+            const int bar = hit.indexOf(QLatin1Char('|'));
+            const QString kind = hit.left(bar);
+            const QString text = hit.mid(bar + 1);
+            const QString tag = kind == QStringLiteral("页面")   ? QStringLiteral("页面")
+                                : kind == QStringLiteral("检查项") ? QStringLiteral("检查项")
+                                                                 : QStringLiteral("手册");
+            QListWidgetItem *it =
+                new QListWidgetItem(QStringLiteral("【%1】%2").arg(tag, text), list);
+            it->setData(Qt::UserRole, hit);
+        }
+        if (list->count() > 0)
+            list->setCurrentRow(0);
+    };
+    auto accept = [&]() {
+        if (QListWidgetItem *it = list->currentItem())
+            chosen = it->data(Qt::UserRole).toString();
+        dlg.accept();
+    };
+    connect(edit, &QLineEdit::textChanged, &dlg, refill);
+    connect(edit, &QLineEdit::returnPressed, &dlg, accept);
+    connect(list, &QListWidget::itemActivated, &dlg, [&](QListWidgetItem *) { accept(); });
+
+    refill(QString());
+    edit->setFocus();
+    if (dlg.exec() != QDialog::Accepted || chosen.isEmpty())
+        return;
+
+    const int bar = chosen.indexOf(QLatin1Char('|'));
+    const QString kind = chosen.left(bar);
+    const QString text = chosen.mid(bar + 1);
+    if (kind == QStringLiteral("页面")) {
+        jumpToPage(text);
+    } else if (kind == QStringLiteral("检查项")) {
+        jumpToPage(QStringLiteral("工程体检总览"));
+        if (m_overview)
+            m_overview->focusFinding(text);
+    } else if (kind == QStringLiteral("手册")) {
+        jumpToPage(QStringLiteral("单片机手册"));
+        ensureLookupLoaded();
+        if (m_lookup)
+            m_lookup->jumpToTerm(text);
     }
 }
 
@@ -544,32 +668,38 @@ QWidget *ToolboxWindow::buildLoraPage()
     return p;
 }
 
-/* OTA 台架：把 OTA/tools/ota_send.py 的串口直连模式包成界面。
+/* OTA 台架：把 OTA/tools/ota_send.py 的两种下发模式都包成界面。
    脚本在**仓库根**的 OTA/tools/ 下（在工具箱树之外），所以这里按"从工具箱目录上溯
    找到含 OTA/tools/ota_send.py 的那层"来定位，不把脚本挪进工具箱
    （挪进来要同步三处目录判据：settings.cpp::resolveIniPath、lookup/apppaths.cpp、
    ToolboxWindow::toolsDirPath，收益不抵风险）。
-   TCP server 模式不包：那条路是"先起监听 → 再给板子上电让 ESP8266 反连"，
-   顺序卡死在命令行里，做成按钮反而更绕，说明里留一行直接给命令。 */
+   C2：除了原来的串口直连，再包 TCP server 模式（走 WiFi、板子反连 PC）——
+   两个模式只是参数不同（--serial COMx / --tcp-server PORT），一个下拉框切换即可。 */
 QWidget *ToolboxWindow::buildOtaPage()
 {
     ToolRunPage *p = new ToolRunPage(
         QStringLiteral("OTA 台架"),
         QStringLiteral(
-            "把 OTA/tools/ota_send.py 的【串口直连模式】包成界面（不经 WiFi）。\n"
-            "接线：USB-TTL 接板子 USART3 —— PB10(TX) 接 USB-TTL 的 RX，PB11(RX) 接 USB-TTL 的 TX，"
-            "而且【必须共地】。台架调试请先断开 ESP8266，别让两个发送源打架。\n"
-            "顺序：① 板子跑在 App（不是 Boot）；② 本页填 COM 口与固件 bin，点「运行」；"
+            "把 OTA/tools/ota_send.py 包成界面，两种模式二选一：\n"
+            "  · 【串口直连】USB-TTL 接板子 USART3 —— PB10(TX) 接 USB-TTL 的 RX，"
+            "PB11(RX) 接 USB-TTL 的 TX，且【必须共地】；台架调试请先断开 ESP8266。\n"
+            "  · 【TCP server】本机先起监听，再给板子上电让 ESP8266 反连（走 WiFi）；"
+            "监听端口默认 8899，要与板子固件里配的一致。\n"
+            "顺序：① 板子跑在 App（不是 Boot）；② 本页选模式、填固件 bin，点「运行」；"
             "③ 脚本先 QUERY 再 BEGIN，10 秒内没应答就退出并提示检查接线/波特率。\n"
             "发完 END 后板子要擦 64KB 下载扇区，【等约 8 秒别断电】，收到 DONE 才算成功；"
             "END 之后再上电重启，Bootloader 会把新固件搬到运行区。\n"
-            "TCP server 模式（走 WiFi、板子反连 PC）本页包不住：请直接在仓库根跑 "
-            "python OTA/tools/ota_send.py --tcp-server 8899 --bin <bin> --ver <n>。\n"
             "脚本位置：仓库根 OTA/tools/ota_send.py（在工具箱树之外，本页按相对仓库根引用）。"),
         this);
 
+    QComboBox *mode = new QComboBox(this);
+    mode->addItem(QStringLiteral("串口直连"), QStringLiteral("serial"));
+    mode->addItem(QStringLiteral("TCP server（板子反连）"), QStringLiteral("tcp"));
     QLineEdit *com = new QLineEdit(this);
     com->setPlaceholderText(QStringLiteral("COM 口，如 COM7"));
+    QSpinBox *port = new QSpinBox(this);
+    port->setRange(1, 65535);
+    port->setValue(8899);
     QLineEdit *bin = new QLineEdit(this);
     bin->setPlaceholderText(QStringLiteral("固件 bin 路径，如 OTA/OTA1/Objects/app.bin"));
     QSpinBox *ver = new QSpinBox(this);
@@ -577,23 +707,44 @@ QWidget *ToolboxWindow::buildOtaPage()
     ver->setValue(1);
 
     Settings st;
+    mode->setCurrentIndex(st.value(QStringLiteral("ota/mode")).toString() == QStringLiteral("tcp") ? 1 : 0);
     com->setText(st.value(QStringLiteral("ota/com")).toString());
+    port->setValue(st.value(QStringLiteral("ota/port"), 8899).toInt());
     bin->setText(st.value(QStringLiteral("ota/bin")).toString());
     ver->setValue(st.value(QStringLiteral("ota/ver"), 1).toInt());
+    connect(mode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [mode](int) {
+        Settings().setValue(QStringLiteral("ota/mode"), mode->currentData().toString());
+    });
     connect(com, &QLineEdit::textChanged, this,
             [com](const QString &t) { Settings().setValue(QStringLiteral("ota/com"), t); });
+    connect(port, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [](int v) { Settings().setValue(QStringLiteral("ota/port"), v); });
     connect(bin, &QLineEdit::textChanged, this,
             [bin](const QString &t) { Settings().setValue(QStringLiteral("ota/bin"), t); });
     connect(ver, QOverload<int>::of(&QSpinBox::valueChanged), this,
             [](int v) { Settings().setValue(QStringLiteral("ota/ver"), v); });
 
+    /* 模式切换时灰掉用不上的那一个输入框，免得填了 COM 却在 TCP 模式下被忽略 */
+    auto syncMode = [mode, com, port]() {
+        const bool tcp = mode->currentData().toString() == QStringLiteral("tcp");
+        com->setEnabled(!tcp);
+        port->setEnabled(tcp);
+    };
+    connect(mode, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [syncMode](int) { syncMode(); });
+    syncMode();
+
     QHBoxLayout *opt = p->optionsLayout();
-    opt->insertWidget(0, new QLabel(QStringLiteral("串口"), this));
-    opt->insertWidget(1, com);
-    opt->insertWidget(2, new QLabel(QStringLiteral("固件 bin"), this));
-    opt->insertWidget(3, bin);
-    opt->insertWidget(4, new QLabel(QStringLiteral("版本"), this));
-    opt->insertWidget(5, ver);
+    opt->insertWidget(0, new QLabel(QStringLiteral("模式"), this));
+    opt->insertWidget(1, mode);
+    opt->insertWidget(2, new QLabel(QStringLiteral("串口"), this));
+    opt->insertWidget(3, com);
+    opt->insertWidget(4, new QLabel(QStringLiteral("监听端口"), this));
+    opt->insertWidget(5, port);
+    opt->insertWidget(6, new QLabel(QStringLiteral("固件 bin"), this));
+    opt->insertWidget(7, bin);
+    opt->insertWidget(8, new QLabel(QStringLiteral("版本"), this));
+    opt->insertWidget(9, ver);
 
     /* 从工具箱目录上溯找 OTA/tools/ota_send.py（repo 根那层） */
     QString script;
@@ -606,11 +757,16 @@ QWidget *ToolboxWindow::buildOtaPage()
     if (script.isEmpty())
         script = py(m_toolsDir, QStringLiteral("../OTA/tools/ota_send.py"));   /* 找不到时留个提示 */
 
-    p->setSteps({{QStringLiteral("OTA 下发（串口直连）"), script,
-                  [com, bin, ver]() {
-                      return QStringList{QStringLiteral("--serial"), com->text().trimmed(),
-                                         QStringLiteral("--bin"), bin->text().trimmed(),
-                                         QStringLiteral("--ver"), QString::number(ver->value())};
+    p->setSteps({{QStringLiteral("OTA 下发"), script,
+                  [mode, com, port, bin, ver]() {
+                      QStringList a;
+                      if (mode->currentData().toString() == QStringLiteral("tcp"))
+                          a << QStringLiteral("--tcp-server") << QString::number(port->value());
+                      else
+                          a << QStringLiteral("--serial") << com->text().trimmed();
+                      a << QStringLiteral("--bin") << bin->text().trimmed()
+                        << QStringLiteral("--ver") << QString::number(ver->value());
+                      return a;
                   }}});
     p->setReportPath(QFileInfo(script).absolutePath());   /* 没报告，按钮用来开脚本所在目录 */
     p->setReportLabel(QStringLiteral("打开 OTA 目录"));
@@ -621,6 +777,7 @@ QWidget *ToolboxWindow::buildOtaPage()
 QWidget *ToolboxWindow::buildOverviewPage()
 {
     OverviewPage *p = new OverviewPage(m_toolsDir, this);
+    m_overview = p;      /* C1：全局搜索列的「检查项」取自本页（报告命中项小节） */
     /* 点面板上的健康度卡片 → 跳到对应工具页 */
     connect(p, &OverviewPage::requestPage, this, &ToolboxWindow::jumpToPage);
     /* C1：报告里点了「条目名」→ 跳到「单片机手册」并把那个词搜/定位出来 */

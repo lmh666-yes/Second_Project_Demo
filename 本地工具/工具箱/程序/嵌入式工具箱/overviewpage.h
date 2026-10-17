@@ -44,6 +44,14 @@ public:
     /* A2：进度工具返回的历史轮数（≥2 才会有趋势折线；供 --shot-overview 决定是否断言趋势命中区）。 */
     int progressHistoryRounds() const;
 
+    /* C1：全局搜索（Ctrl+K）列「检查项」用 —— 各报告的命中项小节标题（去重）。
+       与 A4 的「只看命中项」同一套关键字，可视为"当前有哪些检查项"。 */
+    QStringList findingHeadings() const;
+
+    /* C1：全局搜索选中某条「检查项」时调用：切到「报告原文」页签、开「只看命中项」，
+       并在报告原文里定位这段文字。 */
+    void focusFinding(const QString &text);
+
 protected:
     void showEvent(QShowEvent *e) override;
 
@@ -82,6 +90,7 @@ private:
     DashboardCanvas *m_canvas = nullptr;
     QTextBrowser    *m_view   = nullptr;
     QLabel          *m_status = nullptr;
+    int              m_reportTab = -1;      /* C1：报告原文页签下标（focusFinding 切到它） */
     bool m_firstShown = false;
     /* 「报告原文」里被转成链接的文件位置：下标 → "绝对路径|行号"（用下标做锚点，
        避免把带反斜杠的 Windows 路径塞进 URL 被编码搅乱）。 */

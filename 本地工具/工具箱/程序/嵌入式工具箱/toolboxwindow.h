@@ -15,6 +15,7 @@ class QStackedWidget;
 class QWidget;
 class KickStartWindow;
 class MainWindow;
+class OverviewPage;
 class ScaffoldPage;
 class WorkbenchWindow;
 
@@ -29,6 +30,12 @@ public:
 
     /* 按页面标题跳到对应页（列表项文本匹配）。供体检面板的健康度卡片联动。 */
     void jumpToPage(const QString &title);
+
+    /* C1：全局搜索（Ctrl+K）的候选 —— 一次搜「页面名 / 检查项 / 手册条目」。
+       返回 "类别|显示文本" 列表（类别 ∈ 页面 / 检查项 / 手册）；查询为空时列出页面名。
+       手册条目来自速查数据集，首次调用会装载数据；检查项来自各报告的命中项小节。
+       做成 public 是为了让 --palette-probe 能直接断言（错例：搜得到；反例：乱词搜不到）。 */
+    QStringList paletteHits(const QString &query) const;
 
 private:
     QWidget *buildKickstartPage();
@@ -58,6 +65,9 @@ private:
 
     void jumpToWorkbench(const QString &hex);   /* 联动：切页 + 填入字节流 */
 
+    /* C1：Ctrl+K 打开全局搜索面板 */
+    void showPalette();
+
     QString m_toolsDir;                 /* 工具箱目录，Python 脚本所在 */
     QListWidget    *m_list  = nullptr;
     QStackedWidget *m_pages = nullptr;
@@ -66,6 +76,7 @@ private:
     WorkbenchWindow *m_workbench = nullptr;   /* 供跨工具联动调用 */
     KickStartWindow *m_kickstart = nullptr;   /* 供 RTOS 生成页导入任务表 */
     MainWindow      *m_lookup    = nullptr;   /* 单片机手册（懒加载） */
+    OverviewPage    *m_overview  = nullptr;   /* C1：全局搜索列「检查项」要从它取小节标题 */
     int m_workbenchPage = -1;                 /* 协议工作台在堆栈里的页号 */
     int m_lookupPage    = -1;                 /* 速查页在堆栈里的页号 */
     bool m_lookupLoaded = false;

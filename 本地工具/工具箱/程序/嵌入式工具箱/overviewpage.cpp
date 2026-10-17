@@ -99,27 +99,29 @@ QString snapLabel(const QString &path)
     return dt.isValid() ? dt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")) : base;
 }
 
+/* A4/C1：「命中项」小节的关键字 —— 抽取与列清单共用同一份，避免两处各写一套。
+   取自现在这 7 份报告的实际小节名（不是猜的）。 */
+const QStringList FINDING_KEYWORDS{
+    QStringLiteral("冲突"), QStringLiteral("违规"), QStringLiteral("发现"),
+    QStringLiteral("检查结果"), QStringLiteral("交叉检查"), QStringLiteral("被占用"),
+    QStringLiteral("没人用"), QStringLiteral("未用"), QStringLiteral("僵尸"),
+    QStringLiteral("超限"), QStringLiteral("越界"), QStringLiteral("撞车"),
+    QStringLiteral("不一致"), QStringLiteral("漂移"), QStringLiteral("待办"),
+    QStringLiteral("桩函数"), QStringLiteral("注释体检"), QStringLiteral("命名与应答位"),
+};
+
 /* A4：只保留各报告里"命中项"小节 —— 冲突 / 违规 / 发现 / 检查结果 / 交叉检查 /
    被占用 / 没人用（僵尸宏）/ 待办 / 桩函数 / 注释体检 等。
-   关键字取自现在这 7 份报告的实际小节名（不是猜的），不含关键字的整段（总览表、
-   「模块与引脚」整表、配置摘要、无人认领引脚、DMA 调用清单）会被丢掉，
-   长报告就不用一路滚了。 */
+   不含关键字的整段（总览表、「模块与引脚」整表、配置摘要、无人认领引脚、
+   DMA 调用清单）会被丢掉，长报告就不用一路滚了。 */
 QString filterFindings(const QString &text)
 {
-    static const QStringList kw{
-        QStringLiteral("冲突"), QStringLiteral("违规"), QStringLiteral("发现"),
-        QStringLiteral("检查结果"), QStringLiteral("交叉检查"), QStringLiteral("被占用"),
-        QStringLiteral("没人用"), QStringLiteral("未用"), QStringLiteral("僵尸"),
-        QStringLiteral("超限"), QStringLiteral("越界"), QStringLiteral("撞车"),
-        QStringLiteral("不一致"), QStringLiteral("漂移"), QStringLiteral("待办"),
-        QStringLiteral("桩函数"), QStringLiteral("注释体检"),
-    };
     QStringList out;
     bool keep = false;
     for (const QString &line : text.split(QLatin1Char('\n'))) {
         if (line.startsWith(QLatin1Char('#'))) {
             keep = false;
-            for (const QString &k : kw)
+            for (const QString &k : FINDING_KEYWORDS)
                 if (line.contains(k)) {
                     keep = true;
                     break;
@@ -261,7 +263,7 @@ OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
     m_onlyFind->setObjectName(QStringLiteral("onlyFindingsBox"));   /* 供 --shot-overview 定位 */
     rl->addWidget(m_onlyFind);
     rl->addWidget(m_view, 1);
-    m_tabs->addTab(rep, QStringLiteral("报告原文"));
+    m_reportTab = m_tabs->addTab(rep, QStringLiteral("报告原文"));
 
     /* A1 历史回看：从 _体检历史/ 里挑一轮快照重新渲染，而不是只能跟上一轮比。
        A3：再加一个「对比基准」下拉框，两轮任选着比。 */
@@ -661,6 +663,51 @@ void OverviewPage::openReportsDir()
     const QString dir = QDir(m_toolsDir).filePath(QStringLiteral("检查"));
     if (QFileInfo::exists(dir))
         QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+}
+
+/* ---------- C1 全局搜索：列「检查项」与定位 ---------- */
+
+/* 各报告的命中项小节标题（去重、保持报告顺序）。报告是检查产物、可能一份都没有，
+   那种情况下返回空 —— 全局搜索就只列页面名与手册条目。 */
+QStringList OverviewPage::findingHeadings() const
+{
+    QStringList out;
+    for (const ReportDef &r : REPORTS) {
+        const QString path = QDir(m_toolsDir).filePath(QString::fromUtf8(r.rel));
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+            continue;
+        const QString text = QString::fromUtf8(f.readAll());
+        f.close();
+        for (const QString &line : text.split(QLatin1Char('\n'))) {
+            if (!line.startsWith(QLatin1Char('#')))
+                continue;
+            for (const QString &k : FINDING_KEYWORDS) {
+                if (line.contains(k)) {
+                    QString t = line;
+                    while (t.startsWith(QLatin1Char('#')) || t.startsWith(QLatin1Char(' ')))
+                        t.remove(0, 1);
+                    t = t.trimmed();
+                    if (!t.isEmpty() && !out.contains(t))
+                        out << t;
+                    break;
+                }
+            }
+        }
+    }
+    return out;
+}
+
+/* 点「检查项」：切到报告原文页签、开「只看命中项」，并按这段文字在原文里定位。
+   开「只看命中项」是因为命中项小节正是被它抽出来的那批 —— 否则定位可能落在被截掉的段落上。 */
+void OverviewPage::focusFinding(const QString &text)
+{
+    if (m_tabs && m_reportTab >= 0)
+        m_tabs->setCurrentIndex(m_reportTab);
+    if (m_onlyFind && !m_onlyFind->isChecked())
+        m_onlyFind->setChecked(true);      /* toggled → loadTextReports 重渲染 */
+    if (m_view && !text.trimmed().isEmpty())
+        m_view->find(text.trimmed());
 }
 
 /* ---------- A1 历史回看：把某一轮快照重新渲染出来 ---------- */
