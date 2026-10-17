@@ -21,6 +21,7 @@
 #include "protocol.h"
 #include "pyfind.h"
 #include "rtosgen.h"
+#include "settings.h"
 #include "theme.h"
 #include "toolboxwindow.h"
 #include "uismoke.h"
@@ -257,7 +258,7 @@ int main(int argc, char *argv[])
 
     /* GUI 崩溃冒烟：开窗口、遍历页面与控件、点一遍安全按钮（见 uismoke.h） */
     if (args.contains(QStringLiteral("--gui-smoke"))) {
-        ToolboxWindow w;
+        ToolboxWindow w(nullptr, true);   /* 测试路径：别弹首次向导、也别记"已弹过" */
         return uiSmoke::run(&w, args);
     }
 
@@ -361,7 +362,7 @@ int main(int argc, char *argv[])
        错例：页面名 / 手册条目必须命中（搜不到 → 面板等于坏了）；报告在时「检查项」也要命中。
        反例：乱词必须 0 条；空查询不许把上千条手册条目倒出来。 */
     if (args.contains(QStringLiteral("--palette-probe"))) {
-        ToolboxWindow w;
+        ToolboxWindow w(nullptr, true);   /* 探针路径：别弹首次向导、也别记"已弹过" */
         const QStringList pageHit = w.paletteHits(QStringLiteral("引脚规划"));
         const QStringList findHit = w.paletteHits(QStringLiteral("冲突"));
         const QStringList manHit  = w.paletteHits(QStringLiteral("USART"));
@@ -390,6 +391,42 @@ int main(int argc, char *argv[])
         if (reportsExist && !hasFinding)              /* 错例：有报告却没列出「检查项」 */
             ok = false;
         return ok ? 0 : 2;                            /* 探针跑完就退，别掉进后面的 GUI 事件循环 */
+    }
+
+    /* D2 首次运行向导探针：只验证"只弹一次"这条逻辑（不真弹窗）。
+       错例：开关从未置真时 shouldShowWelcome 必须为真；反例：置真后必须为假。
+       跑完把原值写回去，别改坏用户的 _toolbox.ini。 */
+    if (args.contains(QStringLiteral("--welcome-probe"))) {
+        Settings st;
+        const bool saved = st.value(QStringLiteral("ui/welcomeShown"), false).toBool();
+        st.setValue(QStringLiteral("ui/welcomeShown"), true);
+        const bool afterShown = ToolboxWindow::shouldShowWelcome();
+        st.setValue(QStringLiteral("ui/welcomeShown"), false);
+        const bool afterReset = ToolboxWindow::shouldShowWelcome();
+        st.setValue(QStringLiteral("ui/welcomeShown"), saved);   /* 还原 */
+        QTextStream(stdout) << QString::fromUtf8("未弹过→应弹: ") << (afterReset ? "是" : "否")
+                            << QString::fromUtf8("　已弹过→不再弹: ")
+                            << (afterShown ? "否(错)" : "是") << "\n";
+        return (!afterShown && afterReset) ? 0 : 2;
+    }
+
+    /* D3 清理口径探针：用临时目录造 25 份快照，断言只列出最早的 5 份该删（错例），
+       并断言"不超过上限时不列任何东西"（反例）。不碰真实 _体检历史/。 */
+    if (args.contains(QStringLiteral("--clean-probe"))) {
+        const QString tmp = QDir(QDir::tempPath())
+                                .filePath(QStringLiteral("toolbox_clean_probe"));
+        QDir().mkpath(tmp);
+        for (int i = 1; i <= 25; ++i)
+            QFile(QDir(tmp).filePath(QStringLiteral("2026010%1_%02d0000.json")
+                                         .arg(i / 10).arg(i % 100))).open(QIODevice::WriteOnly);
+        const QStringList old = ToolboxWindow::overdueSnapshots(tmp, 20);
+        const QStringList none = ToolboxWindow::overdueSnapshots(tmp, 25);
+        const int reps = ToolboxWindow::reportFiles(ToolboxWindow::toolsDirPath()).size();
+        QTextStream(stdout) << QString::fromUtf8("清理探针：25 份该删 ") << old.size()
+                            << QString::fromUtf8("　上限=份数时该删 ") << none.size()
+                            << QString::fromUtf8("　报告产物 ") << reps << "\n";
+        QDir(tmp).removeRecursively();
+        return (old.size() == 5 && none.isEmpty() && reps > 0) ? 0 : 2;
     }
 
     if (!args.isEmpty()) {

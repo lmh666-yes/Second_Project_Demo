@@ -263,6 +263,24 @@ def render(findings, stats):
     warn = sum(1 for f in findings if f[0] == '注意')
     out = ['# 断网缓存核算报告', '',
            '来源：`本地工具/工具箱/检查/断网缓存/cache_check.py`（只读核算，可重复运行）', '']
+
+    # D4：把两个"待你确认的假设"摆到最前面 —— 免得拿默认值当实测值，结论看着像实测。
+    out.append('## 待确认的假设（先看这里，结论都建立在这两条上）')
+    out.append('')
+    out.append('| 假设 | 本次取值 | 来源 |')
+    out.append('|---|---|---|')
+    out.append('| 上传周期 | %s ms | **命令行参数**（--period-ms），默认 1000 只是示例 |'
+               % stats.get('period_ms'))
+    out.append('| 补传每条耗时 | %s ms | **命令行参数**（--replay-ms），默认 50 只是示例 |'
+               % stats.get('replay_ms'))
+    out.append('| 一条线上记录的字节数 | %s B | **命令行参数**（--record-bytes） |'
+               % stats.get('record_bytes'))
+    out.append('')
+    out.append('> 这两条**不是实测值**，是按你填的参数算的。请按工程实际的采集/上报周期与'
+               '补传任务节奏改，否则「断网可扛」「补传追不追得上」的结论都不成立。'
+               '改完重跑本工具，报告里这两行会同步变成你填的值。')
+    out.append('')
+
     out.append('## 摘要')
     out.append('')
     out.append('| 项 | 值 |')
@@ -331,7 +349,7 @@ def render(findings, stats):
     out.append('## 说明')
     out.append('')
     out.append('1) 上传周期与补传节奏是**参数**（--period-ms / --replay-ms），默认值只是示例；'
-               '请按工程实际的采集/上报周期与补传任务节奏填，结论才有意义。')
+               '报告最上方「待确认的假设」一节把本次取值摆出来了，请按工程实际填，结论才有意义。')
     out.append('2) 缓存几何全部读自 `w25qxx_log.h` 与 `w25qxx.h`，不内置任何印象数据。')
     out.append('3) "断网可扛"按"每个上传周期写 1 条"估算；若一次上报写多条，把 --period-ms 按等效周期填。')
     out.append('4) 扇区粒度导致的连带丢失是硬件限制：要么留余量、要么在 W25QXX_LogLost 非 0 时报警。')
@@ -444,6 +462,15 @@ def selftest():
        [r[2] for r in period_rows(s, 50)] == sorted(r[2] for r in period_rows(s, 50)))
     ck('周期对照表：报告里确有这一节',
        '## 上传周期对照表（挑周期用）' in render(f, s))
+
+    # D4 待确认假设：错例（报告最上方必须列出假设一节）/ 反例（不许把它塞到摘要后面）
+    rep = render(f, s)
+    ck('D4：报告最上方有「待确认的假设」一节，且排在摘要之前',
+       '## 待确认的假设' in rep
+       and rep.index('## 待确认的假设') < rep.index('## 摘要'))
+    ck('D4：假设一节把本次的上传周期/补传耗时取值写出来',
+       ('| 上传周期 | %s ms |' % s.get('period_ms')) in rep
+       and ('| 补传每条耗时 | %s ms |' % s.get('replay_ms')) in rep)
 
     j = to_json(f, s)
     ck('JSON 结构正确（工具名/ok/容量/可扛时长）',

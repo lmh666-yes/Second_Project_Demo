@@ -22,7 +22,9 @@ class WorkbenchWindow;
 class ToolboxWindow : public QMainWindow {
     Q_OBJECT
 public:
-    explicit ToolboxWindow(QWidget *parent = nullptr);
+    /* suppressFirstRun：测试/探针路径传 true —— 既别弹首次运行向导，也别把
+       "已弹过"记进 _toolbox.ini（否则冒烟会替用户把"第一次"吃掉，用户自己反而看不到）。 */
+    explicit ToolboxWindow(QWidget *parent = nullptr, bool suppressFirstRun = false);
 
     /* 工具箱根目录（Python 脚本所在那层）。做成公开静态函数是为了让 --selftest
        也能断言它解析成功——路径判据一旦写错，运行器页会整体失效，属于必须测到的东西。 */
@@ -36,6 +38,16 @@ public:
        手册条目来自速查数据集，首次调用会装载数据；检查项来自各报告的命中项小节。
        做成 public 是为了让 --palette-probe 能直接断言（错例：搜得到；反例：乱词搜不到）。 */
     QStringList paletteHits(const QString &query) const;
+
+    /* D2：首次运行向导该不该弹（读 _toolbox.ini 的 ui/welcomeShown）。
+       做成 public static 是为了让 --welcome-probe 能断言"只弹一次"这条逻辑。 */
+    static bool shouldShowWelcome();
+
+    /* D3：清理口径做成 static 纯函数，设置页按它删、--clean-probe 按它断言。
+       overdueSnapshots(dir, keep)：按文件名升序（旧→新）列出该删的过期快照。
+       reportFiles(toolsDir)：列出各检查器写的「*报告.md」。 */
+    static QStringList overdueSnapshots(const QString &dir, int keep);
+    static QStringList reportFiles(const QString &toolsDir);
 
 private:
     QWidget *buildKickstartPage();
@@ -80,6 +92,7 @@ private:
     int m_workbenchPage = -1;                 /* 协议工作台在堆栈里的页号 */
     int m_lookupPage    = -1;                 /* 速查页在堆栈里的页号 */
     bool m_lookupLoaded = false;
+    bool m_suppressWelcome = false;   /* D2：测试路径不弹首次向导、也不记"已弹过" */
 
     /* 各页的个性化选项控件：设置页改完要能立刻推回来，所以留指针。
        这些控件同时也是各自页面上可见的选项，两边读写同一份 _toolbox.ini 键。 */

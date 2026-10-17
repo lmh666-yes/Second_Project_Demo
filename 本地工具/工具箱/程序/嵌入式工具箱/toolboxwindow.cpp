@@ -10,6 +10,7 @@
 #include "workbenchwindow.h"
 #include "toolrunpage.h"
 
+#include <QAbstractButton>
 #include <QApplication>
 #include <QCheckBox>
 #include <QCloseEvent>
@@ -38,6 +39,7 @@
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStackedWidget>
+#include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 
@@ -63,8 +65,8 @@ static QString py(const QString &dir, const QString &rel)
     return QDir(dir).filePath(rel);
 }
 
-ToolboxWindow::ToolboxWindow(QWidget *parent)
-    : QMainWindow(parent)
+ToolboxWindow::ToolboxWindow(QWidget *parent, bool suppressFirstRun)
+    : QMainWindow(parent), m_suppressWelcome(suppressFirstRun)
 {
     setWindowTitle(QStringLiteral("嵌入式工具箱"));
     m_toolsDir = toolsDirPath();
@@ -208,6 +210,32 @@ ToolboxWindow::ToolboxWindow(QWidget *parent)
         QShortcut *sc = new QShortcut(QKeySequence(QStringLiteral("Ctrl+K")), this);
         sc->setContext(Qt::ApplicationShortcut);
         connect(sc, &QShortcut::activated, this, &ToolboxWindow::showPalette);
+    }
+
+    /* D2：首次运行向导 —— 第一次打开弹一次"三步上手"，之后记进 _toolbox.ini 不再弹。
+       两个刻意的选择：
+         · 用 singleShot 延到事件循环起来之后再弹，不在构造函数里阻塞；
+         · 用**非模态**弹窗（而不是 exec）—— 免得 GUI 冒烟或任何"建完窗口就走"的探针
+           被一个模态框挂住（冒烟的自动关框计时器是 700ms 后才装的，模态框会卡在前面）。 */
+    if (!m_suppressWelcome && shouldShowWelcome()) {
+        QTimer::singleShot(0, this, [this]() {
+            Settings().setValue(QStringLiteral("ui/welcomeShown"), true);
+            QMessageBox *mb = new QMessageBox(this);
+            mb->setAttribute(Qt::WA_DeleteOnClose);
+            mb->setWindowTitle(QStringLiteral("三步上手"));
+            mb->setTextFormat(Qt::RichText);
+            mb->setText(QStringLiteral(
+                "<b>三步就能用起来：</b><br>"
+                "① 想查函数 / 流程 → 左侧「查资料 → 单片机手册」（也能按 <b>Ctrl+K</b> 全局搜）<br>"
+                "② 想开工 → 「设计 → 项目起手助手」或「工程模板」一键生成骨架<br>"
+                "③ 想体检 → 「汇总 → 工程体检总览」看健康度，或「全量检查」一次跑完<br><br>"
+                "这条提示只弹这一次；入口随时可在「工程体检总览」页顶部找回。"));
+            mb->setStandardButtons(QMessageBox::Ok);
+            if (QAbstractButton *b = mb->button(QMessageBox::Ok))
+                b->setText(QStringLiteral("知道了"));
+            mb->setModal(false);
+            mb->show();
+        });
     }
 
     /* 目录解析失败：所有运行器页显式告警，而不是点了运行才报错 */
@@ -374,6 +402,44 @@ void ToolboxWindow::jumpToPage(const QString &title)
             return;
         }
     }
+}
+
+/* D2：首次运行向导该不该弹 —— 只看 _toolbox.ini 里 ui/welcomeShown 是否已置真。
+   弹过一次就永远为假（"只弹一次"这条逻辑可被 --welcome-probe 断言）。 */
+bool ToolboxWindow::shouldShowWelcome()
+{
+    return !Settings().value(QStringLiteral("ui/welcomeShown"), false).toBool();
+}
+
+/* D3：体检快照按"保留最近 keep 份"的口径（与 OverviewPage::writeSnapshot 的自动滚动一致），
+   返回该删的那些（按文件名升序 = 旧→新，所以是列表最前面若干个）。 */
+QStringList ToolboxWindow::overdueSnapshots(const QString &dir, int keep)
+{
+    QDir d(dir);
+    const QStringList files = d.entryList(QStringList{QStringLiteral("*.json")},
+                                          QDir::Files, QDir::Name);
+    QStringList out;
+    for (int i = 0; i < files.size() - keep; ++i)
+        out << d.filePath(files.at(i));
+    return out;
+}
+
+/* D3：各检查器的报告产物（跑一次检查就会重新生成，删了也能恢复）。 */
+QStringList ToolboxWindow::reportFiles(const QString &toolsDir)
+{
+    QStringList dirs{
+        QStringLiteral("检查/进度跟踪"), QStringLiteral("检查/引脚规划"),
+        QStringLiteral("检查/RTOS检查"), QStringLiteral("检查/编码守卫"),
+        QStringLiteral("检查/LoRa检查"), QStringLiteral("检查/协议校验"),
+        QStringLiteral("检查/断网缓存"),
+    };
+    QStringList out;
+    for (const QString &sub : dirs) {
+        QDir d(QDir(toolsDir).filePath(sub));
+        for (const QString &f : d.entryList(QStringList{QStringLiteral("*报告.md")}, QDir::Files))
+            out << d.filePath(f);
+    }
+    return out;
 }
 
 /* C1：全局搜索的候选。类别用 "类别|文本" 前缀区分，供面板分组显示与回车分流。
@@ -594,7 +660,12 @@ QWidget *ToolboxWindow::buildLinkPage()
     ToolRunPage *p = new ToolRunPage(
         QStringLiteral("链路仿真"),
         QStringLiteral("无硬件时生成与工程一致的字节流，可粘进协议工作台解帧页，"
-                       "或经虚拟串口喂给上位机。产物在 工具箱/检查/链路仿真/产物/。"), this);
+                       "或经虚拟串口喂给上位机。产物在 工具箱/检查/链路仿真/产物/。\n"
+                       "注：Qt 上位机 SerialMonitor 的帧解析 / CRC / 组帧仍是它自己的"
+                       "「阶段2 待实现」骨架（源码里就是一堆 TODO，函数体返回空），"
+                       "它的 --selftest 1/18、--cmdselftest 崩溃都是这么来的，"
+                       "不是本工具箱的回归，也**不在本工具箱的维护范围**"
+                       "（要联调请用「协议工作台」或本页的「发送到协议工作台」）。"), this);
 
     QComboBox *scen = new QComboBox(this);
     scen->addItems({QStringLiteral("normal"), QStringLiteral("lossy"),
@@ -1020,6 +1091,65 @@ QWidget *ToolboxWindow::buildSettingsPage()
     });
     lay->addWidget(g3);
 
+    /* ---- D3 清理：过期体检快照 / 检查产物 ---- */
+    QGroupBox *g5 = new QGroupBox(QStringLiteral("清理"));
+    QVBoxLayout *v5 = new QVBoxLayout(g5);
+    QLabel *clrHint = new QLabel(QStringLiteral(
+        "<b>体检快照</b>：每轮「刷新」在 <code>_体检历史/</code> 存一份，"
+        "自动只保留最近 <b>20</b> 份（每次刷新时滚动丢弃更旧的）。这里手动清一次同口径。<br>"
+        "<b>检查产物</b>：各检查器写的 <code>*报告.md</code>（跑一次检查就会重新生成）——"
+        "删掉后总览面板的「报告原文」会显示「还没生成」，重跑检查即可恢复。"));
+    clrHint->setWordWrap(true);
+    clrHint->setTextFormat(Qt::RichText);
+    v5->addWidget(clrHint);
+    QHBoxLayout *b5 = new QHBoxLayout;
+    QPushButton *clrSnap = new QPushButton(QStringLiteral("清理过期体检快照（保留最近 20 份）"), g5);
+    QPushButton *clrRep  = new QPushButton(QStringLiteral("清理检查产物（报告 .md）"), g5);
+    b5->addWidget(clrSnap);
+    b5->addWidget(clrRep);
+    b5->addStretch(1);
+    v5->addLayout(b5);
+    lay->addWidget(g5);
+
+    connect(clrSnap, &QPushButton::clicked, this, [this]() {
+        const QString dir = QDir(m_toolsDir).filePath(QStringLiteral("_体检历史"));
+        const QStringList old = overdueSnapshots(dir, 20);
+        if (old.isEmpty()) {
+            QMessageBox::information(this, QStringLiteral("体检快照"),
+                QStringLiteral("不超过保留上限 20 份，无需清理。"));
+            return;
+        }
+        if (QMessageBox::question(this, QStringLiteral("清理过期体检快照"),
+                QStringLiteral("删掉最早的 %1 份快照（保留最近 20 份）？\n目录：%2")
+                    .arg(old.size()).arg(dir)) != QMessageBox::Yes)
+            return;
+        int done = 0;
+        for (const QString &p : old)
+            if (QFile::remove(p))
+                ++done;
+        QMessageBox::information(this, QStringLiteral("清理完成"),
+            QStringLiteral("已删除 %1 份过期快照（保留最近 20 份）。").arg(done));
+    });
+    connect(clrRep, &QPushButton::clicked, this, [this]() {
+        const QStringList reps = reportFiles(m_toolsDir);
+        if (reps.isEmpty()) {
+            QMessageBox::information(this, QStringLiteral("检查产物"),
+                QStringLiteral("没有找到报告 .md，无需清理。"));
+            return;
+        }
+        if (QMessageBox::question(this, QStringLiteral("清理检查产物"),
+                QStringLiteral("删掉 %1 份报告 .md？\n（跑一次检查就会重新生成；"
+                               "删后总览「报告原文」会显示「还没生成」）").arg(reps.size()))
+            != QMessageBox::Yes)
+            return;
+        int done = 0;
+        for (const QString &p : reps)
+            if (QFile::remove(p))
+                ++done;
+        QMessageBox::information(this, QStringLiteral("清理完成"),
+            QStringLiteral("已删除 %1 份报告。").arg(done));
+    });
+
     /* ---- 帮助 / 快捷键 ---- */
     QGroupBox *g4 = new QGroupBox(QStringLiteral("帮助 / 快捷键"));
     QVBoxLayout *v4 = new QVBoxLayout(g4);
@@ -1029,8 +1159,9 @@ QWidget *ToolboxWindow::buildSettingsPage()
         "1) 项目起手助手：先想清要做什么<br>"
         "2) RTOS 骨架生成：读配置 → 选场景 → 生成 .h/.c<br>"
         "3) 写代码时随时点各项检查<br>"
-        "4) 全量检查：一键跑完五个命令行检查<br><br>"
+        "4) 全量检查：一键跑完八个命令行检查<br><br>"
         "<b>快捷键</b><br>"
+        "Ctrl+K 全局搜索（页面名 / 检查项 / 手册条目，回车直达）<br>"
         "Ctrl+R 运行当前工具　Ctrl+O 打开报告<br>"
         "输出区查找框回车跳到下一处<br><br>"
         "<b>跨工具联动</b><br>"
