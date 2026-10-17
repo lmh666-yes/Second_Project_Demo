@@ -71,3 +71,9 @@ Git上传\build\release\GitUploader.exe --selftest
 
 > `工具箱/程序/嵌入式工具箱/build/release/` 是**例外**：里面的 exe 与 Qt DLL **要入库**，
 > 否则别人 clone 下来还得自己装 Qt 才能打开工具箱。
+
+> **同一个目录里还有 3 个 `lib*.dll`**（`libgcc_s_seh-1.dll` / `libstdc++-6.dll` /
+> `libwinpthread-1.dll`，MinGW 运行库）—— 它们和 Qt DLL 同等重要：少一个就会在
+> 没装 Qt 的机器上以 `0xC0000135`（找不到 DLL）连窗口都起不来。
+> `构建.py` 每次编译成功后会自检 `release\` 的运行库与插件目录、缺的自动补齐，
+> 别手工删（2026-10-17 就是因为漏了这 3 个，才只在装了 Qt 的机器上跑得起来）。
