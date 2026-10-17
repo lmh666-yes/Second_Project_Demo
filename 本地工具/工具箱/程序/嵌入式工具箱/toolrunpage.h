@@ -39,6 +39,10 @@ public:
 
     void setSteps(const QVector<RunStep> &steps);
 
+    /* A3：整批跑完（并行模式收尾时）的钩子 —— 回调返回的文本会追加到输出末尾。
+       用途：「全量检查」跑完让总览页刷新并归档一份体检快照，并在末尾提示去哪看健康度。 */
+    void setFinishedHook(const std::function<QString()> &hook) { m_finishedHook = hook; }
+
     /* 并行模式：多步同时跑（「全量检查」用），输出按 `[步骤名]` 前缀区分。
        默认串行。并行时总耗时 ≈ 最慢的那一步，而不是各步相加。 */
     void setParallel(bool on) { m_parallel = on; }
@@ -86,6 +90,7 @@ private:
     QVector<QProcess *>  m_parallelProcs;                    /* 并行模式下的各步进程 */
     QVector<int>         m_stepCodes;   /* 每步退出码，用于末尾汇总 */
     QVector<QString>     m_paraOut;     /* 并行模式：每步输出原文，收尾时按步骤归位重排 */
+    std::function<QString()> m_finishedHook;   /* A3：整批跑完的钩子（见 setFinishedHook） */
 
     QLabel         *m_alert   = nullptr;
     QLabel         *m_desc    = nullptr;

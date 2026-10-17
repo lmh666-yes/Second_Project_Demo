@@ -212,7 +212,8 @@ ToolboxWindow::ToolboxWindow(QWidget *parent, bool suppressFirstRun)
         connect(sc, &QShortcut::activated, this, &ToolboxWindow::showPalette);
     }
 
-    /* D2：首次运行向导 —— 第一次打开弹一次"三步上手"，之后记进 _toolbox.ini 不再弹。
+    /* D2/A1：首次运行向导 —— 第一次打开弹一次"三步上手"，之后记进 _toolbox.ini 不再弹。
+       A1 起不再是"一段文字 + 知道了"，而是**三个真按钮**：点了直接进对应页。
        两个刻意的选择：
          · 用 singleShot 延到事件循环起来之后再弹，不在构造函数里阻塞；
          · 用**非模态**弹窗（而不是 exec）—— 免得 GUI 冒烟或任何"建完窗口就走"的探针
@@ -220,21 +221,48 @@ ToolboxWindow::ToolboxWindow(QWidget *parent, bool suppressFirstRun)
     if (!m_suppressWelcome && shouldShowWelcome()) {
         QTimer::singleShot(0, this, [this]() {
             Settings().setValue(QStringLiteral("ui/welcomeShown"), true);
-            QMessageBox *mb = new QMessageBox(this);
-            mb->setAttribute(Qt::WA_DeleteOnClose);
-            mb->setWindowTitle(QStringLiteral("三步上手"));
-            mb->setTextFormat(Qt::RichText);
-            mb->setText(QStringLiteral(
-                "<b>三步就能用起来：</b><br>"
-                "① 想查函数 / 流程 → 左侧「查资料 → 单片机手册」（也能按 <b>Ctrl+K</b> 全局搜）<br>"
-                "② 想开工 → 「设计 → 项目起手助手」或「工程模板」一键生成骨架<br>"
-                "③ 想体检 → 「汇总 → 工程体检总览」看健康度，或「全量检查」一次跑完<br><br>"
-                "这条提示只弹这一次；入口随时可在「工程体检总览」页顶部找回。"));
-            mb->setStandardButtons(QMessageBox::Ok);
-            if (QAbstractButton *b = mb->button(QMessageBox::Ok))
-                b->setText(QStringLiteral("知道了"));
-            mb->setModal(false);
-            mb->show();
+            QDialog *dlg = new QDialog(this);
+            dlg->setAttribute(Qt::WA_DeleteOnClose);
+            dlg->setWindowTitle(QStringLiteral("三步上手"));
+            dlg->setModal(false);
+            QVBoxLayout *wl = new QVBoxLayout(dlg);
+            QLabel *wtxt = new QLabel(QStringLiteral(
+                "<b>三步就能用起来，点下面的按钮直接去：</b><br>"
+                "① 写代码时随手查函数 / 流程　② 开工就用骨架生成　"
+                "③ 收尾跑一次体检<br><br>"
+                "这条提示只弹这一次；入口随时可在「工程体检总览」页顶部找回。"), dlg);
+            wtxt->setTextFormat(Qt::RichText);
+            wtxt->setWordWrap(true);
+            wl->addWidget(wtxt);
+            QHBoxLayout *wbtn = new QHBoxLayout;
+            QPushButton *b1 = new QPushButton(QStringLiteral("① 查单片机手册"), dlg);
+            QPushButton *b2 = new QPushButton(QStringLiteral("② 生成工程骨架"), dlg);
+            QPushButton *b3 = new QPushButton(QStringLiteral("③ 跑全量体检"), dlg);
+            QPushButton *b4 = new QPushButton(QStringLiteral("知道了"), dlg);
+            b1->setToolTip(QStringLiteral("跳到「单片机手册」，也可随时按 Ctrl+K 全局搜索"));
+            b2->setToolTip(QStringLiteral("跳到「工程模板」，生成能直接编译的工程骨架"));
+            b3->setToolTip(QStringLiteral("跳到「全量检查」，一次跑完 8 个检查器"));
+            wbtn->addWidget(b1);
+            wbtn->addWidget(b2);
+            wbtn->addWidget(b3);
+            wbtn->addStretch(1);
+            wbtn->addWidget(b4);
+            wl->addLayout(wbtn);
+            connect(b1, &QPushButton::clicked, dlg, [this, dlg]() {
+                dlg->close();
+                jumpToPage(QStringLiteral("单片机手册"));
+                ensureLookupLoaded();
+            });
+            connect(b2, &QPushButton::clicked, dlg, [this, dlg]() {
+                dlg->close();
+                jumpToPage(QStringLiteral("工程模板"));
+            });
+            connect(b3, &QPushButton::clicked, dlg, [this, dlg]() {
+                dlg->close();
+                jumpToPage(QStringLiteral("全量检查"));
+            });
+            connect(b4, &QPushButton::clicked, dlg, &QDialog::close);
+            dlg->show();
         });
     }
 
@@ -534,8 +562,24 @@ void ToolboxWindow::showPalette()
     connect(edit, &QLineEdit::returnPressed, &dlg, accept);
     connect(list, &QListWidget::itemActivated, &dlg, [&](QListWidgetItem *) { accept(); });
 
+    /* A4：首次用 Ctrl+K 时手册数据（4MB）还没装载，旧写法会在"边打字边搜"里同步装载、
+       界面顿一下。改成：先把框显示出来（页面名 / 检查项立刻可用），再后台装载一次，
+       装完按当前输入重列 —— 用户看到的是"正在装载手册数据…"，而不是卡住。 */
+    const bool needLoad = m_lookup && !m_lookup->dataset().isLoaded();
+    const QString hintDefault =
+        QStringLiteral("↑↓ 选择　回车直达　Esc 取消　·　页面=切页，检查项=定位报告，手册=查手册");
+    if (needLoad)
+        hint->setText(QStringLiteral("正在装载手册数据…（页面名与检查项已可用，稍候手册条目补上）"));
+
     refill(QString());
     edit->setFocus();
+    if (needLoad) {
+        QTimer::singleShot(0, &dlg, [this, edit, refill, hint, hintDefault]() {
+            ensureLookupLoaded();
+            hint->setText(hintDefault);
+            refill(edit->text());
+        });
+    }
     if (dlg.exec() != QDialog::Accepted || chosen.isEmpty())
         return;
 
@@ -766,8 +810,14 @@ QWidget *ToolboxWindow::buildOtaPage()
     QComboBox *mode = new QComboBox(this);
     mode->addItem(QStringLiteral("串口直连"), QStringLiteral("serial"));
     mode->addItem(QStringLiteral("TCP server（板子反连）"), QStringLiteral("tcp"));
-    QLineEdit *com = new QLineEdit(this);
-    com->setPlaceholderText(QStringLiteral("COM 口，如 COM7"));
+    /* A5：COM 口改成"可选可输"的下拉 —— 常见口号直接点，特殊口号手输，且记住上次。
+       （以前是空白输入框，每次都要自己回忆是 COM 几。） */
+    QComboBox *com = new QComboBox(this);
+    com->setEditable(true);
+    com->addItem(QString());
+    for (int i = 1; i <= 8; ++i)
+        com->addItem(QStringLiteral("COM%1").arg(i));
+    com->setToolTip(QStringLiteral("常见口号直接选；不在列表里就手输（设备管理器里能看到实际口号）"));
     QSpinBox *port = new QSpinBox(this);
     port->setRange(1, 65535);
     port->setValue(8899);
@@ -779,15 +829,15 @@ QWidget *ToolboxWindow::buildOtaPage()
 
     Settings st;
     mode->setCurrentIndex(st.value(QStringLiteral("ota/mode")).toString() == QStringLiteral("tcp") ? 1 : 0);
-    com->setText(st.value(QStringLiteral("ota/com")).toString());
+    com->setCurrentText(st.value(QStringLiteral("ota/com")).toString());
     port->setValue(st.value(QStringLiteral("ota/port"), 8899).toInt());
     bin->setText(st.value(QStringLiteral("ota/bin")).toString());
     ver->setValue(st.value(QStringLiteral("ota/ver"), 1).toInt());
     connect(mode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [mode](int) {
         Settings().setValue(QStringLiteral("ota/mode"), mode->currentData().toString());
     });
-    connect(com, &QLineEdit::textChanged, this,
-            [com](const QString &t) { Settings().setValue(QStringLiteral("ota/com"), t); });
+    connect(com, &QComboBox::currentTextChanged, this,
+            [](const QString &t) { Settings().setValue(QStringLiteral("ota/com"), t); });
     connect(port, QOverload<int>::of(&QSpinBox::valueChanged), this,
             [](int v) { Settings().setValue(QStringLiteral("ota/port"), v); });
     connect(bin, &QLineEdit::textChanged, this,
@@ -834,7 +884,7 @@ QWidget *ToolboxWindow::buildOtaPage()
                       if (mode->currentData().toString() == QStringLiteral("tcp"))
                           a << QStringLiteral("--tcp-server") << QString::number(port->value());
                       else
-                          a << QStringLiteral("--serial") << com->text().trimmed();
+                          a << QStringLiteral("--serial") << com->currentText().trimmed();
                       a << QStringLiteral("--bin") << bin->text().trimmed()
                         << QStringLiteral("--ver") << QString::number(ver->value());
                       return a;
@@ -957,6 +1007,14 @@ QWidget *ToolboxWindow::buildFullCheckPage()
                      []() { return QStringList{QStringLiteral("--selftest")}; }};
     p->setSteps(steps);
     p->setParallel(true);   /* 八个检查器互不依赖：并行跑，总耗时 ≈ 最慢一个 */
+    /* A3：跑完自动让总览页取数并归档一份体检快照（等同于点一次「刷新」），
+       并在输出末尾告诉你去哪看 —— 免得跑完还要自己想起来去面板刷新。 */
+    p->setFinishedHook([this]() {
+        if (m_overview)
+            QMetaObject::invokeMethod(m_overview, "refresh");
+        return QStringLiteral("已取数并归档本轮体检快照 —— 去「汇总 → 工程体检总览」看健康度"
+                              "（点健康度卡片可直达报告里对应那一节）。");
+    });
     m_warnTargets.append(p);
     return p;
 }

@@ -52,6 +52,11 @@ public:
        并在报告原文里定位这段文字。 */
     void focusFinding(const QString &text);
 
+    /* A2 自检用：健康度卡片 key → 报告里那一节的关键词；报告原文里是否真有这段文字。
+       --finding-probe 据此断言"卡片指向的小节确实存在"（错例）+ "乱词找不到"（反例）。 */
+    QString sectionKeywordOf(const QString &key) const;
+    bool reportHasText(const QString &text) const;
+
 protected:
     void showEvent(QShowEvent *e) override;
 

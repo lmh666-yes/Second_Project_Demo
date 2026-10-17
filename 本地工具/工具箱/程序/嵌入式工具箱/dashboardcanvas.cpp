@@ -339,7 +339,7 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
         hit.tip = QStringLiteral("%1：%2").arg(items[i].name, items[i].detail);
         if (!items[i].thr.isEmpty())
             hit.tip += QStringLiteral("\n阈值：%1").arg(items[i].thr);   /* A2：把红黄线写进提示，可查 */
-        hit.tip += QStringLiteral("\n点击跳到该工具页");
+        hit.tip += QStringLiteral("\n点击：看报告里这一节（想重跑 → 侧栏「检查」组）");
         m_hits.append(hit);
     }
     return y + ch + 14;

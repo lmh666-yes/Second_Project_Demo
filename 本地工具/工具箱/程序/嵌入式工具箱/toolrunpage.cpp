@@ -418,6 +418,12 @@ void ToolRunPage::checkParallelDone()
     printSummary();
     m_status->setText(QStringLiteral("完成"));
     refreshReportButton();
+    /* A3：整批跑完的钩子 —— 全量检查跑完让总览页取数归档，并在这里提示去哪看结果 */
+    if (m_finishedHook) {
+        const QString tail = m_finishedHook();
+        if (!tail.isEmpty())
+            append(QStringLiteral("\n") + tail + QLatin1Char('\n'));
+    }
 }
 
 void ToolRunPage::onFinished(int exitCode, int status)

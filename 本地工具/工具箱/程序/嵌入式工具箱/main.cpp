@@ -429,6 +429,38 @@ int main(int argc, char *argv[])
         return (old.size() == 5 && none.isEmpty() && reps > 0) ? 0 : 2;
     }
 
+    /* A2 探针：断言"每张健康度卡片指向的报告小节确实存在"（错例）+ "乱词找不到"（反例）。
+       报告是检查产物、可能一份都没有 —— 那种情况下只断言关键词非空，不要求小节存在。 */
+    if (args.contains(QStringLiteral("--finding-probe"))) {
+        OverviewPage page(ToolboxWindow::toolsDirPath());
+        const QStringList keys{QStringLiteral("pin"), QStringLiteral("rtos"),
+                               QStringLiteral("enc"), QStringLiteral("lora"),
+                               QStringLiteral("protocol"), QStringLiteral("cache"),
+                               QStringLiteral("progress")};
+        const bool anyReport = page.srcLinkCount() > 0 || page.docLinkCount() > 0;
+        int empty = 0, missing = 0;
+        QString detail;
+        for (const QString &k : keys) {
+            const QString sec = page.sectionKeywordOf(k);
+            if (sec.isEmpty()) {
+                ++empty;
+                continue;
+            }
+            if (anyReport && !page.reportHasText(sec)) {
+                ++missing;
+                detail += k + QLatin1Char(' ') + sec + QStringLiteral("；");
+            }
+        }
+        const bool bogus = page.reportHasText(QStringLiteral("zzz此节并不存在zzz"));
+        QTextStream(stdout) << QString::fromUtf8("卡片→小节：关键词空 ") << empty
+                            << QString::fromUtf8("　报告在却找不到 ") << missing
+                            << QString::fromUtf8("　报告在: ") << (anyReport ? "是" : "否")
+                            << QString::fromUtf8("　乱词命中: ") << (bogus ? "是(错)" : "否")
+                            << (detail.isEmpty() ? QString() : QStringLiteral("　[") + detail + QLatin1Char(']'))
+                            << "\n";
+        return (empty == 0 && missing == 0 && !bogus) ? 0 : 2;
+    }
+
     if (!args.isEmpty()) {
         const int r = runCli(args);
         if (r >= 0)

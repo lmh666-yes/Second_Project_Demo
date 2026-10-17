@@ -136,6 +136,23 @@ QString filterFindings(const QString &text)
     return out.join(QLatin1Char('\n'));
 }
 
+/* A2：健康度卡片 → 报告里"对应那一节"的关键词。
+   点卡片不再只跳到工具页，而是直接落到报告的那一节（那里有结论与"下一步怎么做"），
+   不用自己在一长串报告里翻。关键词与各报告的实际小节名一致（与 A4 同一套口径）。 */
+QString sectionOfTool(const QString &key)
+{
+    static const QHash<QString, QString> sec{
+        {QStringLiteral("pin"),      QStringLiteral("冲突引脚")},
+        {QStringLiteral("rtos"),     QStringLiteral("检查结果")},
+        {QStringLiteral("enc"),      QStringLiteral("违规清单")},
+        {QStringLiteral("lora"),     QStringLiteral("交叉检查")},
+        {QStringLiteral("protocol"), QStringLiteral("发现")},
+        {QStringLiteral("cache"),    QStringLiteral("发现")},
+        {QStringLiteral("progress"), QStringLiteral("待办标记")},
+    };
+    return sec.value(key);
+}
+
 /* 健康度卡片的 key → 工具页标题（点卡片 / 点历史画布卡片都走这里）。 */
 QString pageOfTool(const QString &key)
 {
@@ -305,20 +322,22 @@ OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
     /* A4：开关一动就重渲染报告原文。 */
     connect(m_onlyFind, &QCheckBox::toggled, this, [this]() { loadTextReports(); });
 
-    /* 点健康度卡片 → 跳到对应工具页（由主窗口接住，见 ToolboxWindow::jumpToPage）。
-       当前轮画布与历史回看画布同一套映射。 */
-    connect(m_canvas, &DashboardCanvas::toolActivated, this, [this](const QString &key) {
-        const QString t = pageOfTool(key);
-        if (!t.isEmpty())
-            emit requestPage(t);
-    });
-    connect(m_histCanvas, &DashboardCanvas::toolActivated, this, [this](const QString &key) {
-        const QString t = pageOfTool(key);
-        if (!t.isEmpty())
-            emit requestPage(t);
-    });
+    /* 点健康度卡片 → A2：直接落到「报告原文」里对应那一节（结论 + 下一步怎么做都在那儿）。
+       想重跑该检查器，去侧栏「检查」组点同名页。 */
+    auto showToolFinding = [this](const QString &key) {
+        const QString sec = sectionOfTool(key);
+        if (sec.isEmpty())
+            return;
+        focusFinding(sec);
+        if (m_status)
+            m_status->setText(QStringLiteral("已定位到「%1」报告里的「%2」一节"
+                                             "（想重跑该检查器 → 侧栏「检查」组）")
+                                  .arg(pageOfTool(key), sec));
+    };
+    connect(m_canvas, &DashboardCanvas::toolActivated, this, showToolFinding);
+    connect(m_histCanvas, &DashboardCanvas::toolActivated, this, showToolFinding);
 
-    /* 构造时不取数（要跑 6 个 Python，会拖慢工具箱启动）；先读已有的 md 报告，
+    /* 构造时不取数（要跑 7 个 Python，会拖慢工具箱启动）；先读已有的 md 报告，
        首次切到本页时再自动取一次结构化数据。 */
     m_canvas->setNotice(QStringLiteral("首次打开本页会自动取数，或点「刷新」。"));
     m_histCanvas->setNotice(QStringLiteral("还没有历史快照。每轮体检会自动归档一份。"));
@@ -708,6 +727,30 @@ void OverviewPage::focusFinding(const QString &text)
         m_onlyFind->setChecked(true);      /* toggled → loadTextReports 重渲染 */
     if (m_view && !text.trimmed().isEmpty())
         m_view->find(text.trimmed());
+}
+
+/* A2 自检：卡片 key → 那一节的关键词（空 = 该卡片没有对应小节）。 */
+QString OverviewPage::sectionKeywordOf(const QString &key) const
+{
+    return sectionOfTool(key);
+}
+
+/* A2 自检：7 份报告原文里是否有这段文字（把原文合并起来找一次）。
+   报告可能一份都没有（检查产物不入库）—— 那时返回 false，由调用方决定是否断言。 */
+bool OverviewPage::reportHasText(const QString &text) const
+{
+    if (text.trimmed().isEmpty())
+        return false;
+    for (const ReportDef &r : REPORTS) {
+        QFile f(QDir(m_toolsDir).filePath(QString::fromUtf8(r.rel)));
+        if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+            continue;
+        const bool hit = QString::fromUtf8(f.readAll()).contains(text);
+        f.close();
+        if (hit)
+            return true;
+    }
+    return false;
 }
 
 /* ---------- A1 历史回看：把某一轮快照重新渲染出来 ---------- */
