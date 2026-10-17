@@ -1685,9 +1685,10 @@ def selftest():
         else:
             ck('板级配置读取器可用（boardcfg 导入成功）', True)
             rb = boardcfg.boards(ROOT)
-            ck('正例：仓库真配置读出 2 块板、名字与 board_envmonitor.json 一致',
-               rb is not None and len(rb) == 2
-               and {n for n, _ in rb} == {'板1 检测端 (F407ZE)', '板2 通信端 (F407ZG)'},
+            ck('正例：仓库真配置读出 3 块板（板1 / 板2 / OTA 工程）、名字与 board_envmonitor.json 一致',
+               rb is not None and len(rb) == 3
+               and {n for n, _ in rb} == {'板1 检测端 (F407ZE)', '板2 通信端 (F407ZG)',
+                                          'OTA 工程 (F407ZE)'},
                str(rb))
             dcfg = tempfile.mkdtemp(prefix='boardcfg_selftest_')
             try:

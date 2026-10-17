@@ -1,7 +1,7 @@
 {
   "version": 1,
   "project": "EnvMonitor",
-  "note": "板级配置：换板时复制本文件改这一份即可（checkers 优先读它，缺文件才回退各自内置默认）。",
+  "note": "板级配置：换板时复制本文件改这一份即可（checkers 优先读它，缺文件才回退各自内置默认）。表里每一条 = 一个『要编译下载的工程』，引脚/RTOS 等按板逐项检查；OTA 工程也列在这里，所以它不再是被漏掉的第三个工程。",
   "boards": [
     {
       "name": "板1 检测端 (F407ZE)",
@@ -30,6 +30,18 @@
       "lora_src": "FWLIB/src/lora_e22.c",
       "flash_log_header": "FWLIB/inc/w25qxx_log.h",
       "flash_header": "FWLIB/inc/w25qxx.h"
+    },
+    {
+      "name": "OTA 工程 (F407ZE)",
+      "dir": "OTA/OTA1",
+      "chip": "STM32F407ZE",
+      "flash_kb": 512,
+      "ram_kb": 192,
+      "ports": ["A", "B", "C", "D", "E", "F", "G"],
+      "pins_per_port": 16,
+      "debug_pins": ["PA13", "PA14", "PA15", "PB3", "PB4"],
+      "lora_header": "FWLIB/inc/lora_e22.h",
+      "lora_src": "FWLIB/src/lora_e22.c"
     }
   ],
   "extra": {

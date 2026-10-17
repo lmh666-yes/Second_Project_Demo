@@ -580,8 +580,11 @@ def run(root, quiet=False):
             'issues': len(d['findings']),
         })
 
-    # 两板对比
-    if len(all_vals) == 2:
+    # 两板对比：协议是"板1 ↔ 板2"两端的事，与板表里有几个工程无关
+    # （原来写死 len(all_vals) == 2 —— 板表里一旦多一个工程，这一整段就被跳过：
+    #   报告变成"0 问题 / 通过"，可下面的回放又写着"不通过"，等于悄悄失明。
+    #   OTA 工程入表时真踩到了，所以改成"≥2 就比前两块"。）
+    if len(all_vals) >= 2:
         n1, v1 = all_vals[0]
         n2, v2 = all_vals[1]
         for macro, desc in PROTOCOL_MACROS.items():
@@ -647,7 +650,10 @@ def run(root, quiet=False):
     # 报告
     lines = ['# 协议端到端校验报告\n']
     lines.append('## 摘要')
-    lines.append('- 检查板：%d' % len(BOARDS))
+    lines.append('- 检查板：%d%s' % (
+        len(BOARDS),
+        '（对比与回放固定取前两块：板1 ↔ 板2，其余工程只统计不参与两端对比）'
+        if len(BOARDS) > 2 else ''))
     lines.append('- 发现问题：%d 条（严重 %d / 注意 %d）' % (
         len(findings),
         sum(1 for f in findings if f[0] == '严重'),
@@ -728,6 +734,10 @@ def run(root, quiet=False):
                          '光照 %d lx / TVOC %d ppb / MQ135 %d'
                          % (d0['temp'], d0['humi'], d0['press'], d0['light'], d0['tvoc'], d0['mq135']))
         lines.append('- 结论：**%s**' % ('通过' if rt_ok else '不通过'))
+        if len(all_vals) > 2:
+            lines.append('- 注：端到端回放固定是"板1 → 板2"两端的事，'
+                         '板表里其余工程（%s）不参与回放。'
+                         % '、'.join(n for n, _ in all_vals[2:]))
         lines.append('')
         lines.append('> 想拿链路仿真的实际产物回放：`python protocol_check.py --replay <link_xxx.hex>`。')
     lines.append('')
@@ -941,9 +951,10 @@ def selftest():
         else:
             ck('板级配置读取器可用（boardcfg 导入成功）', True)
             rb = boardcfg.boards(old_root)
-            ck('正例：仓库真配置读出 2 块板、名字与 board_envmonitor.json 一致',
-               rb is not None and len(rb) == 2
-               and {n for n, _ in rb} == {'板1 检测端 (F407ZE)', '板2 通信端 (F407ZG)'})
+            ck('正例：仓库真配置读出 3 块板（板1 / 板2 / OTA 工程）、名字与 board_envmonitor.json 一致',
+               rb is not None and len(rb) == 3
+               and {n for n, _ in rb} == {'板1 检测端 (F407ZE)', '板2 通信端 (F407ZG)',
+                                          'OTA 工程 (F407ZE)'})
             dcfg = tempfile.mkdtemp(prefix='boardcfg_selftest_')
             try:
                 rp = os.path.join(dcfg, '本地工具', '工具箱', '速查数据', 'rules')

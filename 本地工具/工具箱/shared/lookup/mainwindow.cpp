@@ -211,8 +211,15 @@ void MainWindow::rebuildModuleBox()
     const QString keep = m_module->currentText();
     m_module->blockSignals(true);
     m_module->clear();
-    m_module->addItem(m_section == int(Card::Guide) ? QStringLiteral("全部教程")
-                                                    : QStringLiteral("全部模块"));
+    /* 板块首项"全部XX"：项目引导（Build）列的是 3 个工程（板1 / 板2 / OTA），
+       首项标签就得是"全部工程"，别再跟着资料查询叫"全部模块"。
+       （三个板块分别是：资料查询=模块、引导教程=教程、项目引导=工程。） */
+    QString allLabel = QStringLiteral("全部模块");
+    if (m_section == int(Card::Guide))
+        allLabel = QStringLiteral("全部教程");
+    else if (m_section == int(Card::Build))
+        allLabel = QStringLiteral("全部工程");
+    m_module->addItem(allLabel);
 
     /* 模块名与网页一致：引导/流程卡按「主题」归类，其余按 m；项目引导按工程 */
     QStringList mods;
