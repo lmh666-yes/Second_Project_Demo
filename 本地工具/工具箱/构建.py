@@ -30,6 +30,13 @@ import shutil
 import subprocess
 import sys
 
+# 控制台按 UTF-8 输出：本脚本大量中文提示，在英文 Windows（默认 cp1252 代码页）
+# 上不设这一句会满屏乱码。
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))        # 本地工具/工具箱
 
 # 相对 HERE 的目标：(程序目录, .pro 名, 产物名)
@@ -145,6 +152,46 @@ def write_stash(build_dir, inc, lib):
         f.write('\n'.join(c) + '\n')
 
 
+# ---------------------------------------------------------------- 运行库兜底
+# 打包好的 exe 要能在"没装 Qt / MinGW 的机器"上直接双击运行，所以 release\ 下必须齐
+# 这几样。qmake 只编 exe，Qt 的 DLL 与插件目录历史上是手工拷的 —— 少一个就是
+# 0xC0000135（找不到 DLL）连窗口都起不来（2026-10-17 真踩到：工具箱漏了三个 MinGW
+# 运行库，只在装了 Qt 的本机能跑）。这里每次构建后自检一遍：缺的从工具链补，
+# 工具链里也找不到就大声报出来，别让"能编过"骗成"能跑"。
+RUNTIME_DLLS = ('libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll',
+                'D3Dcompiler_47.dll', 'opengl32sw.dll',
+                'Qt6Core.dll', 'Qt6Gui.dll', 'Qt6Widgets.dll', 'Qt6Network.dll',
+                'Qt6Svg.dll')
+PLUGIN_DIRS = ('platforms', 'imageformats', 'iconengines', 'styles', 'tls',
+               'generic', 'networkinformation', 'translations')
+# Qt 插件的来源：<Qt 根>\<版本>\mingw_64\bin 的上一级还有个 plugins\
+PLUGIN_SRC = os.path.join(os.path.dirname(QT_BIN), 'plugins') if QT_BIN else None
+
+
+def ensure_runtime(release_dir):
+    """补齐 release\\ 下的运行库与插件目录。返回 (补了哪些, 工具链里也找不到哪些)。"""
+    copied, missing = [], []
+    for name in RUNTIME_DLLS:
+        dst = os.path.join(release_dir, name)
+        if os.path.isfile(dst):
+            continue
+        for src_bin in (QT_BIN, MINGW_BIN):
+            cand = os.path.join(src_bin, name) if src_bin else ''
+            if cand and os.path.isfile(cand):
+                shutil.copy2(cand, dst)
+                copied.append(name)
+                break
+        else:
+            missing.append(name)
+    if PLUGIN_SRC and os.path.isdir(PLUGIN_SRC):
+        for d in PLUGIN_DIRS:
+            src, dst = os.path.join(PLUGIN_SRC, d), os.path.join(release_dir, d)
+            if os.path.isdir(src) and not os.path.isdir(dst):
+                shutil.copytree(src, dst)
+                copied.append(d + '/')
+    return copied, missing
+
+
 def clean_build(build_dir):
     """删掉中间产物，保留 release\\ 里的 exe / dll / 插件目录。"""
     removed = 0
@@ -239,6 +286,13 @@ def main(argv):
             fail += 1
         else:
             print('  OK  %s' % exe)
+            copied, missing = ensure_runtime(os.path.dirname(exe))
+            if copied:
+                print('     补运行库：%s' % '、'.join(copied))
+            if missing:
+                print('     [警告] release 里还缺 %d 个运行库，工具链里也找不到：' % len(missing))
+                print('       %s' % '、'.join(missing))
+                print('       缺这些会在没装 Qt / MinGW 的机器上以 0xC0000135 起不来。')
 
     print()
     if fail:
