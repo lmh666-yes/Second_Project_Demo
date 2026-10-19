@@ -2,7 +2,12 @@
 
 #include "theme.h"
 
+#include <QCoreApplication>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
@@ -19,6 +24,109 @@
 namespace {
 const int kMargin = 12;
 const int kGap = 6;
+
+/* H12：红黄线阈值抽成**一份**口径（速查数据/rules/dashboard_thresholds.json），
+   免得"面板 1~4 黄 / ≥5 红"这类数字散在代码里、改一处忘另一处。
+   文件读不到就用下面这组内置默认值兜底（与 JSON 里那份一致）。
+   测试可用环境变量 TOOLBOX_THRESHOLDS 指到临时配置，再调 resetThresholdsForTest() 重载。 */
+struct Thresholds {
+    int pinYellow = 1, pinRed = 5;
+    int encYellow = 1, encRed = 5;
+    int loraYellow = 1, loraRed = 3;
+    int protoYellow = 1, protoRed = 3;
+    int cacheRedSec = 600, cacheYellowSec = 1800;
+    QString source;
+};
+
+QString defaultThresholdsPath()
+{
+    /* 从 exe 位置向上找含「速查数据」的那层（与其它工具定位仓库内文件的口径一致）。 */
+    QDir d(QCoreApplication::applicationDirPath());
+    for (int i = 0; i < 8; ++i) {
+        const QString p = d.filePath(QStringLiteral("速查数据/rules/dashboard_thresholds.json"));
+        if (QFileInfo::exists(p))
+            return p;
+        if (!d.cdUp())
+            break;
+    }
+    return QString();
+}
+
+Thresholds loadThresholds()
+{
+    Thresholds t;
+    const QByteArray box = qgetenv("TOOLBOX_THRESHOLDS");
+    const QString path = box.isEmpty() ? defaultThresholdsPath()
+                                       : QString::fromLocal8Bit(box);
+    t.source = path;
+    QFile f(path);
+    if (path.isEmpty() || !f.open(QIODevice::ReadOnly))
+        return t;                             /* 读不到：用内置默认值 */
+    const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+    auto grp = [&o](const char *k, const char *yk, int &yv, const char *rk, int &rv) {
+        const QJsonObject g = o.value(QLatin1String(k)).toObject();
+        if (g.contains(QLatin1String(yk)))
+            yv = g.value(QLatin1String(yk)).toInt(yv);
+        if (g.contains(QLatin1String(rk)))
+            rv = g.value(QLatin1String(rk)).toInt(rv);
+    };
+    grp("pin_conflicts",  "yellow_min", t.pinYellow,  "red_min", t.pinRed);
+    grp("enc_violations", "yellow_min", t.encYellow,  "red_min", t.encRed);
+    grp("lora_issues",    "yellow_min", t.loraYellow, "red_min", t.loraRed);
+    grp("protocol_issues","yellow_min", t.protoYellow,"red_min", t.protoRed);
+    {
+        const QJsonObject g = o.value(QStringLiteral("cache")).toObject();
+        if (g.contains(QStringLiteral("red_below_seconds")))
+            t.cacheRedSec = g.value(QStringLiteral("red_below_seconds")).toInt(t.cacheRedSec);
+        if (g.contains(QStringLiteral("yellow_below_seconds")))
+            t.cacheYellowSec = g.value(QStringLiteral("yellow_below_seconds"))
+                                   .toInt(t.cacheYellowSec);
+    }
+    return t;
+}
+
+const Thresholds &thresholds()
+{
+    static Thresholds t = loadThresholds();
+    return t;
+}
+}   // namespace
+
+/* H12：给自检用的口径查询与缓存重置 —— 让 --thresholds-probe 能断言"配置真的在起作用"。 */
+int DashboardCanvas::redMinFor(const QString &kind)
+{
+    const Thresholds &t = thresholds();
+    if (kind == QLatin1String("pin"))      return t.pinRed;
+    if (kind == QLatin1String("enc"))      return t.encRed;
+    if (kind == QLatin1String("lora"))     return t.loraRed;
+    if (kind == QLatin1String("protocol")) return t.protoRed;
+    return 0;
+}
+
+int DashboardCanvas::yellowMinFor(const QString &kind)
+{
+    const Thresholds &t = thresholds();
+    if (kind == QLatin1String("pin"))      return t.pinYellow;
+    if (kind == QLatin1String("enc"))      return t.encYellow;
+    if (kind == QLatin1String("lora"))     return t.loraYellow;
+    if (kind == QLatin1String("protocol")) return t.protoYellow;
+    return 0;
+}
+
+int DashboardCanvas::cacheRedSeconds()    { return thresholds().cacheRedSec; }
+int DashboardCanvas::cacheYellowSeconds() { return thresholds().cacheYellowSec; }
+QString DashboardCanvas::thresholdsSource() { return thresholds().source; }
+
+void DashboardCanvas::resetThresholdsForTest()
+{
+    /* 只有一个函数内的 static 缓存；用一个"重载"入口把它换掉（仅测试用）。 */
+    static Thresholds *slot = nullptr;
+    if (!slot) {
+        /* 第一次调用：借 thresholds() 触发初始化，然后记录地址以便后续覆盖 */
+        slot = const_cast<Thresholds *>(&thresholds());
+        return;
+    }
+    *slot = loadThresholds();
 }
 
 DashboardCanvas::DashboardCanvas(QWidget *parent)
@@ -201,13 +309,18 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
     static const char *const kCardKeys[] = {"pin", "rtos", "enc", "lora", "protocol",
                                             "cache", "progress"};
 
-    /* A2 阈值红黄线：数量类指标 1~4 处算「注意」（黄），≥5 处算「严重」（红）。
-       阈值取自清单示例「引脚冲突 ≥ 5 处转红」，其余同口径 —— 免得每次自己盯数字。
-       详情文字里的数字照旧保留，颜色只负责"要不要现在就去看"。 */
-    auto level = [&pal](int n) -> QColor {
+    /* H12 阈值红黄线：数量类指标到多少处算「注意」（黄）、多少处算「严重」（红）——
+       数字统一来自 `速查数据/rules/dashboard_thresholds.json` 这一份口径（读不到用内置默认），
+       免得改一处忘另一处。详情文字里的数字照旧保留，颜色只负责"要不要现在就去看"。 */
+    const Thresholds &TH = thresholds();
+    auto level = [&pal](int n, int redMin) -> QColor {
         if (n <= 0)
             return pal.ok;
-        return n >= 5 ? pal.err : pal.warn;
+        return n >= redMin ? pal.err : pal.warn;
+    };
+    auto thrText = [](int yellow, int red) {
+        return QStringLiteral("%1~%2 处黄 · ≥%3 处红")
+            .arg(yellow).arg(qMax(yellow, red - 1)).arg(red);
     };
 
     {
@@ -229,9 +342,11 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
         if (dbg)
             detail += QStringLiteral(" · 调试口%1").arg(dbg);
         items.append({QStringLiteral("引脚规划"), detail,
-                      (dbg || conflicts >= 5) ? pal.err : (conflicts ? pal.warn : pal.ok),
-                      QStringLiteral("真冲突 1~4 处黄 · ≥5 处红 · 调试口被真占即红"
-                                     "（仅声明重叠的「潜在」不染色）")});
+                      (dbg || conflicts >= TH.pinRed) ? pal.err
+                                                      : (conflicts ? pal.warn : pal.ok),
+                      QStringLiteral("真冲突 %1 · 调试口被真占即红"
+                                     "（仅声明重叠的「潜在」不染色）")
+                          .arg(thrText(TH.pinYellow, TH.pinRed))});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("rtos")).toMap();
@@ -251,7 +366,7 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
         const int v = m.value(QStringLiteral("violations")).toInt();
         items.append({QStringLiteral("编码守卫"),
                       v ? QStringLiteral("%1 违规").arg(v) : QStringLiteral("无违规"),
-                      level(v), QStringLiteral("1~4 处黄 · ≥5 处红")});
+                      level(v, TH.encRed), thrText(TH.encYellow, TH.encRed)});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("lora")).toMap();
@@ -260,7 +375,7 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
             n += b.toMap().value(QStringLiteral("issues")).toList().size();
         items.append({QStringLiteral("LoRa 检查"),
                       n ? QStringLiteral("%1 问题").arg(n) : QStringLiteral("正常"),
-                      level(n), QStringLiteral("1~2 处黄 · ≥3 处红")});
+                      level(n, TH.loraRed), thrText(TH.loraYellow, TH.loraRed)});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("protocol")).toMap();
@@ -271,7 +386,7 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
         n += ff.size();
         items.append({QStringLiteral("协议校验"),
                       n ? QStringLiteral("%1 问题").arg(n) : QStringLiteral("通过"),
-                      level(n), QStringLiteral("1~2 处黄 · ≥3 处红")});
+                      level(n, TH.protoRed), thrText(TH.protoYellow, TH.protoRed)});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("cache")).toMap();
@@ -279,18 +394,19 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
         const double holdSec = m.value(QStringLiteral("hold_seconds")).toDouble();
         const QString hold = m.value(QStringLiteral("hold_text")).toString();
         /* A1：除了"补传慢于写入 / 越界 / 记录塞不下"（severe）算红，再按"断网可扛时长"分级：
-           < 10 分钟红、< 30 分钟黄。原来只显示 hold_text 一个绿字，"只能扛 3 分钟"也看不出来。
+           < red_below_seconds 红、< yellow_below_seconds 黄（阈值来自 H12 那份口径）。
            注意 hold_seconds 为 0 表示宏没算出来 —— 那属于"未核算"，不替它染红（报告里另有严重项）。 */
         QColor col = pal.ok;
-        if (sv || (holdSec > 0 && holdSec < 600))
+        if (sv || (holdSec > 0 && holdSec < TH.cacheRedSec))
             col = pal.err;
-        else if (holdSec > 0 && holdSec < 1800)
+        else if (holdSec > 0 && holdSec < TH.cacheYellowSec)
             col = pal.warn;
         items.append({QStringLiteral("断网缓存"),
                       hold.isEmpty() ? QStringLiteral("未核算")
                                      : QStringLiteral("可扛 %1").arg(hold),
                       col,
-                      QStringLiteral("补传慢于写入即红 · 可扛 <10 分钟红 · <30 分钟黄")});
+                      QStringLiteral("补传慢于写入即红 · 可扛 <%1 分钟红 · <%2 分钟黄")
+                          .arg(TH.cacheRedSec / 60).arg(TH.cacheYellowSec / 60)});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("progress")).toMap();
@@ -354,11 +470,12 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
 
 /* B3：面板顶部一句话结论 + 最该先看的 3 件事（每一项可点，直达报告里对应那一节）。
    B3 的目的：不用先看懂 7 张卡片与一堆数字，也知道"现在什么状态、先动哪一个"。
-   判定口径与健康度卡片一致（引脚调试口=严重、数量类 1~4 黄 / ≥5 红、缓存按可扛时长）。 */
+   判定口径与健康度卡片一致（引脚调试口=严重、数量类按 H12 那份阈值、缓存按可扛时长）。 */
 int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Palette &pal)
 {
     struct Item { QString key; QString name; QString why; int level; };   /* level: 0=严重 1=注意 */
     QVector<Item> bad;
+    const Thresholds &TH = thresholds();       /* H12：与健康卡片同一份口径 */
 
     {
         const QVariantMap m = m_tools.value(QStringLiteral("pin")).toMap();
@@ -374,7 +491,8 @@ int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Pale
                         QStringLiteral("调试口被业务宏占了"), 0});
         else if (conflicts)
             bad.append({QStringLiteral("pin"), QStringLiteral("引脚规划"),
-                        QStringLiteral("%1 处引脚冲突").arg(conflicts), conflicts >= 5 ? 0 : 1});
+                        QStringLiteral("%1 处引脚冲突").arg(conflicts),
+                        conflicts >= TH.pinRed ? 0 : 1});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("rtos")).toMap();
@@ -395,7 +513,7 @@ int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Pale
         const int v = m.value(QStringLiteral("violations")).toInt();
         if (v)
             bad.append({QStringLiteral("enc"), QStringLiteral("编码守卫"),
-                        QStringLiteral("%1 个文件违规").arg(v), v >= 5 ? 0 : 1});
+                        QStringLiteral("%1 个文件违规").arg(v), v >= TH.encRed ? 0 : 1});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("lora")).toMap();
@@ -404,7 +522,7 @@ int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Pale
             n += b.toMap().value(QStringLiteral("issues")).toList().size();
         if (n)
             bad.append({QStringLiteral("lora"), QStringLiteral("LoRa 检查"),
-                        QStringLiteral("%1 处问题").arg(n), n >= 3 ? 0 : 1});
+                        QStringLiteral("%1 处问题").arg(n), n >= TH.loraRed ? 0 : 1});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("protocol")).toMap();
@@ -414,7 +532,7 @@ int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Pale
         n += m.value(QStringLiteral("findings")).toList().size();
         if (n)
             bad.append({QStringLiteral("protocol"), QStringLiteral("协议校验"),
-                        QStringLiteral("%1 处问题").arg(n), n >= 3 ? 0 : 1});
+                        QStringLiteral("%1 处问题").arg(n), n >= TH.protoRed ? 0 : 1});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("cache")).toMap();
@@ -424,12 +542,14 @@ int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Pale
         if (sv)
             bad.append({QStringLiteral("cache"), QStringLiteral("断网缓存"),
                         QStringLiteral("补传跟不上写入或越界（%1）").arg(holdText), 0});
-        else if (hold > 0 && hold < 600)
+        else if (hold > 0 && hold < TH.cacheRedSec)
             bad.append({QStringLiteral("cache"), QStringLiteral("断网缓存"),
-                        QStringLiteral("只能扛 %1（不足 10 分钟）").arg(holdText), 0});
-        else if (hold > 0 && hold < 1800)
+                        QStringLiteral("只能扛 %1（不足 %2 分钟）")
+                            .arg(holdText).arg(TH.cacheRedSec / 60), 0});
+        else if (hold > 0 && hold < TH.cacheYellowSec)
             bad.append({QStringLiteral("cache"), QStringLiteral("断网缓存"),
-                        QStringLiteral("只能扛 %1（不足 30 分钟）").arg(holdText), 1});
+                        QStringLiteral("只能扛 %1（不足 %2 分钟）")
+                            .arg(holdText).arg(TH.cacheYellowSec / 60), 1});
     }
 
     int sev = 0, wr = 0;

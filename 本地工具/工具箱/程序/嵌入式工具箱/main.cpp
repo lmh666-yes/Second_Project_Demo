@@ -658,6 +658,71 @@ int main(int argc, char *argv[])
         return (empty == 0 && missing == 0 && !bogus && deferredOk && onDemandOk) ? 0 : 2;
     }
 
+    /* H12 口径探针：红黄线阈值抽成一份口径（速查数据/rules/dashboard_thresholds.json）。
+       断言四件事：① 默认配置在位且值就是文档那组；② 值自洽（黄下限 < 红下限、都 ≥1）；
+       ③ 换成另一份配置（临时文件 + TOOLBOX_THRESHOLDS）后程序读到的确实跟着变（错例：配置真在起作用）；
+       ④ 清掉环境变量后又回落到仓库默认配置（反例：不会一直粘着临时那份）。 */
+    if (args.contains(QStringLiteral("--thresholds-probe"))) {
+        QTextStream out(stdout);
+        const QString tdir = ToolboxWindow::toolsDirPath();
+        const QString defPath = QDir(tdir).filePath(
+            QStringLiteral("速查数据/rules/dashboard_thresholds.json"));
+        QFile df(defPath);
+        const bool defOk = df.open(QIODevice::ReadOnly);
+        if (defOk)
+            df.close();
+
+        qunsetenv("TOOLBOX_THRESHOLDS");          /* 先确保读的是仓库默认那份 */
+        DashboardCanvas::resetThresholdsForTest();
+        const int pRed = DashboardCanvas::redMinFor(QStringLiteral("pin"));
+        const int lRed = DashboardCanvas::redMinFor(QStringLiteral("lora"));
+        const int cRed = DashboardCanvas::cacheRedSeconds();
+        const int cYel = DashboardCanvas::cacheYellowSeconds();
+        const bool defaultsOk = (pRed == 5 && lRed == 3 && cRed == 600 && cYel == 1800);
+
+        bool sane = true;
+        for (const char *k : {"pin", "enc", "lora", "protocol"}) {
+            const QString kk = QString::fromLatin1(k);
+            sane = sane && DashboardCanvas::yellowMinFor(kk) >= 1
+                        && DashboardCanvas::yellowMinFor(kk) < DashboardCanvas::redMinFor(kk);
+        }
+
+        const QString tmpDir = QDir(QDir::tempPath())
+                                   .filePath(QStringLiteral("toolbox_thr_probe"));
+        QDir().mkpath(tmpDir);
+        const QString tmpCfg = QDir(tmpDir).filePath(QStringLiteral("thr.json"));
+        {
+            QFile w(tmpCfg);
+            if (w.open(QIODevice::WriteOnly))
+                w.write("{\"version\":1,"
+                        "\"pin_conflicts\":{\"yellow_min\":1,\"red_min\":5},"
+                        "\"enc_violations\":{\"yellow_min\":1,\"red_min\":5},"
+                        "\"lora_issues\":{\"yellow_min\":1,\"red_min\":2},"
+                        "\"protocol_issues\":{\"yellow_min\":1,\"red_min\":3},"
+                        "\"cache\":{\"red_below_seconds\":600,\"yellow_below_seconds\":1800}}");
+        }
+        qputenv("TOOLBOX_THRESHOLDS", tmpCfg.toLocal8Bit());
+        DashboardCanvas::resetThresholdsForTest();
+        const bool overrideOk = (DashboardCanvas::redMinFor(QStringLiteral("lora")) == 2
+                                 && DashboardCanvas::thresholdsSource() == tmpCfg);
+
+        qunsetenv("TOOLBOX_THRESHOLDS");
+        DashboardCanvas::resetThresholdsForTest();
+        const bool fallbackOk = (DashboardCanvas::redMinFor(QStringLiteral("lora")) == 3);
+
+        out << QString::fromUtf8("阈值口径：默认配置 ")
+            << (defOk ? QStringLiteral("在") : QStringLiteral("缺"))
+            << QString::fromUtf8("　默认值 ")
+            << (defaultsOk ? QStringLiteral("对") : QStringLiteral("错"))
+            << QString::fromUtf8("（pin红=%1 lora红=%2 缓存红=%3s 黄=%4s）").arg(pRed).arg(lRed).arg(cRed).arg(cYel)
+            << QString::fromUtf8("　自洽 ") << (sane ? QStringLiteral("是") : QStringLiteral("否"))
+            << QString::fromUtf8("　改配置后跟随 ") << (overrideOk ? QStringLiteral("是") : QStringLiteral("否"))
+            << QString::fromUtf8("　清环境变量后回落 ") << (fallbackOk ? QStringLiteral("是") : QStringLiteral("否"))
+            << "\n";
+        out.flush();
+        return (defOk && defaultsOk && sane && overrideOk && fallbackOk) ? 0 : 2;
+    }
+
     /* F2 量测出口：把界面上"控件高度 / 字号 / 页边距与间距 / 滚动条宽度 / 文字是否被裁"
        按**真实像素**量一遍（逐页切过去量，隐藏页也算），把不一致的地方列出来。
        用途：① 驱动 F2 的统一整改；② 当作长期可复跑的"界面规范"检查（值一跑偏就能看见）。 */

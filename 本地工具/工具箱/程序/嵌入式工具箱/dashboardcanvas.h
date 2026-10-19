@@ -58,6 +58,15 @@ public:
     QString conclusionText() const { return m_conclusionText; }
     int conclusionCount() const { return m_conclusionCount; }
 
+    /* H12：红黄线阈值抽成一份口径（速查数据/rules/dashboard_thresholds.json）。
+       这四个 static 供 --thresholds-probe 断言"配置真的在起作用"，不参与界面绘制。 */
+    static int redMinFor(const QString &kind);      /* kind: pin / enc / lora / protocol */
+    static int yellowMinFor(const QString &kind);
+    static int cacheRedSeconds();
+    static int cacheYellowSeconds();
+    static QString thresholdsSource();              /* 本次实际用的配置文件路径 */
+    static void resetThresholdsForTest();           /* 改了 TOOLBOX_THRESHOLDS 后重载缓存 */
+
 protected:
     void paintEvent(QPaintEvent *e) override;
     void mouseMoveEvent(QMouseEvent *e) override;

@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "note": "面板健康度卡片的红黄线阈值 —— 单一来源（H12）。改这一处即生效；程序里另有内置默认值作兜底（文件读不到时用）。",
+  "pin_conflicts": { "yellow_min": 1, "red_min": 5 },
+  "enc_violations": { "yellow_min": 1, "red_min": 5 },
+  "lora_issues": { "yellow_min": 1, "red_min": 3 },
+  "protocol_issues": { "yellow_min": 1, "red_min": 3 },
+  "cache": { "red_below_seconds": 600, "yellow_below_seconds": 1800 }
+}
