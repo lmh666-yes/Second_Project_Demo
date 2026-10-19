@@ -406,6 +406,48 @@ def selftest():
            and isinstance(j['cross'], list),
            '、'.join(sorted(j)) + ' / ' + '、'.join(sorted(j['boards'][0])))
 
+        # H6：补上"报告各节"与几处没被断言过的判定 —— 「下一步怎么做」节、总览表数值、
+        # 「本板无问题 / 本板问题」两文案、两板一致时的"无冲突"、实现缺失 / 编码注意 / 引脚不成对。
+        _txt = render([r1, r2], cross)
+        ck('H6 报告含「下一步怎么做」节且列出四类改法',
+           '## 下一步怎么做' in _txt
+           and all(k in _txt for k in ('AT+UART', '以会发包的那块', '字节耗时 × 3', '*_PORT')))
+        ck('H6 报告 0 节总览表数值对得上（板1 的数值项 / 引脚对 / 问题数）',
+           ('| 板1 | 存在 | 存在 | %d/%d | %d | %d |'
+            % (len(r1['nums']), len(MUST_MATCH),
+               len(set(r1['ports']) & set(r1['pins'])), len(r1['issues']))) in _txt)
+        ck('H6 报告 2 节：板1 写「本板无问题」、板2 写「本板问题」',
+           '本板无问题。' in _txt and '**本板问题**' in _txt)
+
+        r3 = check_board('板3', os.path.join(tmp, 'b1.h'), os.path.join(tmp, 'b1.c'))
+        ck('H6 报告 1 节反例：两板配置一致时写「无冲突」（且交叉问题为空）',
+           cross_check([r1, r3]) == []
+           and '两板关键配置一致，无冲突。' in render([r1, r3], []))
+
+        r4 = check_board('板4', os.path.join(tmp, 'b1.h'), os.path.join(tmp, 'nope.c'))
+        ck('H6 错例：.c 不存在 → 「实现缺失」被命中',
+           any('实现缺失' in k for k, _ in r4['issues']))
+        with open(os.path.join(tmp, 'gbk.c'), 'wb') as f:
+            f.write('/* 温度 */\n'.encode('gbk'))
+        r5 = check_board('板5', os.path.join(tmp, 'b1.h'), os.path.join(tmp, 'gbk.c'))
+        ck('H6 错例：.c 为 GBK → 「编码注意」被命中（工程口径：仅 main.c 允许 GBK）',
+           any('编码注意' in k for k, _ in r5['issues']))
+        wr('lonely.h', '#define SYS_LORA_M0_PORT  GPIOB\n'
+                       '#define SYS_LORA_M1_PORT  GPIOB\n'
+                       '#define SYS_LORA_M1_PIN   GPIO_Pin_1\n')
+        r6 = check_board('板6', os.path.join(tmp, 'lonely.h'), os.path.join(tmp, 'b1.c'))
+        ck('H6 错例：只有 *_PORT 缺 *_PIN → 「引脚宏不成对」被命中',
+           any('引脚宏不成对' in k and 'M0' in d for k, d in r6['issues']),
+           '、'.join(k for k, _ in r6['issues']))
+
+        ck('H6 反例：两板都正常、无交叉 → ok 为 True',
+           to_json([r1, r3], [])['ok'] is True)
+        ck('H6 错例：任一板有问题或有交叉 → ok 为 False',
+           to_json([r1, r2], cross)['ok'] is False
+           and to_json([r1, r4], [])['ok'] is False)
+        ck('H6 口径：无 _PORT/_PIN 后缀的宏（SYS_LORA_UART）不参与成对检查',
+           'SYS_LORA_UART' not in r1['pins'] and 'SYS_LORA_UART' not in r1['ports'])
+
         # ---- C1+C2 板级配置读取器（换装口）：正例读到 2 块板 / 反例配置被改名后返回 None ----
         if boardcfg is None:
             ck('板级配置读取器可用（boardcfg 导入成功）', False, 'boardcfg 导入失败')

@@ -301,8 +301,67 @@ def selftest():
     frames = parse_stream(b''.join(chunks))
     out.append(('lossy 场景含噪声仍能解出若干帧', len(frames) >= 5))
 
-    for what, good in out:
-        print('  %s  %s' % ('PASS' if good else 'FAIL', what))
+    # H6：补上原先"没被断言过"的几处 —— 场景覆盖（noise / lossy / replay 细节）、产物写出、
+    # CRC 判定与重同步这两条判据本身。原先只有 6 条断言，且集中在 normal 与两条组帧用例上。
+    _bad = bytearray(f1)
+    _bad[4] ^= 0xFF                       # 改坏一个净荷字节 → CRC 对不上
+    out.append(('H6 CRC 真的在起作用：改坏一个净荷字节 → 该帧判"不通过"',
+                not parse_stream(bytes(_bad))[0][1]))
+
+    _v = dict(temp=25.5, humi=60.0, press=1013.0, light=1000, tvoc=150, mq=2048)
+    _dv = decode_env(parse_stream(env_frame(_v))[0][3])
+    out.append(('H6 净荷往返：env_frame → parse_stream → decode_env 还原物理量',
+                abs(_dv['temp'] - 25.5) < 0.01 and abs(_dv['press'] - 1013.0) < 0.01
+                and _dv['light'] == 1000 and _dv['mq'] == 2048,
+                str(_dv)))
+
+    _pf = parse_stream(bytes([0x00, 0x01, 0xFE]) + f1)
+    out.append(('H6 重同步：流前夹无用字节，仍只解出那 1 帧真帧（不把垃圾当帧）',
+                len([x for x in _pf if x[1]]) == 1 and _pf[-1][2] == 0x16,
+                '解出 %d 条' % len(_pf)))
+
+    rnd = random.Random(2026)
+    _nz, _nzlog = scen_noise(6, rnd)
+    _nf = parse_stream(b''.join(_nz))
+    out.append(('H6 noise 场景：噪声里重同步，6 帧真帧全部通过（且都是 CMD=0x01）',
+                len([x for x in _nf if x[1]]) == 6
+                and all(x[2] == 0x01 for x in _nf if x[1]),
+                '真帧 %d' % len([x for x in _nf if x[1]])))
+
+    rnd = random.Random(4321)
+    _ls, _l2 = scen_lossy(10, rnd)
+    _sent = sum(1 for l in _l2 if 'CMD=0x01' in l)
+    out.append(('H6 lossy 场景：确实丢了包（发送 < 10），发送出去的帧全部通过',
+                _sent < 10 and len([x for x in parse_stream(b''.join(_ls)) if x[1]]) == _sent,
+                '发送 %d' % _sent))
+
+    import shutil
+    import tempfile
+    _td = tempfile.mkdtemp(prefix='linksim_selftest_')
+    try:
+        _hx, _lg, _fr = write_outputs(os.path.join(_td, 'demo'), b''.join(_nz), _l2)
+        _txt = open(_lg, encoding='utf-8').read()
+        out.append(('H6 产物写得出：.hex / .log 都在，log 头部统计与 parse_stream 复算一致',
+                    os.path.exists(_hx) and os.path.exists(_lg)
+                    and ('总字节 %d，' % len(b''.join(_nz))) in _txt
+                    and ('解出帧 %d' % len(_fr)) in _txt,
+                    _txt.splitlines()[2] if len(_txt.splitlines()) > 2 else ''))
+    finally:
+        shutil.rmtree(_td, ignore_errors=True)
+
+    rnd = random.Random(5)
+    _rp, _ = scen_replay(rnd, cache_n=3)
+    _rf = parse_stream(b''.join(_rp))
+    out.append(('H6 replay 场景：0x96 触发/完成各 1 条、3 条 0x15 历史帧且都带 4 字节时间戳',
+                [x[2] for x in _rf if x[1]].count(0x96) == 2
+                and len([x for x in _rf if x[1] and x[2] == 0x15]) == 3
+                and all(len(x[3]) >= 4 for x in _rf if x[1] and x[2] == 0x15)))
+
+    for item in out:
+        what, good = item[0], item[1]
+        extra = str(item[2]) if len(item) > 2 and item[2] else ''
+        print('  %s  %s%s' % ('PASS' if good else 'FAIL', what,
+                              ('  ' + extra) if extra else ''))
         ok = ok and good
     print('链路仿真自检：%s' % ('PASS' if ok else 'FAIL'))
     return 0 if ok else 1
