@@ -46,8 +46,10 @@ int runLookupCli(const QStringList &args, MainWindow *w)
                 ++guideOnly;
         chk(guideOnly == 30,
             QString::fromUtf8("引导向导 = 30（实际 %1）").arg(guideOnly));
-        chk(d.countManu() == 27,
-            QString::fromUtf8("手册阶段卡 = 27（实际 %1）").arg(d.countManu()));
+        /* 27 → 28：网页源给板2 补了一张「阶段 9｜双通道并行」（板2 由 0~8 变 0~9），
+           dataset 重导后手册阶段卡 27（板1 10 + 板2 9 + Qt 8）→ 28（板1 10 + 板2 10 + Qt 8）。 */
+        chk(d.countManu() == 28,
+            QString::fromUtf8("手册阶段卡 = 28（实际 %1）").arg(d.countManu()));
 
         int noHay = 0;
         for (const Card &c : d.cards())
