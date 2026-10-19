@@ -341,6 +341,34 @@ def analyze(log_text, flash_text, period_ms, replay_ms, record_bytes):
     return findings, stats
 
 
+# B2：这几条"注意"原来只写风险，没写"怎么改、改完怎么验"。按项目"教方法"的口径补上 ——
+# 每条给一个可执行的动作 + 一个能观测的验收判据（按 finding 的 key 挂）。
+# 只加报告文字，不动判定逻辑、也不动 JSON 字段（面板读的仍是 findings 那 4 个字段）。
+FIX_NOTE = {
+    'record':
+        '- **改法**：给一条记录留余量。板2 `FWLIB\\inc\\w25qxx_log.h` 的 `W25QXX_LOG_SLOT_SIZE` '
+        '往大改 —— 要选**能整除扇区 4096 且是 4 的倍数**的值（例如 64 → 载荷 52 字节；'
+        '36 / 40 / 48 都除不尽 4096，别选），代价是容量从 2048 条降到 1024 条；'
+        '或者反过来把线上帧里可省的字段裁掉，让帧长度小于载荷。\n'
+        '  - **验收**：重跑本工具，看「单条数据载荷」> 「一条线上记录的字节数」；'
+        '再重跑协议校验，确认两板的帧长与常量跟新的 SLOT 对得上。',
+    'catchup':
+        '- **改法**：现在补传比写入快、但余量不大 —— 想更稳就 ① 板2 补传任务把 `REPLAY_PERIOD_MS` '
+        '调小（或一轮补多条），或 ② 板1 上报任务把 `vTaskDelay(pdMS_TO_TICKS(...))` 调大。\n'
+        '  - **验收**：重跑本工具，看「净速率」变大、「补完满缓存」变短；'
+        '再做一次"断网攒满 → 恢复"的实测，串口里 `W25QXX_LogLost()` 应保持 0。',
+    'sector':
+        '- **改法**：这是 Flash 的硬件限制（最小擦除单位是整扇区），不是"关掉"的问题 —— '
+        '工程里已经按"擦之前先数出会被连带擦掉的条数、扣掉并计入 `s_lost`"处理'
+        '（见 `FWLIB\\src\\w25qxx_log.c` 擦除那一支）。所以要做的是把它**用起来**：'
+        '① 让上报 / OLED / TFT 在 `W25QXX_LogLost()` 非 0 时给出明确提示（"断网太久，丢了 N 条"），'
+        '别让上层以为数据是完整的；② 想少丢就调小 `W25QXX_LOG_SLOT_SIZE`'
+        '（每扇区条数变多、单次连带丢的占比变小），或放宽上传周期 / 加快补传，别让缓存被撑满。\n'
+        '  - **验收**：连续写满 `每扇区条数 + 1` 条（正好绕回扇区首槽）复现一次，'
+        '确认 `W25QXX_LogLost()` 的增量**正好等于**实际丢掉的条数（不多不少）。',
+}
+
+
 def render(findings, stats):
     severe = sum(1 for f in findings if f[0] == '严重')
     warn = sum(1 for f in findings if f[0] == '注意')
@@ -427,8 +455,12 @@ def render(findings, stats):
     if findings:
         out.append('## 发现')
         out.append('')
-        for lv, loc, msg, _ in findings:
+        for lv, loc, msg, key in findings:
             out.append('- **[%s]** %s — %s' % (lv, loc, msg))
+            # B2：命中"注意"时紧跟一条"怎么改 + 改完怎么验"，别只丢个风险就走人
+            fix = FIX_NOTE.get(key)
+            if fix:
+                out.append(fix)
         out.append('')
 
     # B1：命中后具体先做什么（只加报告文字，不动判定逻辑与 JSON 字段）
@@ -544,6 +576,17 @@ def selftest():
     ck('反例：补传快于写入 → 不报 replay 严重（改为给追平时间）',
        not any(k == 'replay' for lv, _, m, k in f)
        and any(k == 'catchup' for lv, _, m, k in f))
+
+    # B2：几条"注意"必须带"怎么改 + 改完怎么验"（错例：只写风险、不给动作 → 这几条就红）
+    for _k in ('record', 'catchup', 'sector'):
+        _fix = FIX_NOTE.get(_k, '')
+        ck('B2 “%s”那条带改法与验收' % _k, '改法' in _fix and '验收' in _fix, _fix[:30])
+    _rep_b2 = render(f, s)
+    ck('B2 报告的「发现」一节里把改法与验收印出来了（各 ≥3 处）',
+       _rep_b2.count('**改法**') >= 3 and _rep_b2.count('**验收**') >= 3,
+       '改法 %d 处 / 验收 %d 处' % (_rep_b2.count('**改法**'), _rep_b2.count('**验收**')))
+    ck('B2 反例：FIX_NOTE 只给这三条挂改法（别的 key 不会凭空印出"改法"字样）',
+       set(FIX_NOTE) == {'record', 'catchup', 'sector'}, '、'.join(sorted(FIX_NOTE)))
 
     # B2 从工程读参数：错例（采集任务 vTaskDelay(pdMS_TO_TICKS(2000)) → 读到 2000）
     #                 + 反例（工程里没有这些文件 → 返回 None，不瞎猜）
