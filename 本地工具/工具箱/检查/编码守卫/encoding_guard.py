@@ -376,6 +376,28 @@ def keil_snapshot():
     return rows, missing
 
 
+# H10：报告里每条违规下面都跟一条「怎么改 + 改完怎么验」—— 按违规类型（kind）挂。
+# 只加报告文字，不动判定逻辑、也不动 JSON 字段（面板读的仍是 violations 那三个字段）。
+FIX_NOTE = {
+    'BOM':
+        '- **改法**：用编辑器「另存为 UTF-8 **无 BOM**」（VS Code：右下角编码 → "Save without BOM"；'
+        'Keil：Encoding 选 UTF-8 时别勾 BOM）。\n'
+        '  - **验收**：重跑本工具，该文件不再报 BOM；再复编一次确认中文注释不乱码。',
+    '编码':
+        '- **改法**：`main.c` 用 Keil「另存为」成 ANSI（即 GBK）；**其余源码与文档**存成 UTF-8（无 BOM）。'
+        '报"疑似被另存为 UTF-8 / GBK"的那条，就是存错了档。\n'
+        '  - **验收**：重跑本工具，编码项不再命中；再复编一次确认注释不乱码。',
+    '乱码':
+        '- **改法**：`U+FFFD` 是"已经被解错又存回去"丢掉的字符 —— 只能从版本库取回原文'
+        '（`git checkout -- <文件>`）或按上下文重写那几行。\n'
+        '  - **验收**：重跑本工具，该文件的「替换字符」计数为 0；编译无告警。',
+    '换行':
+        '- **改法**：索引里的换行要统一成 LF —— `git add --renormalize .` 再提交即可。'
+        '（工作区显示 CRLF 多半是 `core.autocrlf=true` 的正常签出，**不算违规**，见 0 节"工作区换行统计"。）\n'
+        '  - **验收**：重跑本工具（带 `--eol`），该文件不再报"换行"。',
+}
+
+
 def render(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False,
            scan_labels=None, ws_crlf_files=0, ws_crlf_total=0):
     out = ['# 编码守卫报告', '',
@@ -418,6 +440,17 @@ def render(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False
         for rel, issues in bad_files:
             for kind, detail in issues:
                 out.append('| `%s` | %s | %s |' % (rel, kind, detail.replace('|', '\\|')))
+        out.append('')
+        # H10：每条违规下面跟一条「怎么改 + 改完怎么验」—— 别只报"哪不对"就走人。
+        out.append('### 逐条怎么改（改法 + 验收）')
+        out.append('')
+        for rel, issues in bad_files:
+            for kind, detail in issues:
+                note = FIX_NOTE.get(kind)
+                if not note:
+                    continue
+                out.append('- **%s** `%s` — %s' % (kind, rel, detail.replace('|', '\\|')))
+                out.append(note)
         out.append('')
 
     out.append('## 1b. 注释体检（全角标点 / 乱码残留；仅提示，不计入违规）')
@@ -625,6 +658,21 @@ def selftest():
     results.append(('H8 反例：工作区 CRLF 不算违规（check_file 不给"换行"项）',
                     not any(k == '换行' for k, _ in check_file(p_crlf, {}, True))))
 
+    # H10：报告每条违规都带「改法 + 验收」—— FIX_NOTE 覆盖全部违规类型、两段都写全、报告里印出来。
+    ck10 = results.append
+    ck10(('H10 FIX_NOTE 覆盖全部违规类型（BOM / 编码 / 乱码 / 换行）',
+          set(FIX_NOTE) == {'BOM', '编码', '乱码', '换行'}, '、'.join(sorted(FIX_NOTE))))
+    ck10(('H10 每条都写全「改法 + 验收」两段',
+          all('**改法**' in v and '**验收**' in v for v in FIX_NOTE.values())))
+    _rep10 = render(3, [(p1, [('BOM', '含 UTF-8 BOM'), ('编码', '按 gbk 解码失败')])],
+                    {'utf-8': 3}, False)
+    ck10(('H10 报告的「逐条怎么改」一节把改法与验收印出来了',
+          '### 逐条怎么改' in _rep10 and _rep10.count('**改法**') >= 2
+          and _rep10.count('**验收**') >= 2,
+          '改法 %d 处 / 验收 %d 处' % (_rep10.count('**改法**'), _rep10.count('**验收**'))))
+    ck10(('H10 反例：没有违规时不印空的「逐条怎么改」节',
+          '### 逐条怎么改' not in render(3, [], {'utf-8': 3}, False)))
+
     j = to_json(3, [(p1, [('编码', 'x')])], {'utf-8': 2}, False)
     results.append(('JSON 输出结构正确',
                     j['tool'] == 'encoding_guard' and j['scanned'] == 3
@@ -683,8 +731,10 @@ def selftest():
 
     ok = all(r[1] for r in results)
     print('编码守卫自检：%s' % ('PASS' if ok else 'FAIL'))
-    for what, good in results:
-        print('  %s  %s' % ('PASS' if good else 'FAIL', what))
+    for item in results:
+        extra = str(item[2]) if len(item) > 2 and item[2] else ''
+        print('  %s  %s%s' % ('PASS' if item[1] else 'FAIL', item[0],
+                              ('  （实际：%s）' % extra) if extra else ''))
     shutil.rmtree(d, ignore_errors=True)
     return 0 if ok else 1
 

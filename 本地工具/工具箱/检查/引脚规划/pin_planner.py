@@ -627,6 +627,7 @@ def render_board(title, inc_dir, use_list, result):
     if live_list:
         for name, lst in live_list:
             out.append('- %s ← %s' % (name, ', '.join(lst)))
+            out.append(FIX_NOTE['live_conflict'])     # H10：每条下面跟「改法 + 验收」
         out.append('')
         # 修复建议：候选脚只取"库里没人认领"的脚，并明确要求核对原理图。
         # B2：改成按冲突脚就近给 —— 同端口（位距近的先）优先，跨端口次之，而不是
@@ -665,6 +666,7 @@ def render_board(title, inc_dir, use_list, result):
             n_live = sum(1 for b in lst if b in live_b)
             mark = '、'.join(b + ('（工程里在用）' if b in live_b else '（工程里没启用）') for b in lst)
             out.append('- %s ← %s　—— 真被启用的占用者 %d 个' % (name, mark, n_live))
+            out.append(FIX_NOTE['decl_conflict'])     # H10
         out.append('')
         out.append('> **为什么不算"真会撞"**：这些脚在 `FWLIB\\inc` 里被多个宏成对声明，'
                    '但除至多一个之外，工程的应用码（`main.c` 等）里都没有用到它 —— '
@@ -686,6 +688,7 @@ def render_board(title, inc_dir, use_list, result):
     if dbg_real:
         for name, mods in dbg_real:
             out.append('- %s ← %s' % (name, '、'.join(mods)))
+            out.append(FIX_NOTE['debug_used'])        # H10
         out.append('')
     else:
         out.append('无。')
@@ -695,6 +698,7 @@ def render_board(title, inc_dir, use_list, result):
     if dbg_decl:
         for name, mods in dbg_decl:
             out.append('- %s ← %s' % (name, '、'.join(mods)))
+            out.append(FIX_NOTE['debug_decl'])        # H10
         out.append('')
     else:
         out.append('无。')
@@ -725,6 +729,7 @@ def render_board(title, inc_dir, use_list, result):
         for pin in sorted(umap):
             out.append('- %s ← %s（头文件里声明了 _PORT/_PIN，全工程没有代码引用）'
                        % (pin, '、'.join(umap[pin])))
+            out.append(FIX_NOTE['zombie'])            # H10
         out.append('')
         out.append('> **下一步怎么做**：这些脚循环里没人用、硬件上也可能空着，'
                    '是引脚冲突时最省事的候选。动手前仍要对照原理图确认，'
@@ -738,8 +743,10 @@ def render_board(title, inc_dir, use_list, result):
         out.append('')
         for b in unpaired:
             out.append('- 宏不成对：`%s`' % b)
+            out.append(FIX_NOTE['unpaired'])          # H10
         for b in dup_base:
             out.append('- 同板内重定义：`%s`' % b)
+            out.append(FIX_NOTE['dup_base'])          # H10
         out.append('')
 
     # 中断资源
@@ -766,6 +773,43 @@ def render_board(title, inc_dir, use_list, result):
 
     out.append(render_dma(os.path.dirname(os.path.dirname(inc_dir))))
     return '\n'.join(out)
+
+
+# H10：报告里每条「严重 / 注意」下面跟一条「改法 + 验收」—— 按条目类型挂。
+# 与各节末尾的「下一步怎么做」块互补：块讲整体思路，这里逐条给出**动作 + 验收判据**。
+# 只加报告文字，不动判定逻辑、也不动 JSON 字段。
+FIX_NOTE = {
+    'live_conflict':
+        '  - **改法**：这一个脚上只能留一个模块 —— 把其中一个改到别的脚（就近候选见下表，'
+        '动手前对照原理图确认该脚在板上真没接东西），或在代码里加"两个模块互斥"的判断。\n'
+        '  - **验收**：重跑本工具，该脚从「真会撞」一栏消失（或落进「仅是声明重叠」）；'
+        '复编后确认两个模块 init 的先后顺序里不再互相覆盖。',
+    'decl_conflict':
+        '  - **改法**：现在**不用动** —— 至多一个占用者真被启用，不会真撞。等你动手启用第二个模块时，'
+        '先把这个脚让出来（改宏或加互斥）。\n'
+        '  - **验收**：启用第二个模块后重跑本工具，该脚应出现在「真会撞」一栏（而不是这里）；'
+        '若没出现，说明那个模块并没真正用到这个脚。',
+    'debug_used':
+        '  - **改法**：SWD/JTAG 的脚现在被业务模块占了，必须让出来（PA13/PA14 任何时候都不能动；'
+        'PA15/PB3/PB4 只有在代码里关掉 JTAG、只留 SW/D 之后才可用）。改完复编。\n'
+        '  - **验收**：重跑本工具，「调试口被占用（严重）」一栏变"无"；再用下载器连一次，确认还能烧写/调试。',
+    'debug_decl':
+        '  - **改法**：暂时不用动 —— 占它的模块工程里没启用。等你启用它时，先按上面那条让出脚位'
+        '（或明确关 JTAG 并写清取舍）。\n'
+        '  - **验收**：启用后重跑本工具，该脚应落进「调试口被占用（严重）」一栏；'
+        '下载器仍能连上说明没被真占。',
+    'zombie':
+        '  - **改法**：这些宏全工程没人引用、可以删（删前先提交一次当前状态）；'
+        '要留作以后用就先标 TODO。\n'
+        '  - **验收**：删完重跑本工具，该脚不再出现在「僵尸宏」一栏；复编一次确认没有别处引用。',
+    'unpaired':
+        '  - **改法**：`*_PORT` 与 `*_PIN` 必须成对 —— 补上缺的那一半（`_PORT` 给 GPIOx，'
+        '`_PIN` 给 GPIO_Pin_n）。\n'
+        '  - **验收**：重跑本工具，「需人工确认 → 宏不成对」不再列出它；复编确认该模块引脚宏能正常展开。',
+    'dup_base':
+        '  - **改法**：同一板内同一个基名只应声明一次 —— 删掉重复的那份（保留与原理图一致的那个端口/脚）。\n'
+        '  - **验收**：重跑本工具，「需人工确认 → 同板内重定义」不再列出它；复编无 redefinition 告警。',
+}
 
 
 def to_json(results):
@@ -961,6 +1005,17 @@ def selftest():
         ck('方案检查报出选中模块之间的冲突',
            '选中模块之间的冲突' in txt and 'PB5' in txt and 'LORA_E22' in txt)
         ck('报告渲染不炸且含中断资源表', '### 中断资源' in txt and 'USART1_IRQn' in txt)
+
+        # H10：报告每条「严重 / 注意」下面都带「改法 + 验收」—— 覆盖全部条目类型、两段写全、印出来。
+        _keys10 = {'live_conflict', 'decl_conflict', 'debug_used', 'debug_decl',
+                   'zombie', 'unpaired', 'dup_base'}
+        ck('H10 FIX_NOTE 覆盖报告里会出现的全部条目类型', set(FIX_NOTE) == _keys10,
+           '缺：' + '、'.join(sorted(_keys10 - set(FIX_NOTE))))
+        ck('H10 每条都写全「改法 + 验收」两段',
+           all('**改法**' in v and '**验收**' in v for v in FIX_NOTE.values()))
+        ck('H10 报告的冲突 / 调试口 / 僵尸宏几栏都印出了改法 · 验收',
+           txt.count('**改法**') >= 3 and txt.count('**验收**') >= 3,
+           '改法 %d 处 / 验收 %d 处' % (txt.count('**改法**'), txt.count('**验收**')))
 
         # B1 调试口两级：错例（PA13 ← KEY1，KEY1 被应用码用到 = 真危险，必须写进"严重"那一栏）/
         # 反例（PB3 ← SPI3_SCK，工程里没启用 = 只算潜在，不许混进严重那一栏）

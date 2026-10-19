@@ -265,6 +265,76 @@ PRINCIPLE = {
                   '以后调优先级时会以为改一处就行，实际那处根本没被用到。',
 }
 
+# H10：报告里每条「注意 / 严重」下面都跟一条「怎么改 + 改完怎么验」—— 按命中的 key 挂，
+# 与上面 PRINCIPLE（"为什么"）分开：PRINCIPLE 讲原理，这里讲**动作与验收判据**。
+# 只加报告文字，不动判定逻辑、也不动 JSON 字段（面板读的仍是 findings 那 4 个字段）。
+FIX_NOTE = {
+    'porting':
+        '- **改法**：在 `FreeRTOS/port/FreeRTOSConfig.h` 补齐缺的必备宏 —— 关键项'
+        '（`configPRIO_BITS` / `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY` / '
+        '`configMAX_PRIORITIES` / `configTOTAL_HEAP_SIZE` / `configMINIMAL_STACK_SIZE`）先补，'
+        '值与本仓库其余两块板的同名宏取齐（三块板同一口径才比对得上）。\n'
+        '  - **验收**：重跑本工具，第 0 节「配置摘要」里这些宏都有值；'
+        '「移植自检」一节的"必备宏齐全性"变成"齐全"。',
+    'group':
+        '- **改法**：把 `FWLIB/inc/sys_nvic.h` 的 `SYS_NVIC_PRIORITY_GROUP` 设为 '
+        '`NVIC_PriorityGroup_4`（4 位全做抢占，配 `configPRIO_BITS=4`）；'
+        '并确认启动处 `NVIC_PriorityGroupConfig(...)` 传的是同一个值。\n'
+        '  - **验收**：重跑本工具，「移植自检 → 配置自洽性」那行的移位换算全为 ✓，`group` 不再命中。',
+    'prio':
+        '- **改法**：把该中断的抢占优先级抬到 ≥ `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`'
+        '（本仓库为 5）—— 改**模块头里那个宏**（如 `SYS_USART_IRQ_PRE_PRIO`），别只改调用处。\n'
+        '  - **验收**：重跑本工具，该 ISR 的「小于内核上限」提示消失；'
+        '再用调试器在 `BASEPRI` 上确认它不再越过内核屏蔽。',
+    'prio_drift':
+        '- **改法**：让优先级只有一个来源 —— `SYS_NVIC_SetPriority(...)` 那一行改成传模块头里的宏'
+        '（如 `SYS_USART_IRQ_PRE_PRIO`），不写字面量、也不借别的模块的宏。\n'
+        '  - **验收**：重跑本工具，「配置漂移」不再命中；再把那个宏临时改个值，'
+        '确认报告里的读数和配置摘要跟着变（证明宏真的被用到了）。',
+    'isr_api':
+        '- **改法**：中断里只允许 `xxxFromISR` 系列 —— 把 `xQueueSend` / `xSemaphoreGive` 等换成'
+        '`...FromISR`，并在末尾按需 `portYIELD_FROM_ISR(xHigherPriorityTaskWoken)`。\n'
+        '  - **验收**：重跑本工具，`isr_api` 命中清零；实机上确认队列/信号量在中断里确实生效。',
+    'critical':
+        '- **改法**：中断上下文别用 `taskENTER_CRITICAL` / `portENTER_CRITICAL`，'
+        '改用 `..._FROM_ISR` 版本，并按序恢复（拿到返回值后再调对应的 EXIT_ISR）。\n'
+        '  - **验收**：重跑本工具，`critical` 不再命中；再做一次高频中断压测，确认系统不卡死。',
+    'isr_cost':
+        '- **改法**：把耗时/不可重入的活移出 ISR（`printf`、`malloc`/`pvPortMalloc`、忙等延时）—— '
+        'ISR 里只置标志或投消息，打印与分配交给任务做。\n'
+        '  - **验收**：重跑本工具，`isr_cost` 不再命中；用 GPIO 翻转 + 示波器量中断时长，应明显变短。',
+    'isr_float':
+        '- **改法**：ISR 里改成定点运算（本项目线上传定点整数就是为这个），'
+        '或明确启用 `portTASK_USES_FLOATING_POINT` 并确认 FPU 上下文的取舍。\n'
+        '  - **验收**：重跑本工具，`isr_float` 不再命中；实机跑一遍确认浮点结果正确、无异常。',
+    'volatile':
+        '- **改法**：给"ISR 里写、任务里读"的变量加 `volatile`（如 `static volatile uint8_t g_flag;`）；'
+        '只在 ISR 里用、或只读不写的不用加。\n'
+        '  - **验收**：重跑本工具，`volatile` 不再命中；再用 `-O2` 复编确认标志位能正常变化'
+        '（不再是"怎么都不变"）。',
+    'stack':
+        '- **改法**：栈深度小于 `configMINIMAL_STACK_SIZE` 的抬到 ≥ 它（单位是字，1 字 = 4 字节）；'
+        '优先级超 `configMAX_PRIORITIES` 的改回 `0..MAX-1` 范围内。\n'
+        '  - **验收**：重跑本工具，`stack` 两条都不再命中；'
+        '实机上带 `configCHECK_FOR_STACK_OVERFLOW=2` 跑一段，确认不触发溢出钩子。',
+    'heap':
+        '- **改法**：任务栈（连同队列/信号量）合计超过 `configTOTAL_HEAP_SIZE` 七成时，'
+        '抬高堆大小或削减任务栈。\n'
+        '  - **验收**：重跑本工具，`heap` 提示不再命中；'
+        '实机上打开 `configUSE_MALLOC_FAILED_HOOK`，确认创建任务不失败。',
+    'assert':
+        '- **改法**：① 报"未定义 configASSERT" → 在 `FreeRTOSConfig.h` 里定义它'
+        '（如 `if((x)==0){taskDISABLE_INTERRUPTS();for(;;);}` 或转发到自己的断言函数）；'
+        '② 报"找不到 FreeRTOSConfig.h" → 先确认 `FreeRTOS/port/FreeRTOSConfig.h` 在位。\n'
+        '  - **验收**：重跑本工具 —— 前者看「配置摘要」的 `_has_assert` 变"有"，'
+        '后者看第 0 节能读到配置摘要。',
+    'wdg_flash':
+        '- **改法**：做长擦写之前把 IWDG 超时放到 ≥ 8s（IWDG 最大约 32.8s），'
+        '或在擦除前后各 `SYS_WDG_Feed()` 一次；确认擦除路径上确实喂了狗。\n'
+        '  - **验收**：重跑本工具，`wdg_flash` 提示消失；'
+        '实机跑一次"长擦写 + 看门狗开启"，不出现意外复位。',
+}
+
 
 def read_text(path):
     with open(path, 'rb') as f:
@@ -1246,6 +1316,16 @@ def render(results):
             for lv, loc, msg, _ in findings:
                 out.append('| %s | `%s` | %s |' % (lv, loc, msg.replace('|', '\\|')))
             out.append('')
+            # H10：每条「注意 / 严重」下面紧跟一条「怎么改 + 改完怎么验」—— 别只丢现象就走人。
+            out.append('### 逐条怎么改（改法 + 验收）')
+            out.append('')
+            for lv, loc, msg, key in findings:
+                note = FIX_NOTE.get(key)
+                if not note:
+                    continue
+                out.append('- **[%s] `%s`** — %s' % (lv, loc, msg.replace('|', '\\|')))
+                out.append(note)
+            out.append('')
             seen = []
             for _, _, _, key in findings:
                 if key not in seen:
@@ -1729,6 +1809,23 @@ def selftest():
                    and boardcfg.boards(dcfg, fallback=False) is None)
             finally:
                 shutil.rmtree(dcfg, ignore_errors=True)
+
+        # H10：报告每条「注意 / 严重」都带「改法 + 验收」—— FIX_NOTE 覆盖全部命中类型，
+        # 每条两段都写全，且报告里确实印出来了；没有命中的板不印空的这一节。
+        ck('H10 FIX_NOTE 覆盖全部命中类型（PRINCIPLE 的 key 加 porting）',
+           set(FIX_NOTE) == set(PRINCIPLE) | {'porting'},
+           '缺：' + '、'.join(sorted((set(PRINCIPLE) | {'porting'}) - set(FIX_NOTE))))
+        ck('H10 每条都写全「改法 + 验收」两段',
+           all('**改法**' in v and '**验收**' in v for v in FIX_NOTE.values()))
+        _rep10 = render([('板X', None,
+                          [('严重', 'a.c:1', '现象甲', 'prio'), ('注意', 'b.c:2', '现象乙', 'stack')],
+                          [])])
+        ck('H10 报告的「逐条怎么改」一节把改法与验收印出来了',
+           '### 逐条怎么改' in _rep10 and _rep10.count('**改法**') >= 2
+           and _rep10.count('**验收**') >= 2,
+           '改法 %d 处 / 验收 %d 处' % (_rep10.count('**改法**'), _rep10.count('**验收**')))
+        ck('H10 反例：没有命中的板不印空的「逐条怎么改」节',
+           '### 逐条怎么改' not in render([('板X', None, [], [])]))
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

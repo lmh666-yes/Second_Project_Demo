@@ -604,6 +604,18 @@ def render(root, markers, stubs, enc_count, file_count, cur=None, prev=None):
     # 本节只做汇总与排序：扫描口径、--json 字段名均未改动，面板契约不变。
     out.append('注：本节只汇总排序，扫描口径与 `--json` 字段均未改动。')
     out.append('')
+    # H10：进度扫描没有「严重 / 注意」分级（只数待办与桩），所以按「模块」给一条同口径的
+    # 改法与验收 —— 每做完一个模块，用同一把尺子验收，而不是凭感觉"应该差不多了"。
+    if mod_rows:
+        out.append('### 怎么改 / 怎么验收（按模块）')
+        out.append('')
+        out.append('- **改法**：按上面的建议顺序，从 `1)` 那个模块开始做 —— 把该模块名下的'
+                   '`TODO/FIXME` 待办逐条落地、把空函数体/只有 `return` 的桩填上实现。'
+                   '一次把一个模块做完再动下一个，别铺开。\n'
+                   '  - **验收**：重跑本工具，该模块在「## 3. 待办按模块汇总」里的**待办与桩都变成 0**'
+                   '（它从这张表里消失）；主流程模块（名字含 `main`）还要能编过并跑起来 ——'
+                   '那一步用 Keil 复编 + 上板确认，本工具只负责"数字清零"。')
+        out.append('')
 
     out.append('## 4. 疑似有意留空（非待实现，核对后忽略）')
     out.append('')
@@ -786,6 +798,14 @@ def selftest():
            '## 3. 待办按模块汇总（先做哪个）' in report
            and report.index('## 2. 疑似桩函数') < report.index('## 3. 待办按模块汇总')
            < report.index('## 6. 说明'))
+
+        # H10：进度扫描没有「严重 / 注意」分级，改成按模块给「改法 / 验收」—— 同一把尺子验收。
+        ck('H10 报告按模块给出「改法 / 验收」',
+           '### 怎么改 / 怎么验收（按模块）' in report
+           and report.count('**改法**') >= 1 and report.count('**验收**') >= 1,
+           '改法 %d 处' % report.count('**改法**'))
+        ck('H10 反例：没有待办 / 桩时不印空的这一节',
+           '### 怎么改 / 怎么验收（按模块）' not in render(tmp, [], [], enc_count, file_count))
 
         j = to_json(tmp, markers, stubs, enc_count, file_count, [])
         ck('JSON 结构正确（工具名/计数/stub_files）',

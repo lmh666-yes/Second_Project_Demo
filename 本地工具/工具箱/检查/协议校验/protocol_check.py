@@ -276,6 +276,32 @@ def cmd_convention_issues(board_name, cmds, ack_flag):
     return out
 
 
+# H10：报告「发现」里每条问题下面都跟一条「怎么改 + 改完怎么验」—— 按类别（cat）挂。
+# 只加报告文字，不动判定逻辑、也不动 JSON 字段（面板读的仍是 lvl/loc/msg/cat）。
+FIX_NOTE = {
+    'protocol':
+        '- **改法**：两板**同名常量必须同值** —— 以发包方（板1 检测端）为准，把板2 的宏改齐'
+        '（帧头 `SYS_FRAME_*`、长度、校验、字段偏移都在这一组）；改完两板一起复编。\n'
+        '  - **验收**：重跑本工具，「各板常量对照」一列全是 ✓、"发现"里 protocol 项清零；'
+        '再跑一次链路仿真 → 协议工作台解帧确认能解出。',
+    'cmd_table':
+        '- **改法**：命令字表两板取值对齐；同一板内两个名字撞同一个值要拆开（改其中一个的数值）。\n'
+        '  - **验收**：重跑本工具，「命令字表」里不再有"不一致 / 撞车"项，命令字模板 JSON 也不列冲突项。',
+    'cmd_naming':
+        '- **改法**：把命名改成 `SYS_FRAME_CMD_<大写下划线>`（应答写成 `SYS_FRAME_<X>_ACK_CMD`）。\n'
+        '  - **验收**：重跑本工具，"命名不规范"不再命中。',
+    'cmd_ack':
+        '- **改法**：应答命令字的值 = 请求命令字 | `SYS_FRAME_ACK_FLAG`，并保持 `_ACK_CMD` 命名；'
+        '请求命令字的值要落在 `0x10~0x7F`（最高位留给应答）。\n'
+        '  - **验收**：重跑本工具，"应答位不对 / 找不到对应请求命令字"不再命中。',
+    'roundtrip':
+        '- **改法**：板1 组帧与板2 解帧要能对上 —— 先看「各板常量对照」里哪些宏是 ✗'
+        '（帧头 / 字段偏移 / 校验），改齐后两板一起复编；报"偏移宏不全"时把缺的 `SYS_ENV_OFF_*` 补上。\n'
+        '  - **验收**：重跑本工具，"两板端到端回放不通过"消失（或由"跳过"变通过）；'
+        '再跑 `python 检查\\协议校验\\protocol_check.py --replay 检查\\链路仿真\\产物\\link_normal.hex` 复核。',
+}
+
+
 def write_cmd_template(root, tables, ack_flag):
     """B3：把两板命令字并集落成一份模板（JSON），方便"新增命令字时"对照。
     tables = [(板名, {命令字: 值}), ...]。写不动就静默跳过（只读工具不因写模板失败而挂）。"""
@@ -556,6 +582,21 @@ def check_board(name, h_path, c_path):
     return {'findings': findings, 'vals': vals, 'extra': extra}
 
 
+def render_findings(findings):
+    """把「发现」一节渲染成文本行 —— 每条问题后面跟「改法 + 验收」（H10）。
+    单独成函数既是给 `run()` 用，也让自检能直接断言（不必跑一遍完整取数）。"""
+    if not findings:
+        return []
+    out = ['## 发现']
+    for lv, loc, msg, cat in findings:
+        out.append('- **[%s]** %s — %s' % (lv, loc, msg))
+        note = FIX_NOTE.get(cat)
+        if note:
+            out.append(note)
+    out.append('')
+    return out
+
+
 def run(root, quiet=False):
     findings = []
     details = []
@@ -660,11 +701,7 @@ def run(root, quiet=False):
         sum(1 for f in findings if f[0] == '注意')))
     lines.append('- 结论：**%s**\n' % ('通过' if ok else '不通过'))
 
-    if findings:
-        lines.append('## 发现')
-        for lv, loc, msg, cat in findings:
-            lines.append('- **[%s]** %s — %s' % (lv, loc, msg))
-        lines.append('')
+    lines.extend(render_findings(findings))
 
     lines.append('## 各板常量对照')
     lines.append('| 常量 | %s | %s |' % (all_vals[0][0], all_vals[1][0]))
@@ -943,6 +980,20 @@ def selftest():
            and isinstance(j['boards'][0]['issues'], int)
            and isinstance(j['findings'], list)
            and set(j['findings'][0]) == {'lvl', 'loc', 'msg', 'cat'})
+
+        # H10：报告「发现」里每条问题都带「改法 + 验收」—— 覆盖全部类别、两段写全、明确印出来。
+        ck('H10 FIX_NOTE 覆盖全部问题类别',
+           set(FIX_NOTE) == {'protocol', 'cmd_table', 'cmd_naming', 'cmd_ack', 'roundtrip'})
+        ck('H10 每条都写全「改法 + 验收」两段',
+           all('**改法**' in v and '**验收**' in v for v in FIX_NOTE.values()))
+        _f10 = render_findings([('严重', 'a.c', '现象甲', 'protocol'),
+                                ('注意', 'b.c', '现象乙', 'cmd_naming')])
+        ck('H10 「发现」一节把改法与验收印出来了',
+           sum(1 for l in _f10 if '**改法**' in l) >= 2
+           and sum(1 for l in _f10 if '**验收**' in l) >= 2)
+        ck('H10 反例：没有发现时不产出空的「发现」节', render_findings([]) == [])
+        ck('H10 反例：类别不在 FIX_NOTE 里时不硬塞改法',
+           not any('**改法**' in l for l in render_findings([('注意', 'x', 'y', 'unknown_cat')])))
 
         # ---- C1+C2 板级配置读取器（换装口）：正例读到 2 块板 / 反例配置被改名后返回 None ----
         # 用保存的旧 ROOT（真正的仓库根）验证真配置文件，避免被本自检临时改的 ROOT 干扰。

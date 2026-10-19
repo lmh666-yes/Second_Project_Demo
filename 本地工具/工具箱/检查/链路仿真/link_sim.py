@@ -249,6 +249,9 @@ def write_outputs(base, stream, log):
         f.write('# 链路仿真日志\n\n')
         f.write('总字节 %d，解出帧 %d（其中通过 %d）\n\n'
                 % (len(stream), len(frames), sum(1 for x in frames if x[1])))
+        # H10：产物日志也带一条"怎么验收" —— 产物不是"发现问题"型报告，给的是判定口径。
+        f.write('验收：解出帧数应等于场景该发的帧数，且"通过"数 = 解出数；'
+                '对不上时按下面日志逐条核对（噪声/丢包场景允许解出数少于场景帧数）。\n\n')
         for line in log:
             f.write(line + '\n')
     return hexpath, logpath, frames
@@ -346,6 +349,9 @@ def selftest():
                     and ('总字节 %d，' % len(b''.join(_nz))) in _txt
                     and ('解出帧 %d' % len(_fr)) in _txt,
                     _txt.splitlines()[2] if len(_txt.splitlines()) > 2 else ''))
+        # H10：产物日志里带一条明确的"验收判据"（产物不是"发现问题"型报告）
+        out.append(('H10 产物日志带「验收」判据（解出帧数 = 该发帧数、通过数 = 解出数）',
+                    '验收：' in _txt and '解出帧数应等于场景该发的帧数' in _txt))
     finally:
         shutil.rmtree(_td, ignore_errors=True)
 

@@ -127,7 +127,9 @@ def parse_header(path):
     pins = {}
 
     if not os.path.exists(path):
-        return nums, ports, pins, ['文件不存在']
+        # 必须是 (类型, 详情) 二元组：render 里按 `for kind, detail in issues` 遍历，
+        # 早期这里返回的是裸字符串，头文件缺失时报告渲染会直接崩（H10 顺带修正）。
+        return nums, ports, pins, [('头文件缺失', '未找到头文件：%s' % path)]
 
     lines, enc = read_lines(path)
     for i, line in enumerate(lines, 1):
@@ -222,6 +224,47 @@ def cross_check(results):
     return issues
 
 
+# H10：报告里每条问题下面都跟一条「怎么改 + 改完怎么验」—— 按问题类型（kind）挂。
+# 只加报告文字，不动判定逻辑、也不动 JSON 字段（面板读的仍是 boards/issues 与 cross）。
+FIX_NOTE = {
+    '波特率非法':
+        '- **改法**：按亿佰特 E22 的 `AT+UART` 取值表把 `SYS_LORA_BAUD` 改成合法值'
+        '（9600 / 19200 / 38400 / 115200 等），**两板取同一个值**。\n'
+        '  - **验收**：重跑本工具，"波特率非法"不再命中，且「两板不一致」也不再命中；'
+        '再让 E22 进配置模式 `AT+UART?` 读回，确认与宏一致。',
+    '帧间隔偏小':
+        '- **改法**：按「字节耗时 × 3」把 `SYS_LORA_FRAME_GAP_MS` 抬到建议值'
+        '（9600 波特率下 1 字节约 1.04ms，建议 ≥ 30）。\n'
+        '  - **验收**：重跑本工具提示消失；实机连续发同一帧，对端只收到**一帧**（不再被切成多段）。',
+    '实现缺失':
+        '- **改法**：在工程里补上头文件对应的实现文件（如 `FWLIB/src/lora_e22.c`），'
+        '或更正板表里配的 `.c` 路径。\n'
+        '  - **验收**：重跑本工具，0 节「实现文件」一栏由 **缺失** 变"存在"，问题清零。',
+    '编码注意':
+        '- **改法**：把该 `.c` 另存为 UTF-8 **无 BOM**（工程口径：只有 `main.c` 允许 GBK）。\n'
+        '  - **验收**：重跑本工具，"编码注意"消失；复编一次确认中文注释不乱码。',
+    '引脚宏不成对':
+        '- **改法**：补齐 `*_PORT` / `*_PIN` 的另一半（`SYS_LORA_M0_PORT` 与 `SYS_LORA_M0_PIN` 必须成对，'
+        'M1 / AUX 同理）。\n'
+        '  - **验收**：重跑本工具，成对检查不再命中；实机确认该控制脚真能拉高拉低（不再是运行期为 0）。',
+    '控制脚缺失':
+        '- **改法**：补 `SYS_LORA_M0_PORT/PIN` 与 `SYS_LORA_M1_PORT/PIN` —— E22 要进 AT 配置模式'
+        '必须能切 M0/M1。\n'
+        '  - **验收**：重跑本工具，"控制脚缺失"消失；实机进配置模式读回 `AT+VER` 成功。',
+    '数值宏解析失败':
+        '- **改法**：把该宏写成十进制整数（去掉多余后缀或表达式），例如 `#define SYS_LORA_BAUD 9600U`。\n'
+        '  - **验收**：重跑本工具，「数值宏」一栏能读出该宏的值，解析失败不再命中。',
+    '两板不一致':
+        '- **改法**：以会发包的那块（板1 检测端）为准，把另一块的宏同步过来'
+        '（波特率 / 帧间隔 / 超时 / 缓冲这几个 `MUST_MATCH` 项）。\n'
+        '  - **验收**：重跑本工具，「两板交叉检查」一节写"两板关键配置一致，无冲突"。',
+    '头文件缺失':
+        '- **改法**：确认该板的 LoRa 头文件（如 `FWLIB/inc/lora_e22.h`）在位，'
+        '或更正板表里配的 `.h` 路径。\n'
+        '  - **验收**：重跑本工具，0 节「头文件」一栏由 **缺失** 变"存在"，问题清零。',
+}
+
+
 def render(results, cross_issues):
     out = ['# LoRa 配置检查报告', '',
            '来源：`lora_check.py`（只读扫描，可重复运行）', '']
@@ -243,6 +286,9 @@ def render(results, cross_issues):
         out.append('')
         for kind, detail in cross_issues:
             out.append('- **%s**：%s' % (kind, detail))
+            note = FIX_NOTE.get(kind)          # H10：每条问题下面跟「改法 + 验收」
+            if note:
+                out.append(note)
         out.append('')
     else:
         out.append('## 1. 两板交叉检查')
@@ -279,6 +325,9 @@ def render(results, cross_issues):
             out.append('')
             for kind, detail in r['issues']:
                 out.append('- **%s**：%s' % (kind, detail))
+                note = FIX_NOTE.get(kind)      # H10：每条问题下面跟「改法 + 验收」
+                if note:
+                    out.append(note)
             out.append('')
         else:
             out.append('本板无问题。')
@@ -447,6 +496,24 @@ def selftest():
            and to_json([r1, r4], [])['ok'] is False)
         ck('H6 口径：无 _PORT/_PIN 后缀的宏（SYS_LORA_UART）不参与成对检查',
            'SYS_LORA_UART' not in r1['pins'] and 'SYS_LORA_UART' not in r1['ports'])
+
+        # H10：报告里每条问题都带「改法 + 验收」—— FIX_NOTE 覆盖全部类型、两段写全、报告里印出来。
+        _kinds = {'波特率非法', '帧间隔偏小', '实现缺失', '编码注意', '引脚宏不成对',
+                  '控制脚缺失', '数值宏解析失败', '两板不一致', '头文件缺失'}
+        ck('H10 FIX_NOTE 覆盖报告里会出现的全部问题类型',
+           set(FIX_NOTE) == _kinds, '缺：' + '、'.join(sorted(_kinds - set(FIX_NOTE))))
+        ck('H10 每条都写全「改法 + 验收」两段',
+           all('**改法**' in v and '**验收**' in v for v in FIX_NOTE.values()))
+        ck('H10 报告的「两板交叉检查」与「本板问题」都印出了改法 / 验收',
+           _txt.count('**改法**') >= 2 and _txt.count('**验收**') >= 2,
+           '改法 %d 处 / 验收 %d 处' % (_txt.count('**改法**'), _txt.count('**验收**')))
+        ck('H10 反例：两板一致且本板无问题时，报告里不出现任何改法 / 验收',
+           '**改法**' not in render([r1, r3], []))
+        _r7 = check_board('板7', os.path.join(tmp, 'nope.h'), os.path.join(tmp, 'b1.c'))
+        ck('H10 顺带修正：头文件缺失时是 (类型, 详情) 二元组，报告渲染不崩且带改法',
+           _r7['issues'][0][0] == '头文件缺失'
+           and '**改法**' in render([_r7], []),
+           str(_r7['issues']))
 
         # ---- C1+C2 板级配置读取器（换装口）：正例读到 2 块板 / 反例配置被改名后返回 None ----
         if boardcfg is None:
