@@ -366,16 +366,32 @@ def snapshot_path():
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), '_progress_history.json')
 
 
+def snapshot_source():
+    """H4：这一轮的来源标记。带 TOOLBOX_PROGRESS_HISTORY（沙箱）= 测试轮，否则 = 真实轮。
+    写进每条记录，趋势与对比只认真实轮 —— 万一哪天测试轮又混进来，也能被剔掉。"""
+    return 'test' if os.environ.get('TOOLBOX_PROGRESS_HISTORY') else 'real'
+
+
+def real_history(hist):
+    """H4：只留真实轮（丢掉显式标成 'test' 的）。旧记录没有 source 字段，按真实轮算 ——
+    存量测试轮已一次性清掉，所以这里不会把历史测试轮又带回来。"""
+    if not isinstance(hist, list):
+        return []
+    return [h for h in hist if isinstance(h, dict) and h.get('source') != 'test']
+
+
 def load_prev():
-    """读上一次的快照。没有或读不动都返回 None，不影响本次扫描。"""
+    """读上一次的**真实**快照。没有或读不动都返回 None，不影响本次扫描。"""
     p = snapshot_path()
     if not os.path.exists(p):
         return None
     try:
         with open(p, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            hist = json.load(f)
     except Exception:
         return None
+    real = real_history(hist)
+    return real[-1] if real else None
 
 
 def save_snapshot(markers, stubs):
@@ -386,18 +402,26 @@ def save_snapshot(markers, stubs):
         'markers': len(markers),
         'stubs': len(todo),
         'noop': len(stubs) - len(todo),
+        'source': snapshot_source(),   # H4：real / test
     }
-    hist = load_prev()
-    if not isinstance(hist, list):
-        hist = []
-    hist.append(cur)
-    hist = hist[-30:]
+    # 保留整份历史（含测试轮），只把真实轮算进趋势；这里仍按原样读回，避免丢测试轮痕迹
+    raw = []
+    try:
+        with open(snapshot_path(), 'r', encoding='utf-8') as f:
+            raw = json.load(f)
+    except Exception:
+        raw = []
+    if not isinstance(raw, list):
+        raw = []
+    raw.append(cur)
+    raw = raw[-30:]
     try:
         with open(snapshot_path(), 'w', encoding='utf-8', newline='\n') as f:
-            json.dump(hist, f, ensure_ascii=False, indent=2)
+            json.dump(raw, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
-    return cur, (hist[-2] if len(hist) >= 2 else None)
+    real = real_history(raw)
+    return cur, (real[-2] if len(real) >= 2 else None)
 
 
 def delta_text(now, prev):
@@ -639,7 +663,7 @@ def to_json(root, markers, stubs, enc_count, file_count, hist):
         'markers': len(markers),
         'stubs': len(todo),
         'noop': len(stubs) - len(todo),
-        'history': hist if isinstance(hist, list) else [],
+        'history': real_history(hist),   # H4：趋势只画真实轮
         'stub_files': by_file,
         'enc_stat': enc_count,
     }
@@ -721,6 +745,22 @@ def selftest():
                 os.environ.pop(_envkey, None)
             else:
                 os.environ[_envkey] = _bak
+
+        # H4：来源标记 + "趋势只画真实轮"。错例：标记写不出 / 过滤把真实轮也剔了，这条就红。
+        try:
+            os.environ.pop(_envkey, None)
+            ck('H4 正例：不带沙箱（真实轮）时写出的记录 source=real', snapshot_source() == 'real')
+            os.environ[_envkey] = os.path.join(tmp, '_h4_sandbox.json')
+            ck('H4 反例：带沙箱（测试轮）时 source=test', snapshot_source() == 'test')
+        finally:
+            if _bak is None:
+                os.environ.pop(_envkey, None)
+            else:
+                os.environ[_envkey] = _bak
+        ck('H4 过滤：趋势只留真实轮（剔 test、留无标记的旧记录、丢掉非法项）',
+           [h['time'] for h in real_history([
+               {'time': 'a', 'source': 'real'}, {'time': 'b', 'source': 'test'},
+               {'time': 'c'}, 'junk', None])] == ['a', 'c'])
 
         # B4 待办按模块汇总：正例（模块名派生 + 排序）与反例（有意留空不计入）
         mod_rows = module_summary(markers, todo)

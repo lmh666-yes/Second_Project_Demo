@@ -595,6 +595,12 @@ void OverviewPage::writeSnapshot(const QVariantMap &tools)
     for (auto it = tools.constBegin(); it != tools.constEnd(); ++it)
         obj.insert(it.key(), QJsonValue::fromVariant(it.value()));
 
+    /* H4：给快照标来源 —— 带参数运行（测试/量测出口）走沙箱，标 test；用户自己点「刷新」标 real。
+       面板渲染时忽略 `_` 开头的键，所以多这一项不影响"N 个工具"。 */
+    obj.insert(QStringLiteral("_source"),
+               qgetenv("TOOLBOX_HISTORY_DIR").isEmpty() ? QStringLiteral("real")
+                                                        : QStringLiteral("test"));
+
     /* 文件名带毫秒：同一秒内连点两次「刷新」会写两份快照，只到秒的话后一份会把前一份
        覆盖掉 —— 于是 A1 历史回看里少了那一轮、"较上次"还会拿自己跟自己比。 */
     QFile f(QDir(dir).filePath(
@@ -900,8 +906,13 @@ void OverviewPage::renderHistory(const QString &path)
         computeDelta(basePath.isEmpty() ? QVariantMap() : readSnapshot(basePath), tools));
 
     if (m_histStatus) {
+        /* H4：`_` 开头的键是元信息（如 _source），不算"工具" */
+        int toolN = 0;
+        for (auto it = tools.constBegin(); it != tools.constEnd(); ++it)
+            if (!it.key().startsWith(QLatin1Char('_')))
+                ++toolN;
         QString st = QStringLiteral("第 %1 / %2 轮　·　%3 个工具")
-                         .arg(files.size() - i).arg(files.size()).arg(tools.size());
+                         .arg(files.size() - i).arg(files.size()).arg(toolN);
         st += QStringLiteral("　·　对比基准：%1")
                   .arg(basePath.isEmpty() ? QStringLiteral("无（最早一轮）") : snapLabel(basePath));
         if (!missing.isEmpty())

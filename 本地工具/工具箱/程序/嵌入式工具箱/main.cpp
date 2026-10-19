@@ -464,6 +464,31 @@ int main(int argc, char *argv[])
         if (histN < 1)
             return 2;
 
+        /* H4：带参数运行走沙箱 —— 刚归档的这份快照应带 `_source=test`（测试轮标记）。
+           有了标记，将来万一测试轮混进真实历史，面板/工具能识别并剔除，趋势不再被稀释。 */
+        {
+            const QByteArray box = qgetenv("TOOLBOX_HISTORY_DIR");
+            const QString hdir = box.isEmpty()
+                                     ? QDir(ToolboxWindow::toolsDirPath())
+                                           .filePath(QStringLiteral("_体检历史"))
+                                     : QString::fromLocal8Bit(box);
+            QDir hd(hdir);
+            const QStringList snaps = hd.entryList(QStringList{QStringLiteral("*.json")},
+                                                   QDir::Files, QDir::Name);
+            bool marked = false;
+            if (!snaps.isEmpty()) {
+                QFile sf(hd.filePath(snaps.last()));
+                if (sf.open(QIODevice::ReadOnly))
+                    marked = QString::fromUtf8(sf.readAll())
+                                 .contains(QStringLiteral("\"_source\":\"test\""));
+            }
+            QTextStream(stdout) << QString::fromUtf8("最近快照来源标记: ")
+                                << (marked ? QStringLiteral("test（测试轮）")
+                                           : QStringLiteral("缺失/非测试")) << "\n";
+            if (!marked)
+                return 2;
+        }
+
         /* 断言交互区域已登记：健康度卡片 + 各板热力图格，取数成功时必然 > 6。
            命中区一旦变空，悬停与点击都会失灵，所以在这里兜住。 */
         if (canvas) {
