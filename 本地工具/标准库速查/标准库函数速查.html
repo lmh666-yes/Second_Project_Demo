@@ -628,6 +628,16 @@ kbd { background: var(--bg-inset); border: 1px solid var(--border-strong); borde
 #totop:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
 #totop.show { display: flex; }
 
+/* 页脚数据版本戳（H2）：固定左下，显示「数据版本 + 导出时间」。
+   手机端每改一次数据要把整份单文件重传一遍 —— 有这个戳就能一眼看出手上这份是不是最新的。
+   内容由 rebuild 链写进 data_build_info.js（tools/export_json.js 生成），不手改。 */
+#buildstamp {
+  position: fixed; left: 12px; bottom: 10px; z-index: 30;
+  font-size: 11px; color: var(--fg-faint);
+  background: var(--bg-elev-2); border: 1px solid var(--border-soft);
+  border-radius: 6px; padding: 2px 8px; opacity: .78; pointer-events: none;
+}
+
 /* ============================================================
  *  响应式
  * ============================================================ */
@@ -786,6 +796,7 @@ html[data-platform="mobile"] header { position: sticky; top: 0; z-index: 30; }
 </main>
 <button id="totop" title="回到顶部">↑</button>
 <div id="toast"></div>
+<div id="buildstamp"></div>
 
 <div class="panel" id="panelFav">
   <div class="pbox">
@@ -840,6 +851,7 @@ html[data-platform="mobile"] header { position: sticky; top: 0; z-index: 30; }
 <script src="data_build_qt.js"></script>
 <script src="data_datasheet.js"></script>
 <script src="data_doc.js"></script>
+<script src="data_build_info.js"></script>
 <script>
 "use strict";
 
@@ -3093,6 +3105,19 @@ boot();
   }
 
   apply(cur);
+})();
+
+/* H2：页脚「数据版本 + 导出时间」——内容来自 rebuild 链写出的 data_build_info.js
+   （由 tools/export_json.js 生成：版本 = 条目数 + 数据内容摘要，时间 = 导出时刻）。
+   文件在时显示它，手机上一眼能看出手上这份要不要重传；文件缺（没走重建链）时给出提示。
+   这段不在任何函数里、又在引擎脚本块末尾，网页版 / 手机版 / APK 三端都会跑到。 */
+(function () {
+  var box = document.getElementById("buildstamp");
+  if (!box) return;
+  var bi = (typeof window !== "undefined" && window.__BUILD_INFO__) ? window.__BUILD_INFO__ : null;
+  box.textContent = bi
+    ? ("数据版本 " + bi.version + "　导出 " + bi.time)
+    : "数据版本未标注（未走 rebuild 链）";
 })();
 </script>
 </body>

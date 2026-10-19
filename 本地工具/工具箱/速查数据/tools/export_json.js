@@ -15,6 +15,7 @@
  * ========================================================================== */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const SRC_DIR = path.resolve(__dirname, '..', '..', '..', '标准库速查');
 const HTML = path.join(SRC_DIR, '标准库函数速查.html');
@@ -274,6 +275,32 @@ if (bi >= 0) {
 }
 
 const all = D.all;
+
+/* ---------- H2：写「数据版本 + 导出时间」戳（SRC_DIR/data_build_info.js） ----------
+   三端（网页版 / 手机版 / APK）页脚读它 —— 手机端改一次数据要整份重传，有这个戳才知道
+   手上那份是不是最新的。版本 = 条目总数 + 数据内容摘要（数据一变就变）；时间 = 本次导出时刻。
+   摘要只对**真正的数据文件**算，跳过本戳自己（否则自指：戳一变摘要就变，每次都不同）。 */
+{
+  const STAMP = path.join(SRC_DIR, 'data_build_info.js');
+  const h = crypto.createHash('sha256');
+  for (const f of files) {
+    if (f === 'data_build_info.js') continue;      /* 跳过戳自己，避免自指 */
+    h.update(fs.readFileSync(path.join(SRC_DIR, f), 'utf8'));
+  }
+  const short = h.digest('hex').slice(0, 8);
+  const n = new Date();
+  const p2 = (x) => String(x).padStart(2, '0');
+  const time = n.getFullYear() + '-' + p2(n.getMonth() + 1) + '-' + p2(n.getDate())
+             + ' ' + p2(n.getHours()) + ':' + p2(n.getMinutes());
+  const version = 'v' + all.length + '-' + short;
+  const stamp = '/* 由 速查数据/tools/export_json.js 生成（走 rebuild 链），请勿手改。\n'
+    + '   三端（网页版 / 手机版 / APK）页脚显示「数据版本 + 导出时间」，用来判断手上这份是不是最新的。 */\n'
+    + 'window.__BUILD_INFO__ = '
+    + JSON.stringify({ version: version, time: time, total: all.length }) + ';\n';
+  fs.writeFileSync(STAMP, stamp, 'utf8');
+  console.log('数据版本戳 ' + version + ' @ ' + time + ' → ' + STAMP);
+}
+
 const kinds = {};
 for (const f of all) {
   const k = (f._t || 'func') + (f._b ? '|手册:' + f._b : '');

@@ -39,6 +39,7 @@ MOBHTML = os.path.join(STD, "标准库速查-手机版.html")
 ASSETS = os.path.join(MOB, "android", "app", "src", "main", "assets", "index.html")
 DSET = os.path.join(DATA, "data", "dataset.json")
 EXPORT = os.path.join(HERE, "export_json.js")
+STAMP = os.path.join(STD, "data_build_info.js")   # H2：三端页脚数据版本戳（export_json.js 生成）
 APKS = [os.path.join(MOB, "STM32-Lookup.apk"), os.path.join(MOB, "STM32速查.apk")]
 
 SKIP_APK = "--skip-apk" in sys.argv
@@ -111,6 +112,26 @@ def main():
     chk(FLAG not in web, "网页版没被误注入手机开关")
 
     print()
+    print("=== 2b. 页脚数据版本戳（H2：三端显示「数据版本 + 导出时间」） ===")
+    chk(exists(STAMP), "数据版本戳 data_build_info.js 在", STAMP)
+    if exists(STAMP):
+        st = io.open(STAMP, encoding="utf-8").read()
+        m = re.search(r'window\.__BUILD_INFO__\s*=\s*(\{[^}]*\})', st)
+        ver = tim = None
+        okfmt = bool(m)
+        if okfmt:
+            try:
+                info = json.loads(m.group(1))
+                ver, tim = info.get("version"), info.get("time")
+                okfmt = bool(ver and ver != "未标注" and tim)
+            except Exception:
+                okfmt = False
+        chk(okfmt, "戳内容可解析且非占位（version + time）",
+            "version=%s time=%s" % (ver, tim))
+        # 手机版内联的就是同一份戳文件内容，所以版本串必须能在手机版里找到。
+        chk(bool(ver) and (ver in mob), "手机版里带着同一版本戳", "version=%s" % ver)
+
+    print()
     print("=== 3. 手机版单文件 → Android 资源 → APK（逐字节） ===")
     h_mob, h_assets = sha(MOBHTML), sha(ASSETS)
     chk(h_mob == h_assets, "手机版单文件与 android/assets/index.html 逐字节相同",
@@ -142,6 +163,11 @@ def main():
     else:
         bak = DSET + ".syncbak"
         shutil.copyfile(DSET, bak)
+        # H2：重跑 export 会顺手刷新数据版本戳的时间 —— 先备好，末尾还原，本脚本仍"只读"。
+        sbak = STAMP + ".syncbak"
+        had_stamp = exists(STAMP)
+        if had_stamp:
+            shutil.copyfile(STAMP, sbak)
         try:
             r = subprocess.run(["node", EXPORT], capture_output=True, text=True,
                                encoding="utf-8", cwd=HERE)
@@ -163,6 +189,9 @@ def main():
         finally:
             shutil.copyfile(bak, DSET)     # 还原：本脚本只读不写
             os.remove(bak)
+            if had_stamp:
+                shutil.copyfile(sbak, STAMP)
+                os.remove(sbak)
 
     print()
     print("=== 小结 ===")
