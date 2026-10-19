@@ -946,6 +946,111 @@ int main(int argc, char *argv[])
         return ok ? 0 : 2;
     }
 
+    /* H7 变异自测：在**原脚本同目录**造一份临时副本，故意改坏一处判定，跑它自己的
+       --selftest，断言"自检**必须变红**" —— 守住"自检真的在测那一条"。
+       为什么放同目录：脚本要靠"自身位置 / 向上找仓库根 / 读同目录的数据文件"来工作，
+       挪到 %TEMP% 那些判据就全变了（反例会假红）。副本文件名带 `_mut_`，跑完无论成败都删。
+       每处都先跑一遍**没改坏**的原脚本作对照：对照不绿就说明是本环境的问题，不是"自检没测到"。 */
+    if (args.contains(QStringLiteral("--mutation-selftest"))) {
+        QTextStream out(stdout);
+        const QString tdir = ToolboxWindow::toolsDirPath();
+        const QStringList py = PyFind::detect();
+        if (tdir.isEmpty() || py.isEmpty()) {
+            out << QString::fromUtf8("FAIL 工具箱目录或 Python 不可用\n");
+            return 2;
+        }
+        struct Mut { const char *rel; const char *find; const char *repl; const char *what; };
+        const Mut muts[] = {
+            {"检查/引脚规划/pin_planner.py",
+             "owner.items() if len(mods) > 1",
+             "owner.items() if len(mods) > 99",
+             "DMA「同一条流被多模块共用」的判定"},
+            {"检查/RTOS检查/rtos_check.py",
+             "if api in ISR_UNSAFE_CRITICAL or api in BLOCKING_API:\n        return '严重'",
+             "if api in ISR_UNSAFE_CRITICAL or api in BLOCKING_API:\n        return '注意'",
+             "ISR 里调用阻塞接口的判级（严重→注意）"},
+            {"检查/断网缓存/cache_check.py",
+             "hold_sec = cap_slots * period_ms / 1000.0 if period_ms > 0 else 0",
+             "hold_sec = cap_slots * period_ms / 1.0 if period_ms > 0 else 0",
+             "断网「可扛时长」的换算（漏掉 /1000）"},
+            {"检查/编码守卫/encoding_guard.py",
+             "return 'gbk' if os.path.basename(path).lower() == 'main.c' else 'utf-8'",
+             "return 'utf-8'",
+             "main.c 的编码口径（把 GBK 当成 UTF-8）"},
+        };
+        auto runSelftest = [&](const QString &script) -> int {
+            QProcess p;
+            p.setWorkingDirectory(QFileInfo(script).absolutePath());
+            QStringList a = py.mid(1);
+            a << script << QStringLiteral("--selftest");
+            p.start(py.value(0), a);
+            if (!p.waitForStarted(5000))
+                return -1;
+            if (!p.waitForFinished(120000)) {
+                p.kill();
+                return -1;
+            }
+            return p.exitStatus() == QProcess::NormalExit ? p.exitCode() : -1;
+        };
+        const int total = int(sizeof(muts) / sizeof(muts[0]));
+        int bad = 0;
+        for (int i = 0; i < total; ++i) {
+            const Mut &m = muts[i];
+            const QString src = QDir(tdir).filePath(QString::fromUtf8(m.rel));
+            QFile f(src);
+            if (!f.open(QIODevice::ReadOnly)) {
+                out << QString::fromUtf8("FAIL 读不到 ") << QString::fromUtf8(m.rel) << "\n";
+                ++bad;
+                continue;
+            }
+            QString code = QString::fromUtf8(f.readAll());
+            f.close();
+            const QString find = QString::fromUtf8(m.find);
+            if (!code.contains(find)) {
+                out << QString::fromUtf8("FAIL 找不到要改坏的锚点（脚本改了？）：")
+                    << QString::fromUtf8(m.what) << "\n";
+                ++bad;
+                continue;
+            }
+            /* 对照：没改坏的原脚本自检必须是绿的，否则说明是环境问题、不是"自检没测到" */
+            const int base = runSelftest(src);
+            if (base != 0) {
+                out << QString::fromUtf8("FAIL 对照失败（原脚本自检就不是绿的，退出码 ")
+                    << base << QString::fromUtf8("）：") << QString::fromUtf8(m.what) << "\n";
+                ++bad;
+                continue;
+            }
+            code.replace(find, QString::fromUtf8(m.repl));
+            const QString mut = QFileInfo(src).absolutePath() + QStringLiteral("/_mut_")
+                                + QFileInfo(src).completeBaseName() + QStringLiteral(".py");
+            {
+                QFile w(mut);
+                if (!w.open(QIODevice::WriteOnly)) {
+                    out << QString::fromUtf8("FAIL 写不出临时副本 ") << mut << "\n";
+                    ++bad;
+                    continue;
+                }
+                w.write(code.toUtf8());
+            }
+            const int ex = runSelftest(mut);
+            QFile::remove(mut);
+            const bool caught = ex > 0;          /* 自检必须变红（退出码非 0） */
+            out << (caught ? QString::fromUtf8("PASS ") : QString::fromUtf8("FAIL "))
+                << QString::fromUtf8("改坏「") << QString::fromUtf8(m.what)
+                << QString::fromUtf8("」→ 自检变红：")
+                << (caught ? QString::fromUtf8("是（自检真的在测这一条）")
+                           : QString::fromUtf8("否（自检没测到这条判定！）"))
+                << QString::fromUtf8("（退出码 ") << ex << QStringLiteral("）\n");
+            if (!caught)
+                ++bad;
+        }
+        out << QString::fromUtf8("变异自测：共 ") << total << QString::fromUtf8(" 处，未变红 ")
+            << bad << QString::fromUtf8(" 处 → ")
+            << (bad ? QStringLiteral("不通过") : QStringLiteral("通过")) << "\n";
+        out.flush();
+        return bad ? 2 : 0;
+    }
+
     if (!args.isEmpty()) {
         const int r = runCli(args);
         if (r >= 0)
