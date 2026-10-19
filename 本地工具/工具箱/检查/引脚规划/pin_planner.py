@@ -180,6 +180,82 @@ def unused_pin_map(bases, unused_bases):
     return m
 
 
+# 驱动 / 第三方目录：这些目录里的 .c/.h 是"库自己"。某个宏在库里出现，只说明**库里有这个模块**，
+# 不说明工程启用了它 —— 例如 sys_spi.c 把 SPI1/SPI2/SPI3 三套脚都写进自己的 init 分支。
+DRIVER_DIRS = {'FWLIB', 'ETH', 'RTE', 'FreeRTOS', 'build', 'Objects', 'Listings',
+               'Doc', '文档', '.git', '__pycache__'}
+
+
+def app_code_text(proj):
+    """工程"应用码"（驱动 / 第三方目录之外的 .c/.h）拼成的一篇文本，注释与字符串先掩掉。
+    B1 判"真启用"就认这一份。"""
+    chunks = []
+    for dp, dirs, fns in os.walk(proj):
+        dirs[:] = [d for d in dirs if d not in DRIVER_DIRS]
+        for fn in sorted(fns):
+            if fn.lower().endswith(('.c', '.h')):
+                chunks.append(strip_comments('\n'.join(read_lines(os.path.join(dp, fn)))))
+    return '\n'.join(chunks)
+
+
+_ID_RE = re.compile(r'^(.+?)(\d+)$')
+_PREFIX_STRIP_RE = re.compile(r'^(.+?)_[A-Z][A-Z0-9]*$')
+
+
+def live_tokens(base):
+    """一个基名在应用码里可能用哪几种写法出现：
+      · 基名本身（`LORA_E22_TX` 被直接点名）；
+      · 它所属模块名（`LED` —— `LED_Init()` 就说明 LED_PORT/LED_PIN 启用了）；
+      · 模块名的"外设 id"写法 —— 库里引脚宏是 `SYS_USART2_TX` 这种、同一外设的 id 枚举
+        却是 `SYS_USART_2`（见 sys_spi.h / sys_usart.h），所以两种都要认，
+        否则 `SYS_USART_Init(SYS_USART_2, ...)` 明明启用了 USART2 也看不出来；
+      · 再退一步认"第一个下划线前的词"（`MOTOR_IN1`→`MOTOR`、`TB6612_STBY`→`TB6612`
+        —— 这些功能尾缀不在 FUNC_TAIL 里）。但 `SYS_` 开头的复合外设名不再退，
+        退成 `SYS` 会跟任何 `SYS_xxx()` 调用撞上，等于把整个库都算成"启用"。"""
+    mod = module_of(base)
+    toks = {base, mod}
+    m = _ID_RE.match(mod)
+    if m:
+        toks.add('%s_%s' % (m.group(1), m.group(2)))
+    m2 = _PREFIX_STRIP_RE.match(mod)
+    if m2 and m2.group(1) != 'SYS' and len(m2.group(1)) >= 3:
+        toks.add(m2.group(1))
+    return toks
+
+
+def live_bases(proj, bases):
+    """B1：返回"工程真启用"的宏基名集合。
+
+    判据（只认应用码，不看驱动目录里的自我引用）：该基名的任一写法（见 live_tokens）
+    在应用码里出现。
+    为什么必须排除驱动目录：`FWLIB/src/*.c` 会把同一外设的多套脚都写进自己的分支里，
+    在那里出现只代表"库里有"，不代表"工程用起来了"——否则 SPI3/DAC/ETH/MOTOR 这些
+    从没被 init 的模块也会被当成"真占用"，报告又变成满屏"严重"。"""
+    txt = app_code_text(proj)
+    return {base for base in bases if any(t in txt for t in live_tokens(base))}
+
+
+def classify_conflicts(proj_dir, bases, owners):
+    """B1：把"同一个脚被多个宏声明"分两级，报告里才不用逐条人工判。
+
+      · **真会撞**：该脚上有 ≥2 个占用者**真被工程启用**（见 live_bases）——
+        两个模块都 init 时，后 init 的会悄悄覆盖前一个，这是要动手改的；
+      · **仅声明重叠**：占用者里**至多 1 个**真被启用，其余是 `FWLIB\\inc` 里成对声明、
+        工程里没启用的模块 —— 属于"潜在"：不启用那个模块就不会撞。
+
+    返回 (真会撞 {脚名: [基名]}, 仅声明重叠 {脚名: [基名]}, 真启用的基名集合)。"""
+    live_b = live_bases(proj_dir, bases)
+    live, decl = {}, {}
+    for (port, bit), lst in owners.items():
+        uniq = sorted(set(lst))
+        if len(uniq) < 2:
+            continue
+        name = fmt_pin((port, bit))
+        n_live = sum(1 for b in uniq if b in live_b)
+        (live if n_live >= 2 else decl)[name] = uniq
+    return live, decl, live_b
+
+
 def scan_pins(inc_dir):
     """返回 (bases, owners, unpaired, dup_base, nfiles)
        bases: {base: {'mod':module, 'pins':set((port,bit)), 'loc':rel:line}}"""
@@ -474,6 +550,12 @@ def fmt_pin(pb):
     return 'P%s%d' % (pb[0], pb[1])
 
 
+def pin_sort_key(name):
+    """按脚名（'PB10' 这种）排序：先端口字母，再位号**十进制**数值。
+    注意 pin 名的位号是十进制（`fmt_pin` 用 %d），别再按十六进制解析。"""
+    return (name[1], int(name[2:], 10))
+
+
 # 不能当"改到别的脚"的候选：SWD/JTAG 调试口，改到那里等于自断下载与在线调试通道。
 # 直接复用 DEBUG_PINS（同一份板级常量，换板时随 board_envmonitor.json 一起改，避免两处各写各的）。
 SKIP_AS_CAND = set(DEBUG_PINS)
@@ -498,11 +580,11 @@ def render_board(title, inc_dir, use_list, result):
     out.append('## %s' % title)
     out.append('')
     bases, owners, unpaired, dup_base, nfiles = result
-    conflicts = sorted(((k, v) for k, v in owners.items() if len(v) > 1),
-                       key=lambda kv: (kv[0][0], kv[0][1]))
+    proj = os.path.dirname(os.path.dirname(inc_dir))
+    live_conf, decl_conf, live_b = classify_conflicts(proj, bases, owners)
     free = sorted(ALL_PINS - set(owners), key=lambda pb: (pb[0], pb[1]))
-    out.append('头文件 %d 个，占用脚 %d 个，冲突 %d 个，无人认领 %d 个。'
-               % (nfiles, len(owners), len(conflicts), len(free)))
+    out.append('头文件 %d 个，占用脚 %d 个，**真会撞 %d 个**，仅声明重叠 %d 个，无人认领 %d 个。'
+               % (nfiles, len(owners), len(live_conf), len(decl_conf), len(free)))
     out.append('')
 
     # 方案检查
@@ -539,11 +621,12 @@ def render_board(title, inc_dir, use_list, result):
         out.append('| `%s` | %s | %s | `%s` |' % (base, bases[base]['mod'], pins, bases[base]['loc']))
     out.append('')
 
-    out.append('### 冲突引脚')
+    out.append('### 冲突引脚（真会撞 · 两个占用者都被工程代码真正引用）')
     out.append('')
-    if conflicts:
-        for (port, bit), lst in conflicts:
-            out.append('- %s ← %s' % (fmt_pin((port, bit)), ', '.join(sorted(set(lst)))))
+    live_list = sorted(live_conf.items(), key=lambda kv: pin_sort_key(kv[0]))
+    if live_list:
+        for name, lst in live_list:
+            out.append('- %s ← %s' % (name, ', '.join(lst)))
         out.append('')
         # 修复建议：候选脚只取"库里没人认领"的脚，并明确要求核对原理图。
         # B2：改成按冲突脚就近给 —— 同端口（位距近的先）优先，跨端口次之，而不是
@@ -561,44 +644,81 @@ def render_board(title, inc_dir, use_list, result):
         out.append('**各冲突脚的就近候选**（同端口优先、位距近的先；已排除 SWD/JTAG 调试口；'
                    '整板无人认领脚里前 8 个：%s）：' % ('、'.join(cand) if cand else '（无）'))
         out.append('')
-        for (port, bit), lst in conflicts:
+        for name, _ in live_list:
+            port = name[1]
+            bit = int(name[2:], 16)
             same, cross = nearest_free(port, bit, free_set)
             out.append('- %s → 同端口：%s；跨端口：%s' % (
-                fmt_pin((port, bit)),
+                name,
                 '、'.join(same) if same else '（本端口无空闲）',
                 '、'.join(cross) if cross else '（无）'))
         out.append('')
+    else:
+        out.append('无 —— 三个工程当前没有"两个都在用"的抢脚。')
+        out.append('')
+
+    out.append('### 仅是声明重叠（潜在 · 至多一个占用者真被启用）')
+    out.append('')
+    decl_list = sorted(decl_conf.items(), key=lambda kv: pin_sort_key(kv[0]))
+    if decl_list:
+        for name, lst in decl_list:
+            n_live = sum(1 for b in lst if b in live_b)
+            mark = '、'.join(b + ('（工程里在用）' if b in live_b else '（工程里没启用）') for b in lst)
+            out.append('- %s ← %s　—— 真被启用的占用者 %d 个' % (name, mark, n_live))
+        out.append('')
+        out.append('> **为什么不算"真会撞"**：这些脚在 `FWLIB\\inc` 里被多个宏成对声明，'
+                   '但除至多一个之外，工程的应用码（`main.c` 等）里都没有用到它 —— '
+                   '等于那个模块还没启用，不会真去 init 这个脚。**只有当你把第二个模块也用起来时**'
+                   '才会变成真冲突。所以先别急着改脚：动手做那个模块时再回来看一眼。')
     else:
         out.append('无。')
     out.append('')
 
     # 调试口被占用（B1）：SWD/JTAG 的脚被业务宏占了，按严重报出。
-    dbg = sorted(((fmt_pin(pb), sorted(set(owners[pb]))) for pb in owners
-                  if fmt_pin(pb) in DEBUG_PINS), key=lambda kv: kv[0])
-    out.append('### 调试口被占用（严重）')
+    # B1：这里同样分两级 —— 只有"真启用"的模块占了调试口才是真危险（严重）；
+    # 只是库里声明、工程里没启用的，属"潜在"，别当严重吓人。
+    dbg_all = sorted(((fmt_pin(pb), sorted(set(owners[pb]))) for pb in owners
+                      if fmt_pin(pb) in DEBUG_PINS), key=lambda kv: kv[0])
+    dbg_real = [(p, m) for p, m in dbg_all if any(b in live_b for b in m)]
+    dbg_decl = [(p, m) for p, m in dbg_all if not any(b in live_b for b in m)]
+    out.append('### 调试口被占用（严重 · 占它的是工程里真启用的模块）')
     out.append('')
-    if dbg:
-        for name, mods in dbg:
+    if dbg_real:
+        for name, mods in dbg_real:
             out.append('- %s ← %s' % (name, '、'.join(mods)))
         out.append('')
+    else:
+        out.append('无。')
+        out.append('')
+    out.append('### 调试口仅被声明占（潜在 · 占它的模块工程里没启用）')
+    out.append('')
+    if dbg_decl:
+        for name, mods in dbg_decl:
+            out.append('- %s ← %s' % (name, '、'.join(mods)))
+        out.append('')
+    else:
+        out.append('无。')
+        out.append('')
+    if dbg_all:
         out.append('> SWD/JTAG 的脚被业务宏占了，等于自断下载与在线调试通道。'
                    '**PA13（SWDIO）/ PA14（SWCLK）任何时候都不能动**；'
                    'PA15（JTDI）/ PB3（JTDO）/ PB4（NJTRST）只有在代码里关掉 JTAG 复用'
                    '（只保留 SW/D）之后才可用，而且关了就没法用 JTAG 调试。'
+                   '上面第一栏（真启用）才是现在就要处理的；第二栏是你哪天把那个模块用起来时'
+                   '才会变成真危险，届时记得先处理。'
                    '处理方向：① 把业务宏改到别的脚（用上面的无人认领/声明未用脚当候选）；'
                    '② 确实要用 PB3/PB4 时，明确在代码里关掉 JTAG，并写清取舍。')
-    else:
-        out.append('无。')
-    out.append('')
+        out.append('')
 
     out.append('### 无人认领引脚')
     out.append('')
     out.append('  ' + '  '.join(fmt_pin(pb) for pb in free) if free else '无。')
     out.append('')
 
-    # 声明了但没人用（A3）：头文件里有 _PORT/_PIN，工程里却没有一处引用。
-    umap = unused_pin_map(bases, scan_unused_decls(
-        os.path.dirname(os.path.dirname(inc_dir)), bases))
+    # 声明了但没人用（A3）：头文件里有 _PORT/_PIN，全工程（含驱动）没有一处引用。
+    # 注意口径与上面的"真启用"不同：这里指**连库里都没人引**的僵尸宏（可以删），
+    # 而"工程里没启用"只是还没用到（删了以后要用还得加回来）。
+    umap = unused_pin_map(bases, scan_unused_decls(proj, bases))
     out.append('### 声明了但没人用（僵尸宏）')
     out.append('')
     if umap:
@@ -650,19 +770,22 @@ def render_board(title, inc_dir, use_list, result):
 
 def to_json(results):
     """结构化输出，供工具箱的可视化体检面板读取。
-    occupied / conflicts / free 的键都是 'PA2' 这种脚名，值为占用者模块基名列表。
-    decl_unused 是"声明了 _PORT/_PIN 但全工程没引用"的脚名列表（A3 热力图的第四态）。"""
+    occupied / conflicts / conflicts_decl / free 的键都是 'PA2' 这种脚名，
+    值为占用者模块基名列表。
+      · conflicts       —— **真会撞**（同一脚上 ≥2 个占用者都被工程真启用）；
+      · conflicts_decl  —— 仅声明重叠（至多 1 个占用者真被启用，其余是没启用的模块）；
+      · debug_used      —— 真启用的模块占着调试口（真危险）；
+      · debug_decl      —— 只是库里声明、工程没启用的模块占着调试口（潜在）；
+      · decl_unused     —— 被"连库里都没人引"的僵尸宏占着的脚（A3 热力图的第四态）。"""
     boards = []
     for title, inc, r in results:
         bases, owners, unpaired, dup_base, nfiles = r
+        proj = os.path.dirname(os.path.dirname(inc))
+        live, decl, live_b = classify_conflicts(proj, bases, owners)
         occupied = {}
-        conflicts = {}
         for (port, bit), mods in sorted(owners.items(), key=lambda kv: (kv[0][0], kv[0][1])):
             name = fmt_pin((port, bit))
-            uniq = sorted(set(mods))
-            occupied[name] = uniq
-            if len(uniq) > 1:
-                conflicts[name] = uniq
+            occupied[name] = sorted(set(mods))
         free = sorted(ALL_PINS - set(owners), key=lambda pb: (pb[0], pb[1]))
         # 每个脚的具体出处（宏基名 + 文件:行），供面板点击查看
         detail = {}
@@ -670,17 +793,25 @@ def to_json(results):
             for pb in info['pins']:
                 detail.setdefault(fmt_pin(pb), []).append(
                     {'base': base, 'loc': info['loc']})
-        decl_unused = sorted(unused_pin_map(bases, scan_unused_decls(
-            os.path.dirname(os.path.dirname(inc)), bases)))
-        debug_used = sorted(fmt_pin(pb) for pb in owners if fmt_pin(pb) in DEBUG_PINS)
+        decl_unused = sorted(unused_pin_map(bases, scan_unused_decls(proj, bases)),
+                             key=pin_sort_key)
+        debug_used, debug_decl = [], []
+        for pb in sorted(owners, key=lambda pb: (pb[0], pb[1])):
+            name = fmt_pin(pb)
+            if name not in DEBUG_PINS:
+                continue
+            mods = sorted(set(owners[pb]))
+            (debug_used if any(b in live_b for b in mods) else debug_decl).append(name)
         boards.append({
             'title': title,
             'files': nfiles,
             'occupied': occupied,
-            'conflicts': conflicts,
+            'conflicts': live,
+            'conflicts_decl': decl,
             'free': [fmt_pin(pb) for pb in free],
             'decl_unused': decl_unused,
             'debug_used': debug_used,
+            'debug_decl': debug_decl,
             'pin_detail': detail,
         })
     ok = all(not b['conflicts'] and not b['debug_used'] for b in boards)
@@ -716,9 +847,13 @@ def selftest():
             with open(path, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(text)
 
-        # 引脚宏：LORA_E22 与 W25QXX 故意抢同一个 PB5；TFT 独占 PC7 且被引用（反例：
-        # 不该被判成"声明未用"）；ADC 只有 _PORT 不成对；ADC_LIGHT 独占 PA3 且无人引用（错例）；
-        # KEY1 占 PA13（SWDIO）且被引用 —— B1 调试口错例（占了调试口必须报严重）。
+        # 引脚宏（B1 两级冲突的错例都埋在这里）：
+        #   · TFT 与 LCD_BL 抢 PC7，且两个都被**应用码**（根目录 main.c）用到 → **真会撞**（错例 1）；
+        #   · LORA_E22 与 W25QXX 抢 PB5，但工程里谁都没启用 → **仅声明重叠**（错例 2，反例：
+        #     不能与真冲突混在一栏）；
+        #   · ADC_LIGHT 独占 PA3 且谁都没启用（僵尸宏错例）；ADC 只有 _PORT 不成对；
+        #   · KEY1 占 PA13（SWDIO）且被应用码用到 —— 真危险调试口（错例）；
+        #   · SPI3_SCK 占 PB3（JTDO）但工程里没启用 —— 潜在调试口（反例：别当严重吓人）。
         wr(os.path.join(inc, 'pin_cfg.h'),
            '#define LORA_E22_PORT   GPIOB\n'
            '#define LORA_E22_PIN    GPIO_Pin_5\n'
@@ -726,11 +861,21 @@ def selftest():
            '#define W25QXX_PIN      GPIO_Pin_5\n'
            '#define TFT_PORT        GPIOC\n'
            '#define TFT_PIN         GPIO_Pin_7\n'
+           '#define LCD_BL_PORT     GPIOC\n'
+           '#define LCD_BL_PIN      GPIO_Pin_7\n'
            '#define ADC_LIGHT_PORT  GPIOA\n'
            '#define ADC_LIGHT_PIN   GPIO_Pin_3\n'
            '#define KEY1_PORT       GPIOA\n'
            '#define KEY1_PIN        GPIO_Pin_13\n'
+           '#define SPI3_SCK_PORT   GPIOB\n'
+           '#define SPI3_SCK_PIN    GPIO_Pin_3\n'
            '#define ADC_PORT        GPIOA\n')
+        # 应用码（不在 FWLIB 等驱动目录下）：只有这里点到的模块才算"真启用"。
+        wr(os.path.join(tmp, 'main.c'),
+           'void App_Init(void)\n{\n'
+           '    GPIO_Init(TFT_PORT, &cfg);\n'
+           '    GPIO_Init(LCD_BL_PORT, &cfg);\n'
+           '    GPIO_Init(KEY1_PORT, &cfg);\n}\n')
         wr(os.path.join(inc, 'prio_cfg.h'),
            '#define SYS_USART1_PRE_PRIO  4\n'
            '#define SYS_SPI1_PRE_PRIO    5\n')
@@ -753,7 +898,7 @@ def selftest():
            '#define BAR_DMA_STREAM   DMA2_Stream3\n')
         wr(os.path.join(src, 'a.c'),
            'void Bsp_A_Init(void) { DMA_DeInit(DMA2_Stream0); GPIO_Init(TFT_PORT, &cfg); '
-           'GPIO_Init(KEY1_PORT, &cfg); }\n')
+           'GPIO_Init(LCD_BL_PORT, &cfg); GPIO_Init(KEY1_PORT, &cfg); }\n')
         wr(os.path.join(src, 'b.c'),
            'void Bsp_B_Init(void) { DMA_DeInit(DMA2_Stream0); p->dma_ch = DMA_Channel_2; }\n')
         wr(os.path.join(src, 'c.c'),
@@ -762,19 +907,42 @@ def selftest():
 
         bases, owners, unpaired, dup_base, nfiles = scan_pins(inc)
         result = (bases, owners, unpaired, dup_base, nfiles)
-        conflicts = sorted(((k, v) for k, v in owners.items() if len(v) > 1),
-                           key=lambda kv: (kv[0][0], kv[0][1]))
+        raw = sorted(((k, v) for k, v in owners.items() if len(v) > 1),
+                     key=lambda kv: (kv[0][0], kv[0][1]))
 
-        ck('引脚冲突命中 1 个且在 PB5',
-           len(conflicts) == 1 and conflicts[0][0] == ('B', 5),
-           '、'.join(fmt_pin(k) for k, _ in conflicts) or '无')
-        ck('冲突的两个模块都点出来',
-           len(conflicts) == 1 and sorted(conflicts[0][1]) == ['LORA_E22', 'W25QXX'],
-           '、'.join(conflicts[0][1]) if conflicts else '无')
+        ck('同一脚被多个宏声明的原始清单命中 2 个（PB5、PC7）',
+           [fmt_pin(k) for k, _ in raw] == ['PB5', 'PC7'],
+           '、'.join(fmt_pin(k) for k, _ in raw) or '无')
+
+        # B1：两级分类 —— 错例（PC7 两个占用者都被引用 = 真会撞；PB5 两个都没人引 = 声明重叠）/
+        # 反例（两条不能互相混进对方那一栏）
+        live_conf, decl_conf, live_b = classify_conflicts(tmp, bases, owners)
+        ck('B1 错例：真会撞只收 PC7（TFT 与 LCD_BL 都被应用码 main.c 用到）',
+           sorted(live_conf) == ['PC7'], '、'.join(sorted(live_conf)) or '无')
+        ck('B1 错例：仅声明重叠只收 PB5（LORA_E22 / W25QXX 工程里都没启用）',
+           sorted(decl_conf) == ['PB5'], '、'.join(sorted(decl_conf)) or '无')
+        ck('B1 反例：真会撞那一栏里不许出现"没启用"的 PB5',
+           'PB5' not in live_conf and live_conf.get('PC7') == ['LCD_BL', 'TFT'],
+           str(live_conf))
+        ck('B1 反例：声明重叠那一栏里不许出现"两个都在用"的 PC7',
+           'PC7' not in decl_conf and decl_conf.get('PB5') == ['LORA_E22', 'W25QXX'],
+           str(decl_conf))
         ck('不成对的宏被列出（ADC）', unpaired == ['ADC'], '、'.join(unpaired) or '无')
-        ck('模块与占用脚计数正确（5 个模块 / 4 个脚）',
-           len(bases) == 5 and len(owners) == 4 and nfiles == 3,
+        ck('模块与占用脚计数正确（7 个模块 / 5 个脚）',
+           len(bases) == 7 and len(owners) == 5 and nfiles == 3,
            '%d / %d / %d' % (len(bases), len(owners), nfiles))
+
+        # B1 "真启用"的写法口径：三种写法都要认，否则模块启用了也判成"没启用"（那才危险）
+        ck('B1 口径：SYS_SPI3_SCK 认三种写法（基名 / 模块 / 外设 id SYS_SPI_3）',
+           live_tokens('SYS_SPI3_SCK') == {'SYS_SPI3_SCK', 'SYS_SPI3', 'SYS_SPI_3'},
+           '、'.join(sorted(live_tokens('SYS_SPI3_SCK'))))
+        ck('B1 口径：MOTOR_IN1 退一级认 MOTOR（功能尾缀不在表里时别漏判）',
+           'MOTOR' in live_tokens('MOTOR_IN1'), '、'.join(sorted(live_tokens('MOTOR_IN1'))))
+        ck('B1 反例：SYS_ 开头的复合名不许退成 SYS（否则任何 SYS_xxx() 都算启用）',
+           'SYS' not in live_tokens('SYS_ETH_MDIO'),
+           '、'.join(sorted(live_tokens('SYS_ETH_MDIO'))))
+        ck('B1 反例：无下划线的基名只认自己（LED → LED）',
+           live_tokens('LED') == {'LED'}, '、'.join(sorted(live_tokens('LED'))))
 
         max_syscall = read_max_syscall(os.path.join(cfgdir, 'FreeRTOSConfig.h'))
         ck('内核上限宏解析正确', max_syscall == 5, str(max_syscall))
@@ -794,18 +962,31 @@ def selftest():
            '选中模块之间的冲突' in txt and 'PB5' in txt and 'LORA_E22' in txt)
         ck('报告渲染不炸且含中断资源表', '### 中断资源' in txt and 'USART1_IRQn' in txt)
 
-        # B1 调试口被占：错例（PA13 ← KEY1 必须报严重并写进报告）/
-        # 反例（业务脚 PB5 / PC7 / PA3 不该被算成调试口）
-        ck('调试口被占被判严重（PA13 ← KEY1）且写进报告',
-           '### 调试口被占用（严重）' in txt and '- PA13 ← KEY1' in txt)
+        # B1 调试口两级：错例（PA13 ← KEY1，KEY1 被应用码用到 = 真危险，必须写进"严重"那一栏）/
+        # 反例（PB3 ← SPI3_SCK，工程里没启用 = 只算潜在，不许混进严重那一栏）
+        ck('调试口真危险一栏写进 PA13 ← KEY1',
+           '### 调试口被占用（严重 · 占它的是工程里真启用的模块）' in txt
+           and '- PA13 ← KEY1' in txt)
+        ck('调试口潜在一栏写进 PB3 ← SPI3_SCK（没启用的模块不算严重）',
+           '### 调试口仅被声明占（潜在' in txt and '- PB3 ← SPI3_SCK' in txt)
 
-        # A3 声明了但没人用：错例（三个没人引用的基名必须被抓到）/
-        # 反例（被 a.c 引用的 TFT 必须不报，不能把"用过"的也算成僵尸）
+        # A3 声明了但没人用：错例（全工程连库里都没人引的基名必须被抓到）/
+        # 反例（被引用的 TFT / LCD_BL / KEY1 必须不报，不能把"用过"的也算成僵尸）
         unused = scan_unused_decls(tmp, bases)
-        ck('僵尸宏判定：没引用的 LORA_E22/W25QXX/ADC_LIGHT 命中，被引用的 TFT 不命中',
-           unused == {'LORA_E22', 'W25QXX', 'ADC_LIGHT'}, '、'.join(sorted(unused)) or '无')
+        ck('僵尸宏判定：LORA_E22/W25QXX/ADC_LIGHT/SPI3_SCK 命中，用过的 TFT / LCD_BL / KEY1 不命中',
+           unused == {'LORA_E22', 'W25QXX', 'ADC_LIGHT', 'SPI3_SCK'},
+           '、'.join(sorted(unused)) or '无')
         ck('报告有「声明了但没人用」一节且列出 ADC_LIGHT',
            '### 声明了但没人用' in txt and 'ADC_LIGHT' in txt)
+
+        # B1 报告两栏：真会撞一栏列出 PC7（且带就近候选），声明重叠一栏列出 PB5 并写明理由
+        ck('报告两栏都建起来（真会撞 / 仅是声明重叠）',
+           '### 冲突引脚（真会撞' in txt and '### 仅是声明重叠' in txt)
+        ck('真会撞一栏列出 PC7 与两个在用的占用者',
+           '- PC7 ← LCD_BL, TFT' in txt, [l for l in txt.splitlines() if l.startswith('- PC7')][:1])
+        ck('声明重叠一栏列出 PB5，并标注"工程里没启用"与"真被启用的占用者 0 个"',
+           '- PB5 ← ' in txt and '（工程里没启用）' in txt and '真被启用的占用者 0 个' in txt,
+           [l for l in txt.splitlines() if l.startswith('- PB5')][:1])
 
         # B2 冲突候选脚就近排序：错例（同端口按位距由近到远：PB10 应给 PB12 先于 PB2）/
         # 反例（调试口 PA13/PA14/PA15 不许当候选，业务脚 PA6 可以）
@@ -850,33 +1031,45 @@ def selftest():
         j = to_json([('板X', inc, result)])
         ck('JSON 结构正确（工具名/板数/ok）',
            j['tool'] == 'pin_planner' and len(j['boards']) == 1 and j['ok'] is False)
-        ck('JSON 冲突与占用都在',
-           j['boards'][0]['conflicts'].get('PB5') == ['LORA_E22', 'W25QXX']
-           and 'PC7' in j['boards'][0]['occupied'],
-           str(j['boards'][0]['conflicts']))
+        ck('JSON 冲突分两级：conflicts=真会撞(PC7) / conflicts_decl=声明重叠(PB5)',
+           j['boards'][0]['conflicts'].get('PC7') == ['LCD_BL', 'TFT']
+           and 'PB5' not in j['boards'][0]['conflicts']
+           and j['boards'][0]['conflicts_decl'].get('PB5') == ['LORA_E22', 'W25QXX']
+           and 'PC7' not in j['boards'][0]['conflicts_decl'],
+           '真撞=%s 声明=%s' % (j['boards'][0]['conflicts'],
+                              j['boards'][0]['conflicts_decl']))
+        ck('JSON 占用仍在单列（occupied 含 PC7 与 PB5）',
+           'PC7' in j['boards'][0]['occupied'] and 'PB5' in j['boards'][0]['occupied'])
         ck('JSON 带引脚出处（pin_detail 含 base 与 loc）',
            len(j['boards'][0]['pin_detail'].get('PB5', [])) == 2
            and all('base' in d and 'loc' in d
                    for d in j['boards'][0]['pin_detail']['PB5']),
            str(j['boards'][0]['pin_detail'].get('PB5')))
-        ck('JSON 带声明未用引脚（decl_unused 含 PA3/PB5，不含被引用的 PC7）',
+        ck('JSON 带声明未用引脚（decl_unused 含 PA3/PB5/PB3，不含启用的 PC7）',
            'PA3' in j['boards'][0]['decl_unused']
            and 'PB5' in j['boards'][0]['decl_unused']
+           and 'PB3' in j['boards'][0]['decl_unused']
            and 'PC7' not in j['boards'][0]['decl_unused'],
            str(j['boards'][0]['decl_unused']))
-        ck('JSON 带调试口占用（debug_used == [PA13]）且整板 ok 为 False',
-           j['boards'][0]['debug_used'] == ['PA13'] and j['ok'] is False,
-           str(j['boards'][0]['debug_used']))
+        ck('JSON 调试口也分两级：debug_used == [PA13]（真危险）、debug_decl == [PB3]（潜在）',
+           j['boards'][0]['debug_used'] == ['PA13']
+           and j['boards'][0]['debug_decl'] == ['PB3'],
+           'used=%s decl=%s' % (j['boards'][0]['debug_used'], j['boards'][0]['debug_decl']))
+        ck('JSON 整板 ok 为 False（PA13 被真占）', j['ok'] is False)
         ck('反例：业务脚 PB5 / PC7 / PA3 不算调试口误报',
-           not ({'PB5', 'PC7', 'PA3'} & set(j['boards'][0]['debug_used'])),
+           not ({'PB5', 'PC7', 'PA3'} & (set(j['boards'][0]['debug_used'])
+                                         | set(j['boards'][0]['debug_decl']))),
            str(j['boards'][0]['debug_used']))
-        # B6 JSON 契约：面板读 occupied/conflicts/free/decl_unused/debug_used/pin_detail，
+        # B6 JSON 契约：面板读 occupied/conflicts/conflicts_decl/free/decl_unused/debug_used/pin_detail，
         # 字段一漂移（今天修过的那类问题）这里先红
         ck('JSON 契约：面板读取的字段名/类型都在',
            set(j) == {'tool', 'schema', 'ok', 'boards'}
-           and set(j['boards'][0]) == {'title', 'files', 'occupied', 'conflicts', 'free',
-                                       'decl_unused', 'debug_used', 'pin_detail'}
+           and set(j['boards'][0]) == {'title', 'files', 'occupied', 'conflicts',
+                                       'conflicts_decl', 'free',
+                                       'decl_unused', 'debug_used', 'debug_decl',
+                                       'pin_detail'}
            and isinstance(j['boards'][0]['conflicts'], dict)
+           and isinstance(j['boards'][0]['conflicts_decl'], dict)
            and isinstance(j['boards'][0]['free'], list)
            and isinstance(j['boards'][0]['decl_unused'], list)
            and isinstance(j['boards'][0]['debug_used'], list)
@@ -985,14 +1178,17 @@ def main(argv):
            '来源：`本地工具/工具箱/检查/引脚规划/pin_planner.py`（只读扫描，可重复运行）', '']
     out.append('## 总览')
     out.append('')
-    out.append('| 板 | 头文件 | 占用脚 | 冲突 | 空闲 |')
-    out.append('|---|---|---|---|---|')
+    out.append('| 板 | 头文件 | 占用脚 | 真会撞 | 声明重叠 | 空闲 |')
+    out.append('|---|---|---|---|---|---|')
     for title, inc, r in results:
-        conflicts = sum(1 for v in r[1].values() if len(v) > 1)
-        free = len(ALL_PINS - set(r[1]))
-        out.append('| %s | %d | %d | %d | %d |' % (title, r[4], len(r[1]), conflicts, free))
+        bases, owners, _, _, nfiles = r
+        live, decl, _u = classify_conflicts(os.path.dirname(os.path.dirname(inc)),
+                                           bases, owners)
+        free = len(ALL_PINS - set(owners))
+        out.append('| %s | %d | %d | %d | %d | %d |'
+                   % (title, nfiles, len(owners), len(live), len(decl), free))
     for title in missing:
-        out.append('| %s | - | - | - | 目录不存在 |' % title)
+        out.append('| %s | - | - | - | - | 目录不存在 |' % title)
     out.append('')
     for title, inc, r in results:
         out.append(render_board(title, inc, use_list, r))
@@ -1004,16 +1200,25 @@ def main(argv):
     out.append('2) "模块"是把 `LORA_E22_TX` 这类基名去掉功能尾缀后的分组，仅供参考。')
     out.append('3) 无人认领引脚只指"库里没有任何模块声明"，不等于硬件上一定空着。')
     out.append('4) 中断资源来自 FWLIB\\src 里的 NVIC 配置调用与 SYS_NVIC_SetPriority。')
-    out.append('5) 本报告每次运行覆盖。')
+    out.append('5) "冲突引脚"与"调试口"都分两级（B1）：**真会撞/真危险** = 同一脚上至少两个'
+               '占用者（或占调试口的那个）**在工程应用码里真被启用**（main.c 等；驱动目录里'
+               '自我引用不算 —— 库里会把同一外设的多套脚都写进自己的分支）。'
+               '**仅声明重叠/潜在** = 占用者里至多一个真被启用，其余是还没启用的模块。'
+               '先处理第一栏，第二栏等你启用那个模块时再回来看。')
+    out.append('6) "声明了但没人用（僵尸宏）"口径更严：指**连库里都没人引**的宏（可以删）；'
+               '与上面的"工程里没启用"不同 —— 后者删了以后要用还得加回来。')
+    out.append('7) 本报告每次运行覆盖。')
     out.append('')
     with open(out_path, 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(out))
 
     print('引脚规划完成')
     for title, inc, r in results:
-        conflicts = sum(1 for v in r[1].values() if len(v) > 1)
-        print('  %-24s 占用 %3d  冲突 %2d  空闲 %3d' % (title, len(r[1]), conflicts,
-                                                       len(ALL_PINS - set(r[1]))))
+        bases, owners, _, _, nfiles = r
+        live, decl, _u = classify_conflicts(os.path.dirname(os.path.dirname(inc)),
+                                           bases, owners)
+        print('  %-24s 占用 %3d  真撞 %2d  声明 %2d  空闲 %3d'
+              % (title, len(owners), len(live), len(decl), len(ALL_PINS - set(owners))))
     print('  报告: %s' % out_path)
     return 0
 

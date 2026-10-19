@@ -212,21 +212,26 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
 
     {
         const QVariantMap m = m_tools.value(QStringLiteral("pin")).toMap();
-        int conflicts = 0, dbg = 0;
+        int conflicts = 0, decls = 0, dbg = 0;
         for (const QVariant &b : m.value(QStringLiteral("boards")).toList()) {
             const QVariantMap bm = b.toMap();
             conflicts += bm.value(QStringLiteral("conflicts")).toMap().size();
+            decls += bm.value(QStringLiteral("conflicts_decl")).toMap().size();
             dbg += bm.value(QStringLiteral("debug_used")).toList().size();
         }
-        /* B1：调试口被业务宏占了算严重，卡片直接转红（报告里有专节讲怎么办）。
+        /* B1：只有"真会撞"（两个占用者工程里都在用）才算冲突 —— 库里成对声明、工程没启用的
+           那些只是"潜在"，单列个数但不染红黄，否则满屏红字却不知道该改哪个。
            字要短：8 张卡一行，长文本会被裁掉，明细看悬停提示。 */
-        QString detail = conflicts ? QStringLiteral("%1 冲突").arg(conflicts)
-                                   : QStringLiteral("无冲突");
+        QString detail = conflicts ? QStringLiteral("%1 真冲突").arg(conflicts)
+                                   : QStringLiteral("无真冲突");
+        if (decls)
+            detail += QStringLiteral(" · %1 潜在").arg(decls);
         if (dbg)
             detail += QStringLiteral(" · 调试口%1").arg(dbg);
         items.append({QStringLiteral("引脚规划"), detail,
                       (dbg || conflicts >= 5) ? pal.err : (conflicts ? pal.warn : pal.ok),
-                      QStringLiteral("1~4 处黄 · ≥5 处红 · 调试口被占即红")});
+                      QStringLiteral("真冲突 1~4 处黄 · ≥5 处红 · 调试口被真占即红"
+                                     "（仅声明重叠的「潜在」不染色）")});
     }
     {
         const QVariantMap m = m_tools.value(QStringLiteral("rtos")).toMap();
@@ -362,6 +367,8 @@ int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Pale
             conflicts += b.toMap().value(QStringLiteral("conflicts")).toMap().size();
             dbg += b.toMap().value(QStringLiteral("debug_used")).toList().size();
         }
+        /* B1：结论只收"真会撞/真危险"——仅声明重叠的不进"最该先看的 3 件"，
+           否则清单里塞满还没启用的模块，等于把真正要动手的事埋了。 */
         if (dbg)
             bad.append({QStringLiteral("pin"), QStringLiteral("引脚规划"),
                         QStringLiteral("调试口被业务宏占了"), 0});
@@ -561,6 +568,9 @@ int DashboardCanvas::drawPins(QPainter &p, int x, int y, int w, const Palette &p
 
         const QVariantMap occ = b.value(QStringLiteral("occupied")).toMap();
         const QVariantMap con = b.value(QStringLiteral("conflicts")).toMap();
+        /* B1：仅声明重叠 —— 多个宏声明了同一脚，但工程里只启用了其中一个（其余是还没启用的
+           模块）。这不是"真会撞"，单列出来，免得跟真冲突混成一片红。 */
+        const QVariantMap conDecl = b.value(QStringLiteral("conflicts_decl")).toMap();
         /* A3：库里头文件声明了 _PORT/_PIN、但全工程没有任何代码引用的脚。
            单列一色，配合 D3 的候选脚建议 —— 这些脚才是"回收代价最低"的。 */
         QSet<QString> declUnused;
@@ -583,10 +593,16 @@ int DashboardCanvas::drawPins(QPainter &p, int x, int y, int w, const Palette &p
                                          .arg(QString::number(c, 16).toUpper());
                 QColor col = pal.freeCell;
                 QStringList owners;
-                bool declOnly = false;   /* 已声明但没人用（不是冲突） */
+                bool declOnly = false;      /* 声明未用（僵尸宏，B1 的第四态） */
+                bool declOverlap = false;   /* 仅声明重叠（B1：潜在，不是真冲突） */
                 if (con.contains(name)) {
                     col = pal.conflictCell;
                     for (const QVariant &o : con.value(name).toList())
+                        owners << o.toString();
+                } else if (conDecl.contains(name)) {
+                    col = pal.declCell;
+                    declOverlap = true;
+                    for (const QVariant &o : conDecl.value(name).toList())
                         owners << o.toString();
                 } else if (declUnused.contains(name)) {
                     col = pal.declCell;
@@ -605,6 +621,10 @@ int DashboardCanvas::drawPins(QPainter &p, int x, int y, int w, const Palette &p
                 hit.rect = cr;
                 if (owners.isEmpty())
                     hit.tip = QStringLiteral("%1：空闲").arg(name);
+                else if (declOverlap)
+                    hit.tip = QStringLiteral("%1：%2（多个宏声明了同一脚，但工程里只启用了其中一个"
+                                             "—— 属潜在，不是真冲突）")
+                                  .arg(name, owners.join(QStringLiteral("、")));
                 else if (declOnly)
                     hit.tip = QStringLiteral("%1：%2（库内声明了，但工程里没有任何代码引用）")
                                   .arg(name, owners.join(QStringLiteral("、")));
@@ -624,8 +644,8 @@ int DashboardCanvas::drawPins(QPainter &p, int x, int y, int w, const Palette &p
     const Leg leg[] = {
         {pal.freeCell, QStringLiteral("空闲")},
         {pal.usedCell, QStringLiteral("占用")},
-        {pal.conflictCell, QStringLiteral("冲突")},
-        {pal.declCell, QStringLiteral("声明未用")},
+        {pal.conflictCell, QStringLiteral("真冲突")},
+        {pal.declCell, QStringLiteral("声明未用/重叠")},
     };
     f.setPointSize(8);
     p.setFont(f);
@@ -634,8 +654,8 @@ int DashboardCanvas::drawPins(QPainter &p, int x, int y, int w, const Palette &p
         p.setBrush(g.c);
         p.drawRect(QRect(lx, ly + 3, 10, 10));
         p.setPen(pal.textSec);
-        p.drawText(QRect(lx + 14, ly, 56, 16), Qt::AlignLeft | Qt::AlignVCenter, g.t);
-        lx += 78;
+        p.drawText(QRect(lx + 14, ly, 78, 16), Qt::AlignLeft | Qt::AlignVCenter, g.t);
+        lx += 96;
     }
     return ly + 20;
 }
