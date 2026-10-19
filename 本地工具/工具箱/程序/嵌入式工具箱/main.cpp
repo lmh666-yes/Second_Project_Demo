@@ -7,6 +7,9 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QLayout>
@@ -327,6 +330,33 @@ static int runCli(const QStringList &args)
             << (c1Ok ? QString::fromUtf8("PASS") : QString::fromUtf8("FAIL"))
             << QString::fromUtf8("（看门狗 %1 条 / 乱词 %2 条）\n").arg(hitDog).arg(hitJunk);
         if (!c1Ok)
+            ++fail;
+
+        /* H13：手册数据与网页版同源。Qt 版（内嵌页）读的是网页版那条链导出的
+           dataset.json —— 断言它导出时写下的 meta.sourceHtml 正是网页版 HTML，
+           且 meta.total 与 all 实际条数一致。这样"Qt 版看到的就是网页版同一份数据"
+           这句结论有机器校验，而不是只写在文档里。 */
+        const QString dsPath = AppPaths::datasetPath();
+        bool h13Ok = false;
+        QString h13Note;
+        QFile df(dsPath);
+        if (dsPath.isEmpty() || !df.open(QIODevice::ReadOnly)) {
+            h13Note = QString::fromUtf8("dataset.json 读不到（%1）").arg(dsPath);
+        } else {
+            const QJsonObject root = QJsonDocument::fromJson(df.readAll()).object();
+            const QJsonObject meta = root.value(QStringLiteral("meta")).toObject();
+            const QString src = meta.value(QStringLiteral("sourceHtml")).toString();
+            const int total = meta.value(QStringLiteral("total")).toInt(-1);
+            const int real = root.value(QStringLiteral("all")).toArray().size();
+            h13Ok = src == QStringLiteral("标准库函数速查.html") && total == real && real > 0;
+            h13Note = QString::fromUtf8("sourceHtml=%1 total=%2 all=%3")
+                          .arg(src.isEmpty() ? QString::fromUtf8("(缺)") : src)
+                          .arg(total).arg(real);
+        }
+        out << QString::fromUtf8("手册数据与网页版同源（H13）：")
+            << (h13Ok ? QString::fromUtf8("PASS") : QString::fromUtf8("FAIL"))
+            << QString::fromUtf8("（%1）\n").arg(h13Note);
+        if (!h13Ok)
             ++fail;
     }
 
