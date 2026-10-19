@@ -34,14 +34,19 @@ public:
        供 `--shot-overview --drop <键>` 断言"缺数不许画成绿色"。 */
     void setDropKeys(const QStringList &keys);
 
-    /* 「报告原文」里已转成可点链接的文件位置数（供 --shot-overview 打印核对）。 */
-    int srcLinkCount() const { return m_srcTargets.size(); }
+    /* 「报告原文」里已转成可点链接的文件位置数（供 --shot-overview 打印核对）。
+       H5：报告原文改成首次进本页才载入 —— 这两个计数按需触发载入，老调用点不必改。 */
+    int srcLinkCount() { ensureLoaded(); return m_srcTargets.size(); }
 
     /* C1：报告原文里已转成可点的「条目名」数（手册直达链接）。 */
-    int docLinkCount() const { return m_docTargets.size(); }
+    int docLinkCount() { ensureLoaded(); return m_docTargets.size(); }
 
     /* A1：历史回看下拉框里的快照轮数（供 --shot-overview 断言历史页真的建起来了）。 */
     int historyCount() const;
+
+    /* H5：报告原文 / 历史回看是否已按需载入 —— 供 --finding-probe 断言
+       "构造时不载入（延迟生效）→ 访问后才载入"，免得哪天又挪回构造函数里没人发现。 */
+    bool reportsLoaded() const { return m_loaded; }
 
     /* A2：进度工具返回的历史轮数（≥2 才会有趋势折线；供 --shot-overview 决定是否断言趋势命中区）。 */
     int progressHistoryRounds() const;
@@ -81,6 +86,10 @@ private:
     void finishFetch();
     void loadTextReports();
 
+    /* H5：把"构造时就干的重活"（读 7 份 md 报告 + 解析历史快照）推迟到首次进本页。
+       首次显示、或按需访问（srcLinkCount/docLinkCount）时触发一次，幂等。 */
+    void ensureLoaded();
+
     /* 体检快照（D2 归档 + A3 对比）：每轮刷新存一份带时间戳的 JSON，只留最近 20 份。 */
     QString     snapshotDir() const;
     QStringList listSnapshots() const;                 /* 升序（旧→新）的快照文件绝对路径 */
@@ -100,6 +109,7 @@ private:
     QLabel          *m_status = nullptr;
     int              m_reportTab = -1;      /* C1：报告原文页签下标（focusFinding 切到它） */
     bool m_firstShown = false;
+    bool m_loaded = false;                  /* H5：报告原文 / 历史回看 是否已按需载入 */
     /* 「报告原文」里被转成链接的文件位置：下标 → "绝对路径|行号"（用下标做锚点，
        避免把带反斜杠的 Windows 路径塞进 URL 被编码搅乱）。 */
     QStringList m_srcTargets;

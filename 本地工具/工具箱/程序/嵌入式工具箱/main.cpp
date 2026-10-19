@@ -622,11 +622,19 @@ int main(int argc, char *argv[])
        报告是检查产物、可能一份都没有 —— 那种情况下只断言关键词非空，不要求小节存在。 */
     if (args.contains(QStringLiteral("--finding-probe"))) {
         OverviewPage page(ToolboxWindow::toolsDirPath());
+        /* H5：构造完**不该**已经载入报告原文（那是读 7 份 md、解析快照的重活，要推迟到首次进本页）；
+           访问过计数之后才该载入。错例：又挪回构造函数 → 前半条FAIL；访问了还不载 → 后半条FAIL。 */
+        const bool deferredOk = !page.reportsLoaded();
         const QStringList keys{QStringLiteral("pin"), QStringLiteral("rtos"),
                                QStringLiteral("enc"), QStringLiteral("lora"),
                                QStringLiteral("protocol"), QStringLiteral("cache"),
                                QStringLiteral("progress")};
         const bool anyReport = page.srcLinkCount() > 0 || page.docLinkCount() > 0;
+        const bool onDemandOk = page.reportsLoaded();
+        QTextStream(stdout) << QString::fromUtf8("报告延迟载入：构造时不载 ")
+                            << (deferredOk ? QStringLiteral("是") : QStringLiteral("否"))
+                            << QString::fromUtf8("　访问后已载 ")
+                            << (onDemandOk ? QStringLiteral("是") : QStringLiteral("否")) << "\n";
         int empty = 0, missing = 0;
         QString detail;
         for (const QString &k : keys) {
@@ -647,7 +655,7 @@ int main(int argc, char *argv[])
                             << QString::fromUtf8("　乱词命中: ") << (bogus ? "是(错)" : "否")
                             << (detail.isEmpty() ? QString() : QStringLiteral("　[") + detail + QLatin1Char(']'))
                             << "\n";
-        return (empty == 0 && missing == 0 && !bogus) ? 0 : 2;
+        return (empty == 0 && missing == 0 && !bogus && deferredOk && onDemandOk) ? 0 : 2;
     }
 
     /* F2 量测出口：把界面上"控件高度 / 字号 / 页边距与间距 / 滚动条宽度 / 文字是否被裁"

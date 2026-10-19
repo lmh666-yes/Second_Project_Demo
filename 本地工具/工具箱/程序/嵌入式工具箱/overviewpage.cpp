@@ -348,6 +348,20 @@ OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
        首次切到本页时再自动取一次结构化数据。 */
     m_canvas->setNotice(QStringLiteral("首次打开本页会自动取数，或点「刷新」。"));
     m_histCanvas->setNotice(QStringLiteral("还没有历史快照。每轮体检会自动归档一份。"));
+
+    /* H5：构造时就干的两件重活 —— 读 7 份 md 报告（转链接）与解析历史快照 JSON ——
+       推迟到**首次进本页**（showEvent）或按需访问（srcLinkCount/docLinkCount）时再做。
+       工具箱一打开不必为"还没看的那一页"付这份代价。先给个占位说明。 */
+    if (m_view)
+        m_view->setPlainText(QStringLiteral("首次打开本页会自动取数，并载入各检查器的报告原文。"));
+}
+
+/* H5：幂等 —— 首次进本页 / 按需访问时载入报告原文与历史回看。 */
+void OverviewPage::ensureLoaded()
+{
+    if (m_loaded)
+        return;
+    m_loaded = true;
     loadTextReports();
     reloadHistory();
 }
@@ -358,6 +372,7 @@ void OverviewPage::showEvent(QShowEvent *e)
     QWidget::showEvent(e);
     if (!m_firstShown) {
         m_firstShown = true;
+        ensureLoaded();          /* H5：报告原文 + 历史回看也等到这时才做 */
         QTimer::singleShot(0, this, &OverviewPage::refresh);
     }
 }
