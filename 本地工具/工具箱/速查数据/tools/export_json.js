@@ -288,11 +288,20 @@ const all = D.all;
     h.update(fs.readFileSync(path.join(SRC_DIR, f), 'utf8'));
   }
   const short = h.digest('hex').slice(0, 8);
-  const n = new Date();
-  const p2 = (x) => String(x).padStart(2, '0');
-  const time = n.getFullYear() + '-' + p2(n.getMonth() + 1) + '-' + p2(n.getDate())
-             + ' ' + p2(n.getHours()) + ':' + p2(n.getMinutes());
   const version = 'v' + all.length + '-' + short;
+  /* H3 联动：数据没变就**沿用原来的导出时间**（版本号一致 = 同一份数据）。
+     这样戳文件字节不变 → 手机版 / android assets 也不变 → 第 7 环「重打 APK」可以整环跳过。 */
+  let time = '';
+  try {
+    const prev = JSON.parse(fs.readFileSync(STAMP, 'utf8').match(/\{[^}]*\}/)[0]);
+    if (prev && prev.version === version && prev.time) time = prev.time;
+  } catch (e) { /* 没有旧戳 / 解析不了：就按新时间写 */ }
+  if (!time) {
+    const n = new Date();
+    const p2 = (x) => String(x).padStart(2, '0');
+    time = n.getFullYear() + '-' + p2(n.getMonth() + 1) + '-' + p2(n.getDate())
+         + ' ' + p2(n.getHours()) + ':' + p2(n.getMinutes());
+  }
   const stamp = '/* 由 速查数据/tools/export_json.js 生成（走 rebuild 链），请勿手改。\n'
     + '   三端（网页版 / 手机版 / APK）页脚显示「数据版本 + 导出时间」，用来判断手上这份是不是最新的。 */\n'
     + 'window.__BUILD_INFO__ = '

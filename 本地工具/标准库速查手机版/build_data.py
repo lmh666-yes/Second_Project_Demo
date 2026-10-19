@@ -33,7 +33,25 @@ else:
 if not os.path.exists(SRC):
     sys.exit("[错误] 未找到: " + SRC)
 
-# 2) 同步进 Android 资源目录
+# 2) 同步进 Android 资源目录。
+#    H3：内容与上次一样、且两个 APK 都在时，就别重写、也别让上层重打 APK ——
+#    用退出码 2 告知调用方「无变化，跳过 gradle」，省掉每次全量重编（配合 display 戳：
+#    数据没变时戳文件也不变，所以这里能真的命中"未变"）。退出码 0 = 有更新，1 = 出错。
+import hashlib
+
+
+def _sha(p):
+    with open(p, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
+
+
+new_h = _sha(SRC)
+apks = [os.path.join(HERE, "STM32-Lookup.apk"), os.path.join(HERE, "STM32速查.apk")]
+if os.path.exists(DST) and _sha(DST) == new_h and all(os.path.exists(a) for a in apks):
+    print("[2/2] 手机版内容未变（%s），不重写 assets、跳过重打 APK" % new_h[:12])
+    print("大小: %.0f KB" % (os.path.getsize(SRC) / 1024.0))
+    sys.exit(2)
+
 os.makedirs(os.path.dirname(DST), exist_ok=True)
 shutil.copyfile(SRC, DST)
 print("[2/2] 已同步到应用资源: " + DST)

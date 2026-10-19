@@ -26,6 +26,10 @@ cd /d "%~dp0"
 
 echo [1/3] Regenerate mobile HTML and copy into Android assets ...
 python "%~dp0build_data.py"
+if errorlevel 2 (
+  echo     [skip] mobile html unchanged - skip gradle rebuild.
+  goto :apk_done
+)
 if errorlevel 1 (
   echo     FAILED. Check that Python 3 is installed and the lookup tool folder exists.
   if not defined NOPAUSE pause & exit /b 1
@@ -33,7 +37,7 @@ if errorlevel 1 (
 
 echo [2/3] Build Debug APK with Gradle (first run may need network) ...
 cd /d "%~dp0android"
-call gradlew.bat clean assembleDebug --console=plain
+call gradlew.bat assembleDebug --console=plain
 if errorlevel 1 (
   echo     BUILD FAILED - see errors above.
   if not defined NOPAUSE pause & exit /b 1
@@ -44,6 +48,8 @@ copy /y "app\build\outputs\apk\debug\app-debug.apk" "%~dp0STM32-Lookup.apk" >nul
 copy /y "app\build\outputs\apk\debug\app-debug.apk" "%~dp0STM32ËÙ²é.apk" >nul
 
 echo.
+:apk_done
 echo DONE: %~dp0STM32-Lookup.apk
 echo Send this APK to your phone and install it (allow unknown sources).
 if not defined NOPAUSE pause
+exit /b 0

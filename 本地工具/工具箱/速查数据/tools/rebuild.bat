@@ -2,6 +2,7 @@
 chcp 936 >nul
 title Rebuild - STM32 Lookup (whole chain)
 setlocal EnableExtensions
+call :tick
 
 rem ============================================================
 rem  One command for the WHOLE chain of the STM32 lookup tool.
@@ -51,6 +52,7 @@ if errorlevel 1 (
 
 echo.
 echo ============================================================
+call :tick "1/8 data checks"
 echo  [2/8] web engine regression
 echo ============================================================
 node "%STD%\_build_regress.js"
@@ -61,6 +63,7 @@ if errorlevel 1 (
 
 echo.
 echo ============================================================
+call :tick "2/8 web regression"
 echo  [3/8] export dataset.json
 echo ============================================================
 node "%HERE%export_json.js"
@@ -68,6 +71,7 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo ============================================================
+call :tick "3/8 export dataset"
 echo  [4/8] regenerate data\search_baseline.txt
 echo ============================================================
 node "%HERE%export_json.js" --baseline
@@ -75,6 +79,7 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo ============================================================
+call :tick "4/8 baseline + search"
 echo  [5/8] toolbox build (嵌入式工具箱; 桌面速查已并入其中)
 echo ============================================================
 rem 构建脚本内部自己会重跑 qmake（新增头文件后不重跑会静默漏编，踩过）
@@ -86,6 +91,7 @@ if errorlevel 1 (
 
 echo.
 echo ============================================================
+call :tick "5/8 toolbox build"
 echo  [6/8] toolbox selftest (含 STM32 速查的数据/搜索基线断言)
 echo ============================================================
 rem 关键：不用管道 + findstr（中文在 GBK 控制台下匹配不上，会假报成功）
@@ -99,6 +105,7 @@ if errorlevel 1 (
 set "SYNCARG="
 if /i "%~1"=="/nodb" set "SYNCARG=--skip-apk"
 
+call :tick "6/8 toolbox selftest"
 if /i NOT "%~1"=="/nodb" (
   echo.
   echo ============================================================
@@ -118,6 +125,7 @@ if /i NOT "%~1"=="/nodb" (
 
 echo.
 echo ============================================================
+call :tick "7/8 mobile + APK"
 echo  [8/8] sync check  web / mobile / APK / dataset
 echo ============================================================
 rem 上面这行别写成 ^<-> 那种带转义箭头的写法：cmd 会把 ^< 转义后剩下的 > 当成重定向，
@@ -130,6 +138,22 @@ if errorlevel 1 (
   echo     FAILED: 有不同步项（细节看上面几行 FAIL）。
   exit /b 1
 )
+
+call :tick "8/8 sync check"
+goto :done
+
+rem ===== H3: per-stage timing (ASCII only) =====
+:tick
+set "TN=%TIME: =0%"
+set /a "h=1%TN:~0,2%-100","m=1%TN:~3,2%-100","s=1%TN:~6,2%-100","c=1%TN:~9,2%-100"
+set /a "nowcs=((h*3600)+(m*60)+s)*100+c"
+if not defined PREVCS goto :tick_reset
+set /a "d=nowcs-PREVCS","ds=d/100","dc=d%%100"
+if %dc% lss 10 set "dc=0%dc%"
+echo     [elapsed] %~1 : %ds%.%dc%s
+:tick_reset
+set "PREVCS=%nowcs%"
+exit /b 0
 
 :done
 echo.
