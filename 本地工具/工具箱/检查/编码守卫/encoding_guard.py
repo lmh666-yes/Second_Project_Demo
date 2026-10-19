@@ -26,6 +26,9 @@ r"""编码与仓库守卫（只读源码，不改任何文件）。
 
 另附"内存占用快照"：读 Keil 构建日志里的 Program Size 行。
 
+另附 H8「工作区换行统计」：始终统计"哪些文件在工作区里是 CRLF、共几条"（**只统计、不算违规**）——
+  换行违规仍只看 git 索引；这一栏是给"编辑器把某个文件整成了 CRLF"这类改动留个可见的计数。
+
 跳过第三方、构建产物与参考素材（FreeRTOS / ETH / RTE / qcustomplot / build / 双版资源）；
 .bat 等工程外文件本就不在扫描类型内。
 
@@ -320,12 +323,42 @@ def check_file(path, index_eol, do_eol, strict=False):
         issues.extend(comment_notes(text, os.path.splitext(path)[1].lower(), strict))
 
     if do_eol and index_eol:
-        rel = os.path.relpath(path, ROOT).replace('\\', '/')
-        ie = index_eol.get(rel)
-        if ie and ie != 'i/lf':
-            issues.append(('换行', 'git 索引换行为 %s（应为 LF）' % ie))
+        # 跨盘符（如临时目录在 C:、仓库在 D:）时 relpath 会抛 ValueError，跳过即可 ——
+        # 真实扫描的路径都在 ROOT 之下，这里只是防"拿别的盘的文件来判"。
+        try:
+            rel = os.path.relpath(path, ROOT).replace('\\', '/')
+        except ValueError:
+            rel = None
+        if rel:
+            ie = index_eol.get(rel)
+            if ie and ie != 'i/lf':
+                issues.append(('换行', 'git 索引换行为 %s（应为 LF）' % ie))
 
     return issues
+
+
+def workspace_crlf(path):
+    """H8：只统计、不判违规 —— 这份**工作区**文件里 CRLF（\\r\\n）的条数。
+
+    为什么单列：换行检查只按 git 索引判（本机 core.autocrlf=true 时，签出到工作区的文本
+    本来就会被转成 CRLF，拿工作区字节判会误报）。但"编辑器把某个文件整成了 CRLF"这类改动
+    也得看得见 —— 所以给一个**计数**：数出来、写进报告，但不计入违规。"""
+    try:
+        with open(path, 'rb') as f:
+            return f.read().count(b'\r\n')
+    except OSError:
+        return 0
+
+
+def git_autocrlf():
+    """本机 core.autocrlf 的取值（true / input / false / 空）—— 「工作区 CRLF 统计」要按它解读：
+    true 时工作区本来就会被签出成 CRLF，那 200+ 个文件全是 CRLF 属正常，不是"有人改了换行"。"""
+    try:
+        r = subprocess.run(['git', '-C', ROOT, 'config', '--get', 'core.autocrlf'],
+                           capture_output=True, text=True)
+        return (r.stdout or '').strip()
+    except Exception:
+        return ''
 
 
 def keil_snapshot():
@@ -344,7 +377,7 @@ def keil_snapshot():
 
 
 def render(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False,
-           scan_labels=None):
+           scan_labels=None, ws_crlf_files=0, ws_crlf_total=0):
     out = ['# 编码守卫报告', '',
            '来源：`encoding_guard.py`（只读扫描，可重复运行）', '']
     out.append('## 0. 总览')
@@ -356,12 +389,23 @@ def render(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False
     out.append('| 扫描文件 | %d |' % scanned)
     out.append('| 违规文件 | %d |' % len(bad_files))
     out.append('| 换行检查 | %s |' % ('已启用（按 git 索引判定）' if do_eol else '未启用（加 --eol 启用）'))
+    out.append('| 工作区换行统计 | %d 个文件含 CRLF（共 %d 条；**仅统计，不算违规**）'
+               '　本机 `core.autocrlf=%s` |'
+               % (ws_crlf_files, ws_crlf_total, git_autocrlf() or '未设'))
     out.append('| 注释严格模式 | %s |' % ('已启用（--strict-comments：全角标点按违规计）'
                                         if strict else '未启用（加 --strict-comments 启用）'))
     out.append('')
     out.append('口径：main.c 为 GBK 无 BOM；其余为 UTF-8 无 BOM；仓库索引换行为 LF。'
                '扫描根含 EnvMonitor 与 OTA（OTA1 / OTA1_Boot），RTE 生成物与 .bat 豁免。')
     out.append('')
+    if ws_crlf_files:
+        _ac = git_autocrlf()
+        _why = ('本机 `core.autocrlf=%s`，工作区里文本本来就会被签出成 CRLF，**属正常**；'
+                % _ac) if _ac == 'true' else ''
+        out.append('注（工作区 CRLF）：%s工作区里这些文件是 CRLF 本身**不是违规** —— 真违规看的是'
+                   'git **索引**里的换行（上面「换行检查」一行）。这一栏只把"哪些文件在工作区是 '
+                   'CRLF"数出来，方便一眼看出"是不是编辑器把某个文件整成了 CRLF"。' % _why)
+        out.append('')
 
     out.append('## 1. 违规清单')
     out.append('')
@@ -443,6 +487,8 @@ def render(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False
                '想按违规计就加 `--strict-comments` 重跑，那一档会写进第 1 节。')
     out.append('- 换行只在加 `--eol` 时查、且按 git 索引判定；'
                '若报 CRLF，用 `git add --renormalize` 重归一后再提交。')
+    out.append('- 「工作区换行统计」那一栏只是**计数**：本机 autocrlf 把工作区转成 CRLF 属正常，'
+               '不算违规；它涨上去时值得看一眼"是不是编辑器把哪个文件整成了 CRLF"。')
     out.append('- 第 2 节内存快照缺项，只说明 Keil 复编日志没取到，'
                '把 `keil_板N.log` 放到上述查找路径下重跑即可，不影响编码结论。')
     out.append('')
@@ -457,7 +503,7 @@ def render(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False
 
 
 def to_json(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False,
-            scan_labels=None):
+            scan_labels=None, ws_crlf_files=0, ws_crlf_total=0):
     """结构化输出，供工具箱的可视化体检面板读取。"""
     rows, missing = keil_snapshot()
     memory = []
@@ -482,6 +528,8 @@ def to_json(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=Fals
         'memory_missing': missing,
         'eol_checked': bool(do_eol),
         'strict_comments': bool(strict),
+        'ws_crlf_files': int(ws_crlf_files),      # H8：工作区含 CRLF 的文件数（仅统计）
+        'ws_crlf_total': int(ws_crlf_total),      # H8：工作区 CRLF 总条数（仅统计）
     }
 
 
@@ -564,6 +612,19 @@ def selftest():
                     not any(k == '注释违规'
                             for k, _ in check_file(os.path.join(d, 'strict.c'), {}, False, False))))
 
+    # H8：工作区 CRLF —— "只统计不判违规"。错例：CRLF 要数得出来；反例：不算违规；
+    #      对照：git 索引里是 CRLF 时**才**算违规（判据在索引，不在工作区）。
+    p_crlf = os.path.join(d, 'crlf.c')
+    with open(p_crlf, 'wb') as f:
+        f.write(b'int a;\r\nint b;\r\n')
+    p_lf = os.path.join(d, 'lf.c')
+    with open(p_lf, 'wb') as f:
+        f.write(b'int a;\nint b;\n')
+    results.append(('H8 错例：工作区 CRLF 被数出来（2 条）', workspace_crlf(p_crlf) == 2))
+    results.append(('H8 反例：LF 文件数出来为 0', workspace_crlf(p_lf) == 0))
+    results.append(('H8 反例：工作区 CRLF 不算违规（check_file 不给"换行"项）',
+                    not any(k == '换行' for k, _ in check_file(p_crlf, {}, True))))
+
     j = to_json(3, [(p1, [('编码', 'x')])], {'utf-8': 2}, False)
     results.append(('JSON 输出结构正确',
                     j['tool'] == 'encoding_guard' and j['scanned'] == 3
@@ -577,7 +638,8 @@ def selftest():
                     set(j) == {'tool', 'schema', 'ok', 'scanned', 'scan_roots',
                                'violations', 'violations_list', 'comment_notes',
                                'encoding_stat', 'memory', 'memory_missing',
-                               'eol_checked', 'strict_comments'}
+                               'eol_checked', 'strict_comments',
+                               'ws_crlf_files', 'ws_crlf_total'}
                     and isinstance(j['violations'], int)
                     and isinstance(j['memory'], list)))
     results.append(('JSON 契约：strict_comments 反映严格模式开关',
@@ -676,12 +738,18 @@ def main(argv):
     bad_files = []
     comment_list = []
     enc_stat = {}
+    ws_crlf_files = 0     # H8：工作区含 CRLF 的文件数（只统计，不判违规）
+    ws_crlf_total = 0     # H8：工作区 CRLF 总条数
     roots = scan_roots()
     for _label, root in roots:
         for path in iter_files(root):
             scanned += 1
             enc = expected_encoding(path)
             enc_stat[enc] = enc_stat.get(enc, 0) + 1
+            n = workspace_crlf(path)
+            if n:
+                ws_crlf_files += 1
+                ws_crlf_total += n
             issues = check_file(path, index_eol, do_eol, strict)
             # B4/B5：把注释区的提示项拣出来单独成节 —— 全角标点是习惯问题，不该算"违规文件"；
             # 但开了 --strict-comments 时，全角标点以 kind='注释违规' 返回，归到违规里。
@@ -697,10 +765,12 @@ def main(argv):
     labels = [n for n, _ in roots]
     if json_mode:
         print(json.dumps(to_json(scanned, bad_files, enc_stat, do_eol, comment_list,
-                                 strict, labels), ensure_ascii=False))
+                                 strict, labels, ws_crlf_files, ws_crlf_total),
+                         ensure_ascii=False))
         return 1 if bad_files else 0
 
-    report = render(scanned, bad_files, enc_stat, do_eol, comment_list, strict, labels)
+    report = render(scanned, bad_files, enc_stat, do_eol, comment_list, strict, labels,
+                    ws_crlf_files, ws_crlf_total)
     with open(out_path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(report)
 
@@ -710,6 +780,8 @@ def main(argv):
     print('  违规文件: %d' % len(bad_files))
     print('  注释体检: %d 个文件有提示（仅提示，不计违规，见报告 1b 节）' % len(comment_list))
     print('  换行检查: %s' % ('开' if do_eol else '关（加 --eol）'))
+    print('  工作区CRLF: %d 个文件 / %d 条（仅统计，不算违规；core.autocrlf=%s）'
+          % (ws_crlf_files, ws_crlf_total, git_autocrlf() or '未设'))
     print('  严格注释: %s' % ('开（全角标点按违规计）' if strict else '关（加 --strict-comments）'))
     print('  报告    : %s' % out_path)
     if not quiet and bad_files:
