@@ -25,7 +25,7 @@ DashboardCanvas::DashboardCanvas(QWidget *parent)
     : QWidget(parent)
 {
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
-    /* 两板热力图并排要 2*224 + 56 + 左右边距 32 ≈ 536，留点余量 */
+    /* 热力图每排放不下就换排：两板并排 ≥ 2*190 + 56 + 左右边距 ≈ 460，留点余量 */
     setMinimumWidth(460);
     setMouseTracking(true);   /* 悬停提示需要，否则只在按住键时才有 move 事件 */
 }
@@ -529,17 +529,24 @@ int DashboardCanvas::drawPins(QPainter &p, int x, int y, int w, const Palette &p
     const int topH = m_pinZoom ? 14 : 12;
     const int cols = 16, rows = 7;
     const int gridW = labW + cols * (cell + gap);
-    const int colGap = 56;
+    const int colGap = 56;      /* 同一排两板之间的横向间距 */
+    const int rowGap = 26;      /* 放不下换排时的纵向间距 */
+    /* 每排能放几块板：按可用宽度算，放不下就换排 —— 这样第三块（OTA）也会画出来，
+       而不是像过去那样写死"只画两板"。 */
+    const int perRow = qMax(1, (w + colGap) / (gridW + colGap));
+    const int boardH = 20 + topH + rows * (cell + gap);   /* 一块板的高：标题 + 列头 + 网格 */
     const QString ports = QStringLiteral("ABCDEFG");
 
     QFont f = p.font();
     p.setFont(f);
 
     int maxBottom = y;
-    for (int bi = 0; bi < boards.size() && bi < 2; ++bi) {
+    /* A2：不再写死只画两板 —— 板表里有几块就画几块（第三块起换到下一排），
+       否则 OTA 工程的引脚占用在面板上永远是空白，只能翻报告。 */
+    for (int bi = 0; bi < boards.size(); ++bi) {
         const QVariantMap b = boards[bi].toMap();
-        const int bx = x + bi * (gridW + colGap);
-        int by = y;
+        const int bx = x + (bi % perRow) * (gridW + colGap);
+        int by = y + (bi / perRow) * (boardH + rowGap);
 
         f.setPointSize(9);
         f.setBold(true);

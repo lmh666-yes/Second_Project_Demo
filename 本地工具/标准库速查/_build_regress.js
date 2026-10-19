@@ -128,7 +128,9 @@ chk(inAll.every(f => f._t === 'guide'), '手册条目类型都是 guide（复用
 chk(inAll.every(f => (f.f || []).length >= 4), '每个阶段至少 4 个动作');
 ['板1', '板2', 'Qt'].forEach(tag => chk(inAll.some(f => f._b === tag),
   '工程「' + tag + '」有阶段卡（' + inAll.filter(f => f._b === tag).length + ' 张）'));
-chk(E.projSel.children.length === 3, '工程下拉框 3 项');
+chk(E.projSel.children.length === 4, '工程下拉框 4 项（全部工程 + 板1 / 板2 / Qt）');
+chk(E.projSel.children[0].textContent === '全部工程',
+  '工程下拉框首项 = ' + E.projSel.children[0].textContent + '（不是"全部模块"）');
 const modTexts = els.mod.children.map(o => o.textContent);
 chk(!modTexts.some(t => /项目引导/.test(t)), '「全部模块」下拉里没有项目引导条目（共 ' + modTexts.length + ' 个模块）');
 
@@ -141,6 +143,13 @@ chk(E.listEl.children.length === byProj('板1'), '默认工程（板1）列出 '
   if (E.projSel._ev && E.projSel._ev.change) E.projSel._ev.change.forEach(f => f());
   chk(E.listEl.children.length === byProj(tag), '切到「' + tag + '」列出 ' + E.listEl.children.length + ' / ' + byProj(tag) + ' 张阶段卡');
 });
+/* 首项「全部工程」= 不过滤：必须列出三个工程的全部阶段卡 */
+E.projSel.value = '-1';
+if (E.projSel._ev && E.projSel._ev.change) E.projSel._ev.change.forEach(f => f());
+chk(E.listEl.children.length === inAll.length,
+  '选「全部工程」列出全部阶段卡 ' + E.listEl.children.length + ' / ' + inAll.length);
+E.projSel.value = '0';
+if (E.projSel._ev && E.projSel._ev.change) E.projSel._ev.change.forEach(f => f());
 chk(els.projwrap.style.display === '', 'build 板块显示工程下拉框');
 chk(els.modwrap.style.display === 'none', 'build 板块隐藏模块下拉框');
 chk(/阶段/.test(E.qEl.placeholder), '项目引导板块搜索占位符已切换 = ' + E.qEl.placeholder);

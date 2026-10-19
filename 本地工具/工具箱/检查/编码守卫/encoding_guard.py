@@ -4,7 +4,8 @@ r"""编码与仓库守卫（只读源码，不改任何文件）。
 用途：把工程的编码口径做成可执行的检查，防止中文注释被编辑器改坏。
 
 口径（见 注释与文档文风规范.md 第 4 节）：
-  · 两份 main.c 为 GBK(936) 编码；
+  · 扫描根含 EnvMonitor 与 OTA 两个工程（OTA1 / OTA1_Boot）；
+  · 各 main.c（板1 / 板2 / OTA1）为 GBK(936) 编码；
   · 其余源码与文档为 UTF-8 无 BOM。
   仓库索引中的换行统一为 LF。
 
@@ -25,7 +26,8 @@ r"""编码与仓库守卫（只读源码，不改任何文件）。
 
 另附"内存占用快照"：读 Keil 构建日志里的 Program Size 行。
 
-跳过第三方、构建产物与参考素材（FreeRTOS / ETH / RTE / qcustomplot / build / 双版资源）。
+跳过第三方、构建产物与参考素材（FreeRTOS / ETH / RTE / qcustomplot / build / 双版资源）；
+.bat 等工程外文件本就不在扫描类型内。
 
 报告写到脚本同目录的 编码守卫报告.md，并在控制台打印摘要。
 有违规时退出码非 0，便于接进自动化。
@@ -83,7 +85,13 @@ try:
 except Exception:
     boardcfg = None
 
-PROJECT = os.path.join(ROOT, 'EnvMonitor')
+# A1：扫描根不再只有 EnvMonitor —— OTA 的两个工程（OTA1 / OTA1_Boot）也在口径内，
+# 免得 Keil 哪天把它们的源码另存成 UTF-8 却没人报。口径不变（见 expected_encoding）：
+# main.c = GBK 无 BOM，其余 = UTF-8 无 BOM；RTE 生成物与 .bat 照旧豁免（见 EXCLUDE_DIR / SCAN_EXT）。
+SCAN_ROOT_CANDIDATES = [
+    ('EnvMonitor', os.path.join(ROOT, 'EnvMonitor')),
+    ('OTA', os.path.join(ROOT, 'OTA')),
+]
 
 # 只查口径覆盖的源码与文档类型（不含 .bat/.ini/.ps1 等工程外文件）
 SCAN_EXT = {'.c', '.h', '.cpp', '.hpp', '.cc', '.hh', '.md', '.txt',
@@ -169,6 +177,12 @@ def locate_keil_logs():
 
 def expected_encoding(path):
     return 'gbk' if os.path.basename(path).lower() == 'main.c' else 'utf-8'
+
+
+def scan_roots():
+    """A1：实际要扫的根目录（label, abs）。目录不存在就跳过，
+    便于换装 / 裁剪后仍能跑而不报错。"""
+    return [(n, p) for n, p in SCAN_ROOT_CANDIDATES if os.path.isdir(p)]
 
 
 def iter_files(root):
@@ -329,7 +343,8 @@ def keil_snapshot():
     return rows, missing
 
 
-def render(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False):
+def render(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False,
+           scan_labels=None):
     out = ['# 编码守卫报告', '',
            '来源：`encoding_guard.py`（只读扫描，可重复运行）', '']
     out.append('## 0. 总览')
@@ -337,13 +352,15 @@ def render(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False
     out.append('| 项 | 值 |')
     out.append('|---|---|')
     out.append('| 仓库根 | `%s` |' % ROOT)
+    out.append('| 扫描根 | %s |' % ('、'.join(scan_labels) if scan_labels else '（未指定）'))
     out.append('| 扫描文件 | %d |' % scanned)
     out.append('| 违规文件 | %d |' % len(bad_files))
     out.append('| 换行检查 | %s |' % ('已启用（按 git 索引判定）' if do_eol else '未启用（加 --eol 启用）'))
     out.append('| 注释严格模式 | %s |' % ('已启用（--strict-comments：全角标点按违规计）'
                                         if strict else '未启用（加 --strict-comments 启用）'))
     out.append('')
-    out.append('口径：main.c 为 GBK 无 BOM；其余为 UTF-8 无 BOM；仓库索引换行为 LF。')
+    out.append('口径：main.c 为 GBK 无 BOM；其余为 UTF-8 无 BOM；仓库索引换行为 LF。'
+               '扫描根含 EnvMonitor 与 OTA（OTA1 / OTA1_Boot），RTE 生成物与 .bat 豁免。')
     out.append('')
 
     out.append('## 1. 违规清单')
@@ -439,7 +456,8 @@ def render(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False
     return '\n'.join(out)
 
 
-def to_json(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False):
+def to_json(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=False,
+            scan_labels=None):
     """结构化输出，供工具箱的可视化体检面板读取。"""
     rows, missing = keil_snapshot()
     memory = []
@@ -451,6 +469,7 @@ def to_json(scanned, bad_files, enc_stat, do_eol, comment_list=None, strict=Fals
         'schema': 1,
         'ok': len(bad_files) == 0,
         'scanned': scanned,
+        'scan_roots': list(scan_labels or []),
         'violations': len(bad_files),
         'violations_list': [
             {'file': rel, 'issues': [{'kind': k, 'detail': d} for k, d in iss]}
@@ -493,6 +512,21 @@ def selftest():
                     any(k == '编码' for k, _ in check_file(p2, {}, False))))
     results.append(('UTF-8 BOM 应报 BOM',
                     any(k == 'BOM' for k, _ in check_file(p3, {}, False))))
+
+    # A1：扫描根放开到 OTA —— 错例（OTA 的 main.c 被存成 UTF-8 也报）/ 反例（仓库真那份是 GBK）
+    p_ota_bad = os.path.join(d, 'OTA1', 'main.c')
+    os.makedirs(os.path.dirname(p_ota_bad), exist_ok=True)
+    with open(p_ota_bad, 'wb') as f:
+        f.write('/* 温度 */\nint x;\n'.encode('utf-8'))
+    results.append(('A1 错例：OTA 的 main.c 存成 UTF-8 应报编码（扫描根放开后同样守得住）',
+                    any(k == '编码' for k, _ in check_file(p_ota_bad, {}, False))))
+    _ota_real = os.path.join(ROOT, 'OTA', 'OTA1', 'main.c')
+    results.append(('A1 反例：仓库里 OTA/OTA1/main.c 合口径（编码/BOM/乱码都不报）',
+                    os.path.isfile(_ota_real)
+                    and not any(k in ('BOM', '编码', '乱码')
+                                for k, _ in check_file(_ota_real, {}, False))))
+    results.append(('A1：扫描根已含 OTA（不再只扫 EnvMonitor）',
+                    any(os.path.basename(p) == 'OTA' for _, p in scan_roots())))
 
     # 4) B4：注释区体检 —— 全角标点 / GBK 乱码残留签名（只提示，不算违规）
     p4 = os.path.join(d, 'comm.c')
@@ -540,10 +574,10 @@ def selftest():
                     'comment_notes' in j2 and len(j2['comment_notes']) == 1))
     # B6 JSON 契约：面板读 violations 与 memory 里那串字段，名字一改就红
     results.append(('JSON 契约：面板读取的字段名/类型都在',
-                    set(j) == {'tool', 'schema', 'ok', 'scanned', 'violations',
-                               'violations_list', 'comment_notes', 'encoding_stat',
-                               'memory', 'memory_missing', 'eol_checked',
-                               'strict_comments'}
+                    set(j) == {'tool', 'schema', 'ok', 'scanned', 'scan_roots',
+                               'violations', 'violations_list', 'comment_notes',
+                               'encoding_stat', 'memory', 'memory_missing',
+                               'eol_checked', 'strict_comments'}
                     and isinstance(j['violations'], int)
                     and isinstance(j['memory'], list)))
     results.append(('JSON 契约：strict_comments 反映严格模式开关',
@@ -642,28 +676,31 @@ def main(argv):
     bad_files = []
     comment_list = []
     enc_stat = {}
-    for path in iter_files(PROJECT):
-        scanned += 1
-        enc = expected_encoding(path)
-        enc_stat[enc] = enc_stat.get(enc, 0) + 1
-        issues = check_file(path, index_eol, do_eol, strict)
-        # B4/B5：把注释区的提示项拣出来单独成节 —— 全角标点是习惯问题，不该算"违规文件"；
-        # 但开了 --strict-comments 时，全角标点以 kind='注释违规' 返回，归到违规里。
-        notes = [x for x in issues if x[0] == '注释']
-        strict_hits = [x for x in issues if x[0] == '注释违规']
-        issues = [x for x in issues if x[0] not in ('注释', '注释违规')]
-        rel = os.path.relpath(path, ROOT)
-        if issues or strict_hits:
-            bad_files.append((rel, issues + strict_hits))
-        if notes:
-            comment_list.append((rel, notes))
+    roots = scan_roots()
+    for _label, root in roots:
+        for path in iter_files(root):
+            scanned += 1
+            enc = expected_encoding(path)
+            enc_stat[enc] = enc_stat.get(enc, 0) + 1
+            issues = check_file(path, index_eol, do_eol, strict)
+            # B4/B5：把注释区的提示项拣出来单独成节 —— 全角标点是习惯问题，不该算"违规文件"；
+            # 但开了 --strict-comments 时，全角标点以 kind='注释违规' 返回，归到违规里。
+            notes = [x for x in issues if x[0] == '注释']
+            strict_hits = [x for x in issues if x[0] == '注释违规']
+            issues = [x for x in issues if x[0] not in ('注释', '注释违规')]
+            rel = os.path.relpath(path, ROOT)
+            if issues or strict_hits:
+                bad_files.append((rel, issues + strict_hits))
+            if notes:
+                comment_list.append((rel, notes))
 
+    labels = [n for n, _ in roots]
     if json_mode:
-        print(json.dumps(to_json(scanned, bad_files, enc_stat, do_eol, comment_list, strict),
-                         ensure_ascii=False))
+        print(json.dumps(to_json(scanned, bad_files, enc_stat, do_eol, comment_list,
+                                 strict, labels), ensure_ascii=False))
         return 1 if bad_files else 0
 
-    report = render(scanned, bad_files, enc_stat, do_eol, comment_list, strict)
+    report = render(scanned, bad_files, enc_stat, do_eol, comment_list, strict, labels)
     with open(out_path, 'w', encoding='utf-8', newline='\n') as f:
         f.write(report)
 

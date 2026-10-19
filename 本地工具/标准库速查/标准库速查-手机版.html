@@ -13867,6 +13867,13 @@ function renderGuideList(arr, words, relaxed, en) {
 
 /* ---------- 项目引导列表 ---------- */
 if (typeof STD_BUILD_PROJ !== "undefined") {
+  /* 首项"全部工程"：这一栏列的是工程（板1 / 板2 / Qt），不是模块 ——
+     所以首项别跟着资料查询叫"全部模块"，统称"全部工程"，与桌面版（工具箱查询页）口径一致。
+     值 -1 = 不过滤（列出三个工程的全部阶段卡）。 */
+  const oAll = document.createElement("option");
+  oAll.value = "-1";
+  oAll.textContent = "全部工程";
+  projSel.appendChild(oAll);
   STD_BUILD_PROJ.forEach((p, i) => {
     const o = document.createElement("option");
     o.value = String(i);
@@ -13876,18 +13883,20 @@ if (typeof STD_BUILD_PROJ !== "undefined") {
 }
 function buildCurProj() { return (typeof STD_BUILD_PROJ !== "undefined") ? STD_BUILD_PROJ[buildProj] : null; }
 function buildItems() {
+  if (buildProj < 0) return ALL.filter(f => f._b);   /* 全部工程：不按工程过滤 */
   const p = buildCurProj();
   if (!p) return [];
   return ALL.filter(f => f._b === p.tag);
 }
 function renderBuildList() {
   const p = buildCurProj();
+  const isAll = (buildProj < 0);
   const q = qEl.value.trim().toLowerCase();
   let arr = buildItems();
   if (q) arr = arr.filter(f => (f.n + " " + (f.d || "") + " " + (f.g || "")).toLowerCase().indexOf(q) >= 0);
-  countEl.innerHTML = "「" + esc(p ? p.name : "项目引导") + "」共 <b>" + arr.length + "</b> 个阶段";
+  countEl.innerHTML = "「" + esc(isAll ? "全部工程" : (p ? p.name : "项目引导")) + "」共 <b>" + arr.length + "</b> 个阶段";
   listEl.innerHTML = "";
-  if (!p) { listEl.innerHTML = "<div class='guide-empty'>还没有项目引导数据<br>（data_build*.js 未加载或内容为空）</div>"; return; }
+  if (!p && !isAll) { listEl.innerHTML = "<div class='guide-empty'>还没有项目引导数据<br>（data_build*.js 未加载或内容为空）</div>"; return; }
   if (!arr.length) {
     listEl.innerHTML = "<div class='guide-empty'>这个工程还没有引导内容<br>项目引导按 <b>板1 → 板2 → Qt</b> 分次补齐，先做哪个就写哪个。</div>";
     return;

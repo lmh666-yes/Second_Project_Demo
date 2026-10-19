@@ -551,6 +551,11 @@ void OverviewPage::finishFetch()
 
 QString OverviewPage::snapshotDir() const
 {
+    /* A4：测试/量测出口（带参数运行）由 main.cpp 给出沙箱路径，历史落副本上，
+       免得 --shot-overview / --gui-smoke / --ui-audit 每跑一轮就往用户的 _体检历史 里塞一轮。 */
+    const QByteArray box = qgetenv("TOOLBOX_HISTORY_DIR");
+    if (!box.isEmpty())
+        return QString::fromLocal8Bit(box);
     return QDir(m_toolsDir).filePath(QStringLiteral("_体检历史"));
 }
 

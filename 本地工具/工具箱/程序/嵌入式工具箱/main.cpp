@@ -300,6 +300,38 @@ int main(int argc, char *argv[])
                 QFile::copy(b.src, dst);      /* 先拷用户那份，读起来与平时一致 */
             qputenv(b.env, dst.toLocal8Bit());
         }
+
+        /* A4：除了两份 ini，测试/量测出口还会写两份"历史"，同样别落到用户数据上：
+             · 工具箱\_体检历史\*.json              —— 总览面板「历史回看」的快照（只留 20 份）
+             · 检查\进度跟踪\_progress_history.json —— 进度趋势的读数（只留 30 份）
+           实测每跑一轮 --shot-overview / --gui-smoke / --ui-audit 就往里塞一轮，
+           于是登录到趋势图上的"待办 / 桩"变化里混着测试轮 —— 用户自己的真跑被稀释。
+           做法与 ini 一致：把两份历史各拷进临时沙箱，读写都落副本（没有原件就从空开始）。
+           子进程（各检查器 / 总览面板取数）继承本进程环境，所以 Python 那边读到的是同一份沙箱。 */
+        const QString tdir = ToolboxWindow::toolsDirPath();
+        if (!tdir.isEmpty()) {
+            const QString histBox = QDir(boxDir).filePath(QStringLiteral("hist"));
+            QDir().mkpath(histBox);
+
+            /* 总览快照：整目录（都是平铺的 *.json）拷进沙箱，环境变量告诉面板改从这里读写 */
+            const QString snapSrc = QDir(tdir).filePath(QStringLiteral("_体检历史"));
+            const QString snapDst = QDir(histBox).filePath(QStringLiteral("_体检历史"));
+            QDir(snapDst).removeRecursively();
+            QDir().mkpath(snapDst);
+            for (const QString &f : QDir(snapSrc).entryList(QStringList{QStringLiteral("*.json")},
+                                                           QDir::Files))
+                QFile::copy(QDir(snapSrc).filePath(f), QDir(snapDst).filePath(f));
+            qputenv("TOOLBOX_HISTORY_DIR", snapDst.toLocal8Bit());
+
+            /* 进度趋势：单个 json 文件 */
+            const QString phSrc = QDir(tdir).filePath(
+                QStringLiteral("检查/进度跟踪/_progress_history.json"));
+            const QString phDst = QDir(histBox).filePath(QStringLiteral("_progress_history.json"));
+            QFile::remove(phDst);
+            if (QFileInfo::exists(phSrc))
+                QFile::copy(phSrc, phDst);
+            qputenv("TOOLBOX_PROGRESS_HISTORY", phDst.toLocal8Bit());
+        }
     }
 
     /* GUI 崩溃冒烟：开窗口、遍历页面与控件、点一遍安全按钮（见 uismoke.h） */
@@ -360,7 +392,7 @@ int main(int argc, char *argv[])
         if (histN < 1)
             return 2;
 
-        /* 断言交互区域已登记：健康度卡片 + 两板热力图格，取数成功时必然 > 6。
+        /* 断言交互区域已登记：健康度卡片 + 各板热力图格，取数成功时必然 > 6。
            命中区一旦变空，悬停与点击都会失灵，所以在这里兜住。 */
         if (canvas) {
             const int n = canvas->hitCount();

@@ -357,7 +357,12 @@ def scan(root):
 
 
 def snapshot_path():
-    """历史快照落在工具自身目录下，不污染仓库。"""
+    """历史快照落在工具自身目录下，不污染仓库。
+    A4：工具箱的测试/量测出口（带参数运行）会给出临时沙箱路径 —— 那些出口每跑一轮
+    也会走一遍本脚本，若不隔离，用户自己的"待办 / 桩"趋势里就混进测试轮了。"""
+    env = os.environ.get('TOOLBOX_PROGRESS_HISTORY')
+    if env:
+        return env
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), '_progress_history.json')
 
 
@@ -697,6 +702,25 @@ def selftest():
            '## 2. 疑似桩函数（待实现）' in report and 'App_Sensor' in report
            and '## 4. 疑似有意留空' in report and 'App_Cb' in report)
         ck('自检未污染趋势快照', load_prev() == before)
+
+        # A4：测试/量测出口靠环境变量把趋势历史改到沙箱 —— 这两条钉住"能改道"本身，
+        # 否则隔离一旦失效，又回到"跑个测试就把测试轮写进用户自己的趋势"。
+        # 注意：工具箱 --selftest 本身就带这个环境变量（沙箱），所以反例要先清掉再断言。
+        _envkey = 'TOOLBOX_PROGRESS_HISTORY'
+        _bak = os.environ.get(_envkey)
+        try:
+            os.environ[_envkey] = os.path.join(tmp, '_sandbox_history.json')
+            ck('A4 正例：设了 TOOLBOX_PROGRESS_HISTORY 时历史落沙箱（测试不写用户趋势）',
+               snapshot_path() == os.environ[_envkey])
+            os.environ.pop(_envkey, None)
+            ck('A4 反例：没设环境变量时回落到工具目录下的真实历史文件',
+               snapshot_path() == os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                               '_progress_history.json'))
+        finally:
+            if _bak is None:
+                os.environ.pop(_envkey, None)
+            else:
+                os.environ[_envkey] = _bak
 
         # B4 待办按模块汇总：正例（模块名派生 + 排序）与反例（有意留空不计入）
         mod_rows = module_summary(markers, todo)

@@ -1,0 +1,3099 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0f1419">
+<title>STM32F4 标准库函数速查</title>
+<style>
+/* ============================================================
+ *  主题系统
+ *  ------------------------------------------------------------
+ *  深色优先（默认），支持：
+ *    · 自动跟随系统（prefers-color-scheme）
+ *    · 手动切换： 深色 / 浅色 / 自动
+ *  所有颜色走 CSS 变量，切换只改 <html data-theme>，不重排。
+ * ============================================================ */
+:root {
+  /* ---- 深色主题（默认）---- */
+  --bg:            #0f1419;
+  --bg-elev:       #161c23;
+  --bg-elev-2:     #1c242e;
+  --bg-hover:      #222c38;
+  --bg-active:     #26333f;
+  --bg-code:       #10161d;
+  --bg-inset:      #131a21;
+
+  --border:        #2a3540;
+  --border-soft:   #212a33;
+  --border-strong: #3a4956;
+
+  --fg:            #e3e9ef;
+  --fg-strong:     #ffffff;
+  --fg-dim:        #9dabb8;
+  --fg-faint:      #6b7a88;
+
+  --accent:        #4fa3e3;
+  --accent-strong: #6fb8f0;
+  --accent-dim:    #2d6a9e;
+  --accent-bg:     #16324a;
+  --accent-fg:     #cfe6fa;
+
+  --ok:            #4ec97a;
+  --ok-bg:         #16301f;
+  --ok-border:     #2b5c3a;
+  --warn:          #e8a33d;
+  --warn-bg:       #33260f;
+  --warn-border:   #6b4f22;
+  --danger:        #e56a6a;
+  --danger-bg:     #33191b;
+  --danger-border: #6e3033;
+  --info:          #4fc3c9;
+  --info-bg:       #123033;
+  --info-border:   #2a5f63;
+  --violet:        #a98ae0;
+  --violet-bg:     #251d38;
+  --violet-border: #4b3a70;
+
+  --code-fg:       #d8c9a8;
+  --mark-bg:       #7a5a12;
+  --mark-fg:       #ffe9a8;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.45);
+  --shadow-md: 0 4px 14px rgba(0,0,0,.5);
+  --shadow-lg: 0 10px 34px rgba(0,0,0,.6);
+  --ring: 0 0 0 3px rgba(79,163,227,.32);
+
+  --radius:    8px;
+  --radius-sm: 6px;
+  --radius-lg: 12px;
+
+  --fs-xs:  11.5px;
+  --fs-sm:  12.5px;
+  --fs-md:  13.5px;
+  --fs-base:14px;
+  --fs-lg:  16px;
+  --fs-xl:  19px;
+  --fs-2xl: 23px;
+
+  --mono: "Cascadia Mono", Consolas, "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+  --sans: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+
+  --aside-w: 330px;
+}
+
+/* ---- 浅色主题 ---- */
+html[data-theme="light"] {
+  --bg:            #f4f6f9;
+  --bg-elev:       #ffffff;
+  --bg-elev-2:     #fafbfd;
+  --bg-hover:      #eef3f9;
+  --bg-active:     #e2edf8;
+  --bg-code:       #f2f5f9;
+  --bg-inset:      #f7f9fb;
+
+  --border:        #d8dee6;
+  --border-soft:   #e8ecf1;
+  --border-strong: #c2ccd8;
+
+  --fg:            #26313d;
+  --fg-strong:     #0f1a24;
+  --fg-dim:        #64717f;
+  --fg-faint:      #8c98a5;
+
+  --accent:        #1f6fb8;
+  --accent-strong: #185a97;
+  --accent-dim:    #5a9bd0;
+  --accent-bg:     #e4f0fb;
+  --accent-fg:     #123f68;
+
+  --ok:            #227a45;
+  --ok-bg:         #eaf7ee;
+  --ok-border:     #b7dfc3;
+  --warn:          #a5670c;
+  --warn-bg:       #fdf5e6;
+  --warn-border:   #edd9ac;
+  --danger:        #b83b3b;
+  --danger-bg:     #fdeeee;
+  --danger-border: #f0c4c4;
+  --info:          #10646f;
+  --info-bg:       #e2f3f5;
+  --info-border:   #b3dde1;
+  --violet:        #5a3f91;
+  --violet-bg:     #efeaf9;
+  --violet-border: #d3c6ee;
+
+  --code-fg:       #7a4a1e;
+  --mark-bg:       #ffe9a8;
+  --mark-fg:       #4a3400;
+
+  --shadow-sm: 0 1px 2px rgba(24,40,60,.07);
+  --shadow-md: 0 4px 14px rgba(24,40,60,.1);
+  --shadow-lg: 0 10px 34px rgba(24,40,60,.15);
+  --ring: 0 0 0 3px rgba(31,111,184,.22);
+}
+
+/* ============================================================
+ *  基础
+ * ============================================================ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--sans);
+  font-size: var(--fs-base);
+  color: var(--fg);
+  background: var(--bg);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  -webkit-text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+a { color: var(--accent); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--fg-faint); }
+:focus-visible { outline: none; box-shadow: var(--ring); border-radius: var(--radius-sm); }
+
+/* ============================================================
+ *  顶栏
+ * ============================================================ */
+header {
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+  position: relative;
+  z-index: 20;
+}
+.hrow { display: flex; align-items: center; gap: 12px; padding: 9px 14px; flex-wrap: wrap; }
+.hrow + .hrow { padding-top: 0; }
+
+.brand { display: flex; align-items: center; gap: 9px; white-space: nowrap; }
+.brand .logo {
+  width: 27px; height: 27px; border-radius: 7px; flex: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent-dim));
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 13px; color: #fff; letter-spacing: -.5px;
+  box-shadow: var(--shadow-sm);
+}
+.brand h1 { font-size: var(--fs-lg); font-weight: 700; color: var(--fg-strong); letter-spacing: -.2px; }
+.brand h1 small { font-size: var(--fs-xs); font-weight: 500; color: var(--fg-faint); margin-left: 6px; }
+
+/* 板块切换 */
+.tabs { display: inline-flex; gap: 3px; background: var(--bg-inset); padding: 3px; border-radius: var(--radius);
+  border: 1px solid var(--border-soft); }
+.tabs button {
+  border: 0; background: transparent; color: var(--fg-dim);
+  font-size: var(--fs-md); font-weight: 600; padding: 6px 14px; border-radius: var(--radius-sm);
+  cursor: pointer; white-space: nowrap; transition: background .13s, color .13s;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.tabs button:hover { background: var(--bg-hover); color: var(--fg); }
+.tabs button.active { background: var(--accent); color: #fff; box-shadow: var(--shadow-sm); }
+.tabs button .tcount {
+  font-size: var(--fs-xs); font-weight: 600; opacity: .7;
+  background: rgba(255,255,255,.16); border-radius: 8px; padding: 0 5px; min-width: 17px; text-align: center;
+}
+.tabs button:not(.active) .tcount { background: var(--bg-hover); }
+
+.hspace { flex: 1; min-width: 4px; }
+
+/* 工具栏按钮 */
+.toolbar { display: flex; align-items: center; gap: 6px; }
+.iconbtn {
+  border: 1px solid var(--border); background: var(--bg-elev-2); color: var(--fg-dim);
+  width: 32px; height: 32px; border-radius: var(--radius-sm); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 15px;
+  transition: background .13s, color .13s, border-color .13s; flex: none;
+}
+.iconbtn:hover { background: var(--bg-hover); color: var(--fg-strong); border-color: var(--border-strong); }
+.iconbtn.on { background: var(--accent-bg); color: var(--accent); border-color: var(--accent-dim); }
+.iconbtn .bdg {
+  position: absolute; transform: translate(13px,-11px);
+  background: var(--warn); color: #201400; border-radius: 8px;
+  font-size: 10px; font-weight: 800; padding: 0 4px; min-width: 14px; text-align: center; line-height: 14px;
+}
+.iconbtn { position: relative; }
+
+/* 搜索行 */
+.searchwrap { position: relative; flex: 1; min-width: 240px; display: flex; align-items: center; }
+.searchwrap .sicon { position: absolute; left: 11px; color: var(--fg-faint); font-size: 14px; pointer-events: none; }
+#q {
+  width: 100%; padding: 9px 34px 9px 32px; border: 1px solid var(--border);
+  border-radius: var(--radius); font-size: var(--fs-base); background: var(--bg-inset); color: var(--fg);
+  transition: border-color .13s, box-shadow .13s;
+}
+#q::placeholder { color: var(--fg-faint); }
+#q:focus { border-color: var(--accent); box-shadow: var(--ring); background: var(--bg-elev-2); }
+#clearq {
+  position: absolute; right: 7px; border: 0; background: transparent; color: var(--fg-faint);
+  cursor: pointer; font-size: 17px; line-height: 1; padding: 4px 6px; border-radius: 5px; display: none;
+}
+#clearq:hover { background: var(--bg-hover); color: var(--fg); }
+.searchwrap.hasq #clearq { display: block; }
+
+/* 下拉 */
+.selectwrap { position: relative; display: inline-flex; align-items: center; }
+.selectwrap > .slab { font-size: var(--fs-xs); color: var(--fg-faint); margin-right: 5px; white-space: nowrap; }
+select {
+  padding: 8px 30px 8px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: var(--fs-md); background: var(--bg-inset); color: var(--fg); cursor: pointer;
+  appearance: none; max-width: 210px; text-overflow: ellipsis;
+  background-image: linear-gradient(45deg, transparent 50%, var(--fg-faint) 50%), linear-gradient(135deg, var(--fg-faint) 50%, transparent 50%);
+  background-position: calc(100% - 15px) calc(50% + 1px), calc(100% - 10px) calc(50% + 1px);
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+}
+select:focus { border-color: var(--accent); box-shadow: var(--ring); }
+
+/* 计数 */
+#count { font-size: var(--fs-sm); color: var(--fg-dim); white-space: nowrap; }
+#count b { color: var(--accent); font-weight: 700; }
+
+/* ============================================================
+ *  落地页（未搜索时的「从这里开始」）
+ * ============================================================ */
+.hero { padding: 14px 13px 15px; border-bottom: 2px solid var(--border); background: var(--bg-elev-2); }
+.hero-t { font-size: var(--fs-lg); font-weight: 800; color: var(--fg-strong); display: flex; align-items: center; gap: 7px; }
+.hero-s { font-size: var(--fs-sm); color: var(--fg-dim); line-height: 1.8; margin: 7px 0 13px; }
+.heropaths { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.herocard {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elev);
+  cursor: pointer; transition: border-color .13s, background .13s, transform .1s;
+}
+.herocard:hover { border-color: var(--accent); background: var(--bg-hover); transform: translateX(2px); }
+.herocard .hic { font-size: 19px; flex: none; line-height: 1.3; }
+.herocard .hct { font-size: var(--fs-md); font-weight: 700; color: var(--accent); line-height: 1.55; }
+.herocard .hcd { font-size: var(--fs-sm); color: var(--fg-dim); line-height: 1.7; margin-top: 2px; }
+.herochips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.herochips .chip {
+  border: 1px solid var(--border-strong); background: var(--bg-elev); color: var(--fg);
+  border-radius: 14px; padding: 3px 11px; cursor: pointer; font-size: var(--fs-sm); white-space: nowrap;
+  transition: background .13s, border-color .13s, color .13s;
+}
+.herochips .chip:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.heromods { display: flex; flex-wrap: wrap; gap: 5px; }
+.heromods .modchip {
+  font-family: var(--mono); font-size: var(--fs-sm); color: var(--fg-dim);
+  border: 1px solid var(--border); background: var(--bg-elev); border-radius: var(--radius-sm);
+  padding: 2px 8px; cursor: pointer; transition: background .13s, color .13s, border-color .13s;
+}
+.heromods .modchip:hover { background: var(--bg-active); color: var(--accent); border-color: var(--accent-dim); }
+.heromods .modchip i { font-style: normal; color: var(--fg-faint); font-size: var(--fs-xs); margin-left: 4px; }
+
+/* ============================================================
+ *  主区
+ * ============================================================ */
+main { flex: 1; display: flex; min-height: 0; }
+
+aside {
+  width: var(--aside-w); flex: none; background: var(--bg-elev);
+  border-right: 1px solid var(--border); overflow-y: auto; overscroll-behavior: contain;
+}
+
+/* 列表项 */
+.item {
+  padding: 9px 13px; border-bottom: 1px solid var(--border-soft);
+  cursor: pointer; transition: background .1s; position: relative;
+}
+.item:hover { background: var(--bg-hover); }
+.item.active { background: var(--bg-active); }
+.item.active::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent);
+}
+.item .fn {
+  font-family: var(--mono); font-size: var(--fs-md); color: var(--fg-strong);
+  font-weight: 600; line-height: 1.55; word-break: break-word;
+}
+.item .fd {
+  font-size: var(--fs-sm); color: var(--fg-dim); margin-top: 3px; line-height: 1.6;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.item.fav-on .fn::after { content: " ★"; color: var(--warn); }
+
+/* 徽章 */
+.badge {
+  display: inline-block; font-size: var(--fs-xs); background: var(--bg-inset);
+  color: var(--fg-dim); border: 1px solid var(--border-soft);
+  border-radius: 4px; padding: 0 5px; margin-right: 6px; vertical-align: 1px;
+  font-family: var(--sans); font-weight: 600; white-space: nowrap;
+}
+.badge.btype { background: var(--violet-bg); color: var(--violet); border-color: var(--violet-border); }
+.badge.btype.raw { background: var(--bg-inset); color: var(--fg-faint); border-color: var(--border-soft); }
+.badge.btype.flow { background: var(--ok-bg); color: var(--ok); border-color: var(--ok-border); }
+.badge.btype.guide { background: var(--warn-bg); color: var(--warn); border-color: var(--warn-border); font-weight: 700; }
+.badge.btype.datasheet { background: var(--info-bg); color: var(--info); border-color: var(--info-border); font-weight: 700; }
+
+/* 搜索高亮 */
+mark.hl { background: var(--mark-bg); color: var(--mark-fg); border-radius: 2px; padding: 0 1px; font-weight: 700; }
+
+/* 命中原因条 */
+.hitreason {
+  font-size: var(--fs-xs); color: var(--fg-faint); margin-top: 4px;
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+}
+.hitreason .rtag {
+  background: var(--accent-bg); color: var(--accent-fg); border-radius: 3px; padding: 0 5px;
+  font-weight: 700; border: 1px solid var(--accent-dim);
+}
+.hitreason .rtag.lvl2 { background: var(--bg-inset); color: var(--fg-faint); border-color: var(--border-soft); }
+
+/* ============================================================
+ *  详情
+ * ============================================================ */
+section { flex: 1; min-width: 0; overflow-y: auto; padding: 22px 30px 60px; overscroll-behavior: contain; position: relative; }
+.detail { max-width: 1080px; }
+
+.detail .dhead { position: sticky; top: -22px; z-index: 8; background: var(--bg);
+  padding: 8px 0 12px; margin: -8px 0 4px; border-bottom: 1px solid var(--border-soft); }
+.detail h2 {
+  font-family: var(--mono); font-size: var(--fs-2xl); color: var(--fg-strong);
+  line-height: 1.35; word-break: break-word; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+}
+.detail h2 .title { font-family: var(--mono); }
+.dh-actions { position: absolute; right: 0; top: 10px; display: flex; gap: 6px; }
+
+.detail .purpose { font-size: var(--fs-base); color: var(--fg); margin: 14px 0 6px; line-height: 1.8; }
+.detail h3 {
+  font-size: var(--fs-md); color: var(--accent); margin: 20px 0 9px;
+  padding-left: 9px; border-left: 3px solid var(--accent);
+  display: flex; align-items: center; gap: 7px;
+}
+.detail h3 .h3ic { font-size: var(--fs-md); }
+
+/* 目录（长内容锚点） */
+.toc {
+  position: sticky; top: 62px; z-index: 7; float: right; width: 172px;
+  margin: 0 0 14px 18px; background: var(--bg-elev);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 11px;
+  font-size: var(--fs-sm); box-shadow: var(--shadow-sm); max-height: 60vh; overflow-y: auto;
+}
+.toc .tt { font-size: var(--fs-xs); font-weight: 700; color: var(--fg-faint); letter-spacing: .5px;
+  text-transform: uppercase; margin-bottom: 6px; }
+.toc a { display: block; color: var(--fg-dim); text-decoration: none; padding: 3px 6px; border-radius: 4px;
+  line-height: 1.5; cursor: pointer; border-left: 2px solid transparent; }
+.toc a:hover { background: var(--bg-hover); color: var(--accent); }
+.toc a.on { color: var(--accent); border-left-color: var(--accent); background: var(--bg-hover); font-weight: 600; }
+
+/* 代码块 */
+pre.code {
+  background: var(--bg-code); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 11px 13px; font-family: var(--mono); font-size: var(--fs-sm);
+  line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: var(--code-fg);
+  overflow-x: auto; position: relative;
+}
+.codewrap { position: relative; }
+.codewrap:hover .copybtn { opacity: 1; }
+.copybtn {
+  border: 1px solid var(--border-strong); background: var(--bg-elev-2); color: var(--fg-dim);
+  border-radius: var(--radius-sm); font-size: var(--fs-xs); padding: 3px 9px; cursor: pointer;
+  position: absolute; right: 8px; top: 8px; opacity: 0; transition: opacity .15s, background .13s;
+  backdrop-filter: blur(4px);
+}
+.copybtn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.copybtn.always { opacity: 1; }
+
+/* 表格 */
+.tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+table.params { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
+table.params th, table.params td {
+  border-bottom: 1px solid var(--border-soft); border-right: 1px solid var(--border-soft);
+  padding: 8px 10px; text-align: left; vertical-align: top; line-height: 1.65;
+}
+table.params tr:last-child td { border-bottom: 0; }
+table.params th:last-child, table.params td:last-child { border-right: 0; }
+table.params thead th { background: var(--bg-elev-2); color: var(--accent); font-weight: 700;
+  position: sticky; top: 0; z-index: 2; white-space: nowrap; }
+table.params tbody tr:hover { background: var(--bg-hover); }
+table.params td.pname { font-family: var(--mono); color: var(--danger); white-space: nowrap; font-weight: 600; }
+table.params td.pval { font-family: var(--mono); color: var(--ok); font-size: var(--fs-sm); word-break: break-word; }
+
+/* 各种盒子 */
+.ret { background: var(--warn-bg); border: 1px solid var(--warn-border); border-radius: var(--radius-sm);
+  padding: 10px 13px; font-size: var(--fs-md); line-height: 1.8; }
+.usebox { background: var(--bg-inset); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 10px 13px; font-size: var(--fs-md); }
+.useitem { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; flex-wrap: wrap; }
+.usetag { display: inline-block; min-width: 60px; text-align: center; border-radius: 4px;
+  padding: 1px 7px; font-size: var(--fs-xs); color: #fff; font-weight: 600; flex: none; }
+.usetag.t-proj { background: var(--ok); }
+.usetag.t-ref { background: var(--fg-faint); }
+.usekind { display: inline-block; border: 1px solid var(--border-strong); border-radius: 4px;
+  padding: 0 6px; font-size: var(--fs-xs); color: var(--fg-dim); }
+.usekind.k-call { border-color: var(--ok-border); color: var(--ok); background: var(--ok-bg); }
+.usekind.k-def { border-color: var(--accent-dim); color: var(--accent); background: var(--accent-bg); }
+.usepath { font-family: var(--mono); color: var(--accent); font-size: var(--fs-sm); }
+.usenote { font-size: var(--fs-sm); color: var(--fg-faint); margin-top: 7px; line-height: 1.7; }
+.relbox { background: var(--ok-bg); border: 1px solid var(--ok-border); border-radius: var(--radius-sm);
+  padding: 10px 13px; font-size: var(--fs-md); line-height: 2; }
+.jumplink { color: var(--accent); font-family: var(--mono); font-weight: 600; cursor: pointer;
+  text-decoration: none; border-bottom: 1px dashed var(--accent-dim); }
+.jumplink:hover { color: var(--accent-strong); border-bottom-style: solid; }
+.empty { color: var(--fg-faint); text-align: center; padding: 50px 20px; line-height: 2; font-size: var(--fs-md); }
+.footer-note { font-size: var(--fs-sm); color: var(--fg-faint); margin-top: 26px; line-height: 1.9;
+  border-top: 1px dashed var(--border); padding-top: 12px; }
+kbd { background: var(--bg-inset); border: 1px solid var(--border-strong); border-radius: 4px;
+  padding: 1px 6px; font-size: var(--fs-xs); font-family: var(--mono); color: var(--fg-dim);
+  box-shadow: 0 1px 0 var(--border); }
+
+/* ============================================================
+ *  引导向导
+ * ============================================================ */
+.guide-wrap { max-width: 1080px; }
+.guide-progress {
+  position: sticky; top: -22px; z-index: 5; background: var(--bg-elev);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 11px 15px; margin-bottom: 15px;
+  box-shadow: var(--shadow-sm);
+}
+.guide-progress .bar { height: 7px; background: var(--bg-inset); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+.guide-progress .bar > i { display: block; height: 100%; width: 0;
+  background: linear-gradient(90deg, var(--warn), var(--ok)); transition: width .3s; }
+.guide-progress .txt { font-size: var(--fs-md); color: var(--accent); font-weight: 700; }
+.guide-progress .hint { font-size: var(--fs-sm); color: var(--fg-faint); margin-top: 6px; }
+
+.gstep { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 10px;
+  background: var(--bg-elev); overflow: hidden; }
+.gstep > .hd { display: flex; align-items: flex-start; gap: 11px; padding: 12px 14px; cursor: pointer; }
+.gstep > .hd:hover { background: var(--bg-hover); }
+.gstep.done > .hd { background: var(--ok-bg); }
+.gstep.done > .hd .num { background: var(--ok); }
+.gstep > .hd .num {
+  flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-dim);
+  color: #fff; font-size: var(--fs-sm); font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+.gstep > .hd .ttl { flex: 1; font-size: var(--fs-md); font-weight: 700; color: var(--fg-strong); line-height: 1.55; }
+.gstep.done > .hd .ttl { color: var(--ok); }
+.gstep > .hd .arrow { flex: none; color: var(--fg-faint); font-size: var(--fs-sm); padding-top: 4px;
+  transition: transform .18s; }
+.gstep.open > .hd .arrow { transform: rotate(90deg); }
+.gstep > .bd { display: none; padding: 2px 15px 15px; border-top: 1px solid var(--border-soft); }
+.gstep.open > .bd { display: block; }
+.gstep .lbl { font-size: var(--fs-sm); font-weight: 800; color: var(--accent); margin: 14px 0 6px;
+  padding-left: 8px; border-left: 3px solid var(--accent); }
+.gstep .lbl.warn { color: var(--warn); border-left-color: var(--warn); }
+.gstep .lbl.ok { color: var(--ok); border-left-color: var(--ok); }
+.gstep .txt { font-size: var(--fs-md); line-height: 1.9; color: var(--fg); white-space: pre-line; }
+.gstep .txt.warnbox { background: var(--warn-bg); border: 1px solid var(--warn-border);
+  border-radius: var(--radius-sm); padding: 10px 12px; }
+.gstep .txt.okbox { background: var(--ok-bg); border: 1px solid var(--ok-border);
+  border-radius: var(--radius-sm); padding: 10px 12px; }
+.gstep .rel { margin-top: 13px; font-size: var(--fs-sm); line-height: 2; }
+.gstep .mkbtns { display: flex; gap: 9px; margin-top: 14px; flex-wrap: wrap; }
+.gstep .mkbtns button, .btn {
+  border: 1px solid var(--border-strong); background: var(--bg-elev-2); color: var(--fg-dim);
+  border-radius: var(--radius-sm); font-size: var(--fs-md); padding: 6px 15px; cursor: pointer;
+  transition: background .13s, color .13s, border-color .13s; font-weight: 600;
+}
+.gstep .mkbtns button:hover, .btn:hover { background: var(--bg-hover); color: var(--fg-strong);
+  border-color: var(--accent-dim); }
+.gstep .mkbtns button.pri, .btn.pri { background: var(--accent); color: #fff; border-color: var(--accent); }
+.gstep .mkbtns button.pri:hover, .btn.pri:hover { background: var(--accent-strong); }
+.gstep .mkbtns button.pri.done { background: var(--ok); border-color: var(--ok); }
+.btn.sm { padding: 4px 10px; font-size: var(--fs-sm); }
+
+/* ============================================================
+ *  教程 / 阶段卡片
+ * ============================================================ */
+.gcard {
+  border: 1px solid var(--border); border-left: 3px solid var(--warn);
+  border-radius: var(--radius); background: var(--bg-elev);
+  padding: 14px 16px; margin-bottom: 11px; cursor: pointer; transition: background .13s, border-color .13s;
+}
+.gcard:hover { background: var(--bg-hover); border-color: var(--warn); }
+.gcard.active { border-color: var(--accent); border-left-color: var(--accent); background: var(--bg-active); }
+.gcard .gt { font-size: var(--fs-lg); font-weight: 700; color: var(--fg-strong); margin-bottom: 6px; line-height: 1.5; }
+.gcard .gd { font-size: var(--fs-md); color: var(--fg-dim); line-height: 1.8; margin-bottom: 8px; }
+.gcard .gm { font-size: var(--fs-sm); color: var(--fg-faint); line-height: 1.7; }
+.gcard .gm b { color: var(--warn); }
+.guide-empty { color: var(--fg-faint); text-align: center; padding: 36px 12px; font-size: var(--fs-md); line-height: 2.1; }
+.guide-empty b { color: var(--accent); }
+
+.searchhint {
+  font-size: var(--fs-sm); color: var(--accent); margin: 0 0 11px;
+  background: var(--accent-bg); border: 1px solid var(--accent-dim);
+  border-radius: var(--radius-sm); padding: 9px 12px; cursor: pointer;
+}
+.searchhint:hover { border-color: var(--accent); }
+
+/* 跨板块：资料里没结果、教程里有 → 置顶推荐卡 */
+.grpcard {
+  margin: 0 0 12px; border: 1px solid var(--warn-border);
+  border-radius: var(--radius); background: var(--warn-bg); overflow: hidden;
+}
+.grpcard .grphead {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 13px; font-size: var(--fs-sm); font-weight: 700; color: var(--warn);
+  border-bottom: 1px solid var(--warn-border); line-height: 1.5;
+}
+.grpcard .grphead .hgtxt { flex: 1; min-width: 0; }
+.grpcard .grphead b { color: var(--warn); font-size: var(--fs-md); }
+.grpcard .grphead .btn { flex: none; }
+.grpcard .grprow { padding: 10px 13px; cursor: pointer; border-bottom: 1px solid var(--warn-border); }
+.grpcard .grprow:last-child { border-bottom: 0; }
+.grpcard .grprow:hover { background: var(--bg-hover); }
+.grpcard .grprow .gt { font-size: var(--fs-md); font-weight: 700; color: var(--fg-strong); line-height: 1.6; }
+.grpcard .grprow .gd { font-size: var(--fs-sm); color: var(--fg-dim); line-height: 1.75; margin-top: 5px;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* 宽泛词提示条 */
+.broadhint {
+  font-size: var(--fs-sm); color: var(--warn); margin: 0 0 11px;
+  background: var(--warn-bg); border: 1px solid var(--warn-border);
+  border-radius: var(--radius-sm); padding: 9px 12px; line-height: 1.75;
+}
+.broadhint b { color: var(--warn); }
+.broadhint .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+.broadhint .chip {
+  border: 1px solid var(--warn-border); background: var(--bg-elev-2); color: var(--fg);
+  border-radius: 14px; padding: 2px 11px; cursor: pointer; font-size: var(--fs-sm); white-space: nowrap;
+}
+.broadhint .chip:hover { background: var(--warn); color: #1c1200; border-color: var(--warn); }
+
+/* 分组折叠头（资料查询里把原型沉底） */
+.grouphead {
+  font-size: var(--fs-sm); font-weight: 700; color: var(--fg-dim);
+  padding: 10px 13px 7px; background: var(--bg-inset); border-bottom: 1px solid var(--border-soft);
+  display: flex; align-items: center; gap: 7px; cursor: pointer; position: sticky; top: 0; z-index: 3;
+}
+.grouphead:hover { color: var(--fg-strong); }
+.grouphead .caret { transition: transform .16s; font-size: 10px; }
+.grouphead.collapsed .caret { transform: rotate(-90deg); }
+.grouphead .gcnt { color: var(--fg-faint); font-weight: 500; }
+
+/* 返回按钮（手机） */
+.backbtn {
+  display: none; width: 100%; text-align: left; background: var(--bg-elev);
+  border: 1px solid var(--border); color: var(--accent); border-radius: var(--radius);
+  padding: 11px 13px; font-size: var(--fs-base); margin-bottom: 13px; cursor: pointer;
+  position: sticky; top: -22px; z-index: 9; font-weight: 600;
+}
+.backbtn:active { background: var(--bg-hover); }
+
+/* ============================================================
+ *  面板（收藏 / 最近 / 快捷键）
+ * ============================================================ */
+.panel {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 100;
+  display: none; align-items: flex-start; justify-content: center; padding: 60px 16px 24px;
+  backdrop-filter: blur(2px);
+}
+.panel.show { display: flex; }
+.panel .pbox {
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  width: 100%; max-width: 720px; max-height: 78vh; overflow-y: auto; box-shadow: var(--shadow-lg);
+}
+.panel .ph { display: flex; align-items: center; gap: 10px; padding: 15px 18px;
+  border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg-elev); z-index: 2; }
+.panel .ph h3 { flex: 1; font-size: var(--fs-lg); font-weight: 700; color: var(--fg-strong);
+  border: 0; padding: 0; margin: 0; display: block; }
+.panel .ph button { border: 0; background: transparent; color: var(--fg-faint); cursor: pointer;
+  font-size: 21px; line-height: 1; padding: 2px 7px; border-radius: 5px; }
+.panel .ph button:hover { background: var(--bg-hover); color: var(--fg); }
+.panel .pbody { padding: 15px 18px 22px; }
+.panel .prow { display: flex; align-items: baseline; gap: 9px; padding: 9px 11px;
+  border-radius: var(--radius-sm); cursor: pointer; line-height: 1.6; }
+.panel .prow:hover { background: var(--bg-hover); }
+.panel .prow .pn { font-family: var(--mono); font-size: var(--fs-md); color: var(--fg-strong);
+  font-weight: 600; flex: none; }
+.panel .prow .pd { font-size: var(--fs-sm); color: var(--fg-dim); flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel .prow .pdel { border: 0; background: transparent; color: var(--fg-faint); cursor: pointer;
+  font-size: 15px; padding: 2px 6px; border-radius: 4px; flex: none; }
+.panel .prow .pdel:hover { background: var(--danger-bg); color: var(--danger); }
+.panel .pempty { color: var(--fg-faint); text-align: center; padding: 34px 10px; font-size: var(--fs-md); line-height: 2; }
+.kbdlist { display: grid; grid-template-columns: auto 1fr; gap: 10px 18px; align-items: baseline; }
+.kbdlist dt { text-align: right; white-space: nowrap; }
+.kbdlist dd { color: var(--fg-dim); font-size: var(--fs-md); }
+
+/* toast */
+#toast {
+  position: fixed; left: 50%; bottom: 30px; transform: translate(-50%, 20px);
+  background: var(--bg-elev-2); color: var(--fg); border: 1px solid var(--border-strong);
+  border-radius: var(--radius); padding: 10px 18px; font-size: var(--fs-md);
+  box-shadow: var(--shadow-lg); z-index: 200; opacity: 0; pointer-events: none;
+  transition: opacity .2s, transform .2s;
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* 回到顶部 */
+#totop {
+  position: fixed; right: 18px; bottom: 22px; z-index: 30;
+  width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--border-strong);
+  background: var(--bg-elev-2); color: var(--fg-dim); cursor: pointer; font-size: 17px;
+  display: none; align-items: center; justify-content: center; box-shadow: var(--shadow-md);
+}
+#totop:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+#totop.show { display: flex; }
+
+/* ============================================================
+ *  响应式
+ * ============================================================ */
+@media (max-width: 1240px) { :root { --aside-w: 300px; } .toc { display: none; } }
+@media (max-width: 1000px) {
+  :root { --aside-w: 262px; }
+  .brand h1 small { display: none; }
+  section { padding: 18px 22px 50px; }
+}
+
+/* ---- 手机 / 窄屏：单列双页 ---- */
+@media (max-width: 760px) {
+  :root { --fs-2xl: 19px; --fs-xl: 17px; }
+  header { position: sticky; top: 0; }
+  .hrow { padding: 7px 10px; gap: 7px; }
+  .brand { order: 1; flex: 1 1 0; min-width: 0; }
+  .brand h1 { font-size: var(--fs-base); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toolbar { order: 2; flex: none; }
+  .iconbtn { width: 30px; height: 30px; font-size: 14px; }
+  .hspace { display: none; }
+  .tabs { order: 3; flex: 1 1 100%; width: 100%; padding: 3px; margin-top: 2px; }
+  .tabs button { flex: 1 1 0; justify-content: center; padding: 8px 3px; font-size: var(--fs-sm); gap: 4px; min-width: 0; }
+  .tabs button .tcount { display: none; }
+  .searchwrap { order: 1; flex: 1 1 100%; min-width: 0; }
+  #q { padding: 10px 32px 10px 32px; font-size: 16px; }   /* 16px 防 iOS 缩放 */
+  .hrow:nth-child(2) { padding-top: 0; }
+  .selectwrap { order: 2; flex: 1 1 auto; min-width: 0; }
+  .selectwrap > .slab { display: none; }
+  select { padding: 8px 26px 8px 9px; font-size: var(--fs-sm); width: 100%; max-width: none; }
+  #modwrap, #projwrap { flex: 1 1 auto; }
+  #count { order: 3; flex: none; font-size: var(--fs-xs); text-align: right; white-space: nowrap; }
+  #cntRef, #cntGuide, #cntBuild { display: none; }
+
+  main { flex-direction: column; }
+  aside { width: 100%; flex: 1 1 auto; border-right: 0; border-bottom: 0; }
+  section { padding: 13px 14px 60px; display: none; }
+  body.show-detail aside { display: none; }
+  body.show-detail section { display: block; flex: 1 1 auto; }
+  .backbtn { display: block; }
+  .detail .dhead { top: -13px; padding-top: 4px; }
+  .detail h2 { font-size: var(--fs-xl); }
+  .detail h2 .title { flex: 1 1 100%; order: 3; }
+  .dh-actions { position: static; margin-top: 8px; }
+  table.params th, table.params td { padding: 7px 8px; font-size: var(--fs-sm); }
+  pre.code { font-size: var(--fs-xs); }
+  .gstep .mkbtns button { flex: 1; }
+  .guide-progress { top: -13px; }
+  #totop { right: 12px; bottom: 14px; }
+  .panel { padding: 20px 10px 14px; }
+  .hero { padding: 12px 12px 13px; }
+  .heropaths { gap: 7px; }
+  .grpcard .grphead { font-size: var(--fs-xs); }
+}
+
+@media print {
+  aside, .tabs, .toolbar, .searchwrap, .selectwrap, #totop, .backbtn { display: none !important; }
+  body { overflow: visible; height: auto; background: #fff; color: #000; }
+  main, section { display: block !important; overflow: visible; padding: 0; }
+  .detail .dhead { position: static; }
+}
+</style>
+<style>
+/* ============================================================
+ *  手机版专用样式（只对手机版生效）
+ *  ------------------------------------------------------------
+ *  构建时 build_mobile.py 会给 <html> 打上 data-platform="mobile"；
+ *  桌面浏览器打开网页版时没有这个属性，所以下面全部不影响网页版。
+ *  这一版按手机端重做：底部固定导航、44px 热区、字号三档、安全区、点击反馈；
+ *  并去掉桌面专属的"快捷键"入口（手机没有键盘）。
+ * ============================================================ */
+html[data-platform="mobile"] #btnHelp,
+html[data-platform="mobile"] #panelHelp { display: none !important; }
+/* 手机上没键盘：任何 <kbd> 与快捷键提示一律不显示（通用规则，别再逐个 ID 打补丁） */
+html[data-platform="mobile"] kbd { display: none !important; }
+
+/* 字号三档（默认中档，构建脚本不写 data-fs，由手机版脚本设置） */
+html[data-platform="mobile"][data-fs="s"] {
+  --fs-xs:10.5px; --fs-sm:11.5px; --fs-md:12.5px; --fs-base:13px;
+  --fs-lg:15px; --fs-xl:17px; --fs-2xl:21px; }
+html[data-platform="mobile"][data-fs="l"] {
+  --fs-xs:13px; --fs-sm:14.5px; --fs-md:16px; --fs-base:16.5px;
+  --fs-lg:19px; --fs-xl:21.5px; --fs-2xl:26px; }
+
+/* 底部固定导航：把原来顶部的三个板块标签移到屏幕底部（单手可达） */
+html[data-platform="mobile"] .tabs {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  z-index: 40; width: auto; margin: 0;
+  padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  background: var(--bg-elev-2);
+  border-top: 1px solid var(--bg-active);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: 0 -6px 18px rgba(0,0,0,.28);
+}
+html[data-platform="mobile"] .tabs button {
+  flex: 1 1 0; min-height: 52px; justify-content: center; gap: 5px;
+  font-size: var(--fs-sm); border-radius: var(--radius-sm);
+}
+html[data-platform="mobile"] main { padding-bottom: calc(64px + env(safe-area-inset-bottom)); }
+
+/* 热区：手指点得准（按钮 ≥44px；列表项加高） */
+html[data-platform="mobile"] .iconbtn { width: 44px; height: 44px; font-size: 19px; }
+html[data-platform="mobile"] .item,
+html[data-platform="mobile"] .gcard { padding: 12px 11px; }
+html[data-platform="mobile"] .panel .pbody button { min-height: 44px; }
+html[data-platform="mobile"] .gstep .mkbtns button { min-height: 44px; }
+html[data-platform="mobile"] .backbtn { min-height: 40px; font-size: var(--fs-md); }
+
+/* 手机手感：去掉点击高亮、滚动自带惯性、别把整页拖着跑 */
+html[data-platform="mobile"] { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: contain; }
+html[data-platform="mobile"] #list,
+html[data-platform="mobile"] #detail { -webkit-overflow-scrolling: touch; }
+html[data-platform="mobile"] header { position: sticky; top: 0; z-index: 30; }
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <div class="brand">
+      <div class="logo">ST</div>
+      <h1>STM32F4 速查<small>SPL + FreeRTOS 离线手册</small></h1>
+    </div>
+    <div class="tabs" id="tabs">
+      <button data-sec="ref" class="active">📖 资料查询 <span class="tcount" id="cntRef">0</span></button>
+      <button data-sec="guide">📚 引导教程 <span class="tcount" id="cntGuide">0</span></button>
+      <button data-sec="build">🧭 项目引导 <span class="tcount" id="cntBuild">0</span></button>
+    </div>
+    <div class="hspace"></div>
+    <div class="toolbar">
+      <button class="iconbtn" id="btnFav" title="收藏夹（Ctrl+B）">★<span class="bdg" id="favBadge" style="display:none">0</span></button>
+      <button class="iconbtn" id="btnRecent" title="最近查看（Ctrl+H）">🕘</button>
+      <button class="iconbtn" id="btnTheme" title="切换主题（Ctrl+J）">🌗</button>
+      <button class="iconbtn" id="btnHelp" title="快捷键（?）">?</button>
+    </div>
+  </div>
+  <div class="hrow">
+    <div class="searchwrap" id="searchwrap">
+      <span class="sicon">🔍</span>
+      <input id="q" type="search" autocomplete="off" spellcheck="false"
+             placeholder="中文 / 英文 / 混排都能搜（如: 打开DMA中断、串口 中断、USART_Init）">
+      <button id="clearq" title="清空（Esc）">×</button>
+    </div>
+    <div class="selectwrap" id="modwrap">
+      <span class="slab" id="modlab">模块</span>
+      <select id="mod"><option value="">全部模块</option></select>
+    </div>
+    <div class="selectwrap" id="projwrap" style="display:none">
+      <span class="slab" id="projlab">工程</span>
+      <select id="proj"></select>
+    </div>
+    <span id="count"></span>
+  </div>
+</header>
+<main>
+  <aside id="list"></aside>
+  <section id="detail"></section>
+</main>
+<button id="totop" title="回到顶部">↑</button>
+<div id="toast"></div>
+
+<div class="panel" id="panelFav">
+  <div class="pbox">
+    <div class="ph"><h3>★ 收藏夹</h3>
+      <button id="favClear" title="清空收藏" style="font-size:12px;padding:4px 9px">清空</button>
+      <button data-close="panelFav">×</button></div>
+    <div class="pbody" id="favBody"></div>
+  </div>
+</div>
+<div class="panel" id="panelRecent">
+  <div class="pbox">
+    <div class="ph"><h3>🕘 最近查看</h3>
+      <button data-close="panelRecent">×</button></div>
+    <div class="pbody" id="recentBody"></div>
+  </div>
+</div>
+<div class="panel" id="panelHelp">
+  <div class="pbox">
+    <div class="ph"><h3>⌨ 快捷键</h3><button data-close="panelHelp">×</button></div>
+    <div class="pbody">
+      <dl class="kbdlist">
+        <dt><kbd>/</kbd></dt><dd>聚焦搜索框</dd>
+        <dt><kbd>Esc</kbd></dt><dd>清空搜索 / 收起详情返回列表 / 关闭弹窗</dd>
+        <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>在列表中上下选择条目</dd>
+        <dt><kbd>Enter</kbd></dt><dd>打开当前选中的条目</dd>
+        <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>切换板块（资料查询 / 引导教程 / 项目引导）</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>B</kbd></dt><dd>打开收藏夹</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>H</kbd></dt><dd>打开最近查看</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>J</kbd></dt><dd>切换深色 / 浅色主题</dd>
+        <dt><kbd>Ctrl</kbd>+<kbd>D</kbd></dt><dd>收藏 / 取消收藏当前条目</dd>
+        <dt><kbd>?</kbd></dt><dd>显示本帮助</dd>
+      </dl>
+      <p class="usenote" style="margin-top:16px">收藏、最近查看、向导进度、主题、板块位置都会自动保存在本机浏览器里，下次打开自动恢复。</p>
+    </div>
+  </div>
+</div>
+
+<script src="data_std_lib.js"></script>
+<script src="data_extra.js"></script>
+<script src="data_full.js"></script>
+<script src="data_tables.js"></script>
+<script src="data_tables2.js"></script>
+<script src="data_usage.js"></script>
+<script src="data_cn.js"></script>
+<script src="data_rel.js"></script>
+<script src="data_demo.js"></script>
+<script src="data_flow.js"></script>
+<script src="data_guide.js"></script>
+<script src="data_build.js"></script>
+<script src="data_build_b1.js"></script>
+<script src="data_build_b2.js"></script>
+<script src="data_build_qt.js"></script>
+<script src="data_datasheet.js"></script>
+<script src="data_doc.js"></script>
+<script>
+"use strict";
+
+/* ============================================================
+ *  STM32F4 标准库速查 —— 引擎
+ *  ------------------------------------------------------------
+ *  数据来源（外部 data*.js）：
+ *    STD_LIB / STD_EXTRA  —— 手写详解
+ *    STD_FULL / STD_STRUCTS —— 自动收录原型
+ *    STD_TABLES / STD_TABLES2 —— 查找表
+ *    STD_FLOW            —— 初始化流程卡
+ *    STD_GUIDE           —— 引导向导
+ *    STD_BUILD_GUIDE + STD_BUILD_B1/B2/QT —— 项目引导阶段
+ *    STD_DATASHEET       —— 器件数据手册卡
+ *    STD_DOC             —— 官方注释解析出的参数/返回值
+ *    CN_NOTES / CN_FIELDS —— 自动条目的中文补全
+ *    CARD_REL / STD_USAGE / CN_DEMO —— 联动 / 用法 / 示例
+ * ============================================================ */
+const ALL = [];
+const seen = new Set();
+const $ = (id) => document.getElementById(id);
+
+/* ---------- 排序等级 ---------- */
+function orderOf(f) {
+  if (f._t === "guide") return -2;
+  if (f._t === "flow") return -1;
+  if (f._t === "datasheet") return 0;
+  if (f._t === "chip" || f._t === "table") return 9;
+  if (f._t === "struct") return 1;
+  if (f._src === "autostruct") return 2;
+  if (/Init$/.test(f.n)) return 3;
+  if (/(Cmd|ITConfig|LSEConfig|HSEConfig|HSIConfig)$/.test(f.n)) return 4;
+  return 5;
+}
+const BIG_TABLE_RE = /^(中断向量表|标志宏表|中断宏表|时钟使能表|复用功能表|EXTI 中断线表|NVIC 优先级分组表|FLASH 扇区表|RTC 唤醒时钟分频表|DMA 请求映射表)/;
+
+function pushCard(f, src, t) {
+  if (seen.has(f.n)) return;
+  seen.add(f.n);
+  f._i = ALL.length;
+  f._src = src;
+  f._t = f.t || t;
+  const steps = (f.f && f.f.length) ? f.f.map(x => Array.isArray(x) ? x.join(" ") : String(x)).join(" ") : "";
+  const relTxt = (f.rel && f.rel.length) ? f.rel.map(x => Array.isArray(x) ? x.join(" ") : String(x)).join(" ") : "";
+  const aTxt = (f.a && f.a.length) ? f.a.map(p => Array.isArray(p) ? p.join(" ") : String(p)).join(" ") : "";
+  const hTxt = (f.h && f.h.length) ? (Array.isArray(f.h) ? f.h.join(" ") : String(f.h)) : "";
+  f._hay = [f.n, f.d || "", f.k || "", f.m, f.r || "", f.s || "", f.g || "", steps, relTxt, aTxt, hTxt]
+    .join(" ").toLowerCase();
+  f._ord = orderOf(f);
+  ALL.push(f);
+}
+
+/* 手写优先 → 自动原型 → 结构体 → 查找表 → 流程卡 → 向导 → 手册卡 → 项目引导 */
+if (typeof STD_LIB !== "undefined")       STD_LIB.forEach(f => pushCard(f, "core", "func"));
+if (typeof STD_EXTRA !== "undefined")     STD_EXTRA.forEach(f => pushCard(f, "core", "func"));
+if (typeof STD_FULL !== "undefined")      STD_FULL.forEach(f => pushCard(f, "auto", "func"));
+if (typeof STD_STRUCTS !== "undefined")   STD_STRUCTS.forEach(st => pushCard(
+  { m: st.m, n: st.n, t: "struct", p: "结构体（自动收录，字段顺序与标准库一致）", f: st.f }, "autostruct", "struct"));
+if (typeof STD_TABLES !== "undefined")    STD_TABLES.forEach(t => pushCard(t, "core", "table"));
+if (typeof STD_FLOW !== "undefined")      STD_FLOW.forEach(f => pushCard(f, "core", "flow"));
+if (typeof STD_GUIDE !== "undefined")     STD_GUIDE.forEach(f => pushCard(f, "core", "guide"));
+if (typeof STD_DATASHEET !== "undefined") STD_DATASHEET.forEach(f => pushCard(f, "core", "datasheet"));
+if (typeof STD_BUILD_GUIDE !== "undefined") STD_BUILD_GUIDE.forEach(f => pushCard(f, "core", "guide"));
+/* data_tables2.js 的补充查找表：只在 STD_TABLES 里没有同名时才进 */
+if (typeof STD_TABLES2 !== "undefined")   STD_TABLES2.forEach(t => pushCard(t, "core", "table"));
+
+/* 挂载使用位置 / 联动 / 示例 / 文档 */
+if (typeof STD_USAGE !== "undefined") ALL.forEach(f => { if (STD_USAGE[f.n]) f.u = STD_USAGE[f.n]; });
+if (typeof CARD_REL !== "undefined") ALL.forEach(f => { if (!f.rel && CARD_REL[f.n]) f.rel = CARD_REL[f.n]; });
+if (typeof CN_DEMO !== "undefined") ALL.forEach(f => { if (!f.e && CN_DEMO[f.n]) f.e = CN_DEMO[f.n]; });
+
+if (typeof STD_DOC !== "undefined") {
+  ALL.forEach(f => {
+    const d = STD_DOC[f.n];
+    if (!d) return;
+    if ((!f.a || !f.a.length) && d.a && d.a.length) {
+      f.a = d.a.map(pa => {
+        if (!Array.isArray(pa)) return ["", "", String(pa)];
+        return [pa[0] + "  [" + (pa[1] || "") + "]", pa[3] || "", pa[2] || ""];
+      });
+      f._docA = d.a;
+    }
+    if (!f.r && d.r) f.r = d.r;
+    if (!f.d && d.b) f.d = d.b;
+    if (d.a && d.a.length) {
+      f._hay += " " + d.a.map(pa => Array.isArray(pa) ? (pa[0] + " " + pa[2] + " " + (pa[3] || "")) : String(pa)).join(" ").toLowerCase();
+    }
+    if (d.r) f._hay += " " + d.r.toLowerCase();
+    if (d.b) f._hay += " " + d.b.toLowerCase();
+    f._hasDoc = true;
+  });
+}
+
+/* ============================================================
+ *  本机存储（收藏 / 最近 / 进度 / 偏好）
+ * ============================================================ */
+const STORE_KEY = "stm32spm.v2";
+const DB = {
+  fav: [], recent: [], prog: {}, theme: "auto", sec: "ref", mod: {}, last: null,
+  openGroups: {},
+};
+function dbLoad() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) Object.assign(DB, JSON.parse(raw));
+  } catch (e) { /* 隐私模式 / 配额满：静默降级 */ }
+}
+let dbTimer = null;
+function dbSave() {
+  clearTimeout(dbTimer);
+  dbTimer = setTimeout(() => {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch (e) { /* ignore */ }
+  }, 220);
+}
+
+/* ============================================================
+ *  类型标签 / 中文补全
+ * ============================================================ */
+function typeLabel(f) {
+  if (f._t === "guide") return "引导";
+  if (f._t === "flow") return "流程";
+  if (f._t === "chip") return "芯片对照";
+  if (f._t === "datasheet") return "数据手册";
+  if (f._t === "table") return "查找表";
+  if (f._t === "struct") return f._src === "autostruct" ? "结构体" : "结构体";
+  if (f._src === "auto") return "原型";
+  return "详解";
+}
+function cnNote(f) { return (typeof CN_NOTES !== "undefined" && CN_NOTES[f.n]) || ""; }
+function cnField(sn, fn) { return (typeof CN_FIELDS !== "undefined" && CN_FIELDS[structName_(sn, fn)]) || ""; }
+function structName_(sn, fn) { return sn + "." + fn; }
+
+function guessUse(f) {
+  const n = f.n, m = f.m;
+  if (/StructInit$/.test(n)) return m + "：把结构体填成默认值（初始化前先清零用）";
+  if (/DeInit$/.test(n)) return m + "：把外设复位回默认状态（重新配置前先复位）";
+  if (/Init$/.test(n)) return m + "：初始化该外设（配置前先开对应时钟）";
+  if (/ITConfig$/.test(n)) return m + "：打开/关闭某个中断源（之后还要 NVIC_Init 使能）";
+  if (/Cmd$/.test(n)) return m + "：使能/关闭该外设（参数填 ENABLE / DISABLE）";
+  if (/GetITStatus$/.test(n)) return m + "：中断里判断是哪个中断源触发（返回 SET / RESET）";
+  if (/ClearITPendingBit$/.test(n)) return m + "：清除中断挂起位（中断处理完要清）";
+  if (/GetFlagStatus$/.test(n)) return m + "：查询状态标志（返回 SET / RESET，轮询常用）";
+  if (/ClearFlag$/.test(n)) return m + "：清除状态标志（防误触发）";
+  if (/SendData$/.test(n)) return m + "：发送一个数据（发前等 TXE、发完等 TC）";
+  if (/ReceiveData$/.test(n)) return m + "：读取收到的数据";
+  if (/Config$/.test(n)) return m + "：配置该外设相关参数";
+  if (/Set[A-Z]/.test(n)) return m + "：设置某个值（运行时改参数常用）";
+  if (/Get[A-Z]/.test(n)) return m + "：读取某个值/状态";
+  if (/Read/.test(n)) return m + "：读取寄存器 / 数据";
+  if (/Write/.test(n)) return m + "：写入寄存器 / 数据";
+  if (/Enable$/.test(n)) return m + "：启动该功能";
+  if (/Reset$/.test(n)) return m + "：复位该外设";
+  return m + "：该外设的库函数（中文详解可看同模块紫色“详解”条目，或查官方头文件注释）";
+}
+
+/* ============================================================
+ *  中文同义词 / 概念映射表
+ *  ------------------------------------------------------------
+ *  键 = 用户可能输入的中文（或英文别名）
+ *  值 = 应同时参与匹配的英文写法（搜索时统一小写比较）
+ *  第 5 批补充：项目里真实用到的器件 / 协议 / 算法概念，
+ *  否则搜「pid」「卡尔曼」「modbus」「lora」只会命中大表。
+ * ============================================================ */
+const CONCEPT = {
+  /* --- 通用动作 --- */
+  '初始化': ['init'], '初使化': ['init'], '配置': ['config', 'init'],
+  '设置': ['config', 'set'], '使能': ['enable', 'cmd'], '开启': ['enable'],
+  '打开': ['enable'], '关闭': ['disable'], '禁用': ['disable'], '禁止': ['disable'],
+  '复位': ['reset', 'deinit'], '重启': ['reset'], '读取': ['read', 'get', 'receive'],
+  '读出': ['read', 'get'], '获取': ['get', 'read'], '写入': ['write', 'set'],
+  '写': ['write'], '输出': ['out', 'tx', 'send'], '输入': ['in', 'rx'],
+  '发送': ['send', 'tx', 'transmit'], '接收': ['receive', 'rx'],
+  '清除': ['clear'], '清零': ['clear', 'reset'], '启动': ['start', 'enable', 'cmd'],
+  '停止': ['stop', 'disable'], '查询': ['get', 'status'], '检查': ['check', 'get'],
+  '等待': ['wait', 'poll'], '触发': ['trigger', 'generate'],
+  /* --- 状态与标志 --- */
+  '状态': ['status', 'flag'], '标志': ['flag', 'status'], '标志位': ['flag'],
+  '中断': ['it', 'irq', 'interrupt', 'nvic', 'exti'],
+  '优先级': ['priority', 'nvic', 'preempt'], '中断优先级': ['nvic', 'priority'],
+  '挂起': ['pending'], '事件': ['event'], '参数': ['param'], '寄存器': ['register', 'reg'],
+  /* --- 外设 --- */
+  '串口': ['usart', 'uart'], '波特率': ['baud', 'usart'], '定时器': ['tim'],
+  '计数器': ['tim', 'counter'], '看门狗': ['iwdg', 'wwdg'], '独立看门狗': ['iwdg'],
+  '窗口看门狗': ['wwdg'], '喂狗': ['reload', 'iwdg', 'wwdg'],
+  '实时时钟': ['rtc'], '时钟': ['rcc', 'clock'], '日历': ['rtc', 'date'],
+  '时间': ['rtc', 'time'], '日期': ['rtc', 'date'], '闹钟': ['rtc', 'alarm'],
+  '唤醒': ['wakeup', 'wkup', 'wut'], '备份域': ['pwr', 'backup', 'bkp'],
+  '模数转换': ['adc'], '数模转换': ['dac'], '模拟量': ['adc'], '采样': ['adc', 'sample'],
+  '转换': ['convert', 'adc'], '分辨率': ['resolution'], '校准': ['calibrate'],
+  '引脚': ['gpio', 'pin'], '端口': ['gpio', 'port'], '按键': ['key', 'exti'],
+  '蜂鸣器': ['beep', 'tim'], '显示屏': ['lcd', 'oled'], '闪存': ['flash'],
+  '扇区': ['sector', 'flash'], '擦除': ['erase', 'flash'], '编程': ['program', 'flash'],
+  '外部中断': ['exti', 'irq'], '中断线': ['exti', 'line'], '直接存储器访问': ['dma'],
+  '空闲': ['idle'], '空闲中断': ['idle', 'rxne'], '采集': ['adc', 'sample', 'dma'],
+  '搬运': ['dma', 'transfer'], '数据流': ['stream', 'dma'], '通道': ['channel'],
+  '传输': ['transfer', 'dma'], '脉冲宽度调制': ['pwm', 'tim'], '占空比': ['pulse', 'compare'],
+  '比较值': ['compare', 'pulse'], '捕获': ['capture', 'ic'],
+  '脉宽': ['capture', 'pulse'], '频率': ['freq', 'prescaler', 'clock'],
+  '预分频': ['prescaler', 'psc'], '重装值': ['reload', 'period', 'arr'],
+  '控制局域网': ['can'], '以太网': ['eth'], '安全数字卡': ['sdio'],
+  '循环冗余校验': ['crc'], '校验': ['crc', 'parity', 'check'],
+  /* --- 结构体 / 概念 --- */
+  '结构体': ['typedef', 'struct'], '句柄': ['handle'], '缓冲区': ['buffer', 'buf'],
+  '队列': ['queue'], '信号量': ['semaphore'], '互斥量': ['mutex', 'semaphore'],
+  '任务': ['task'], '调度': ['scheduler', 'task'], '延时': ['delay', 'tick'],
+  '堆': ['heap', 'malloc'], '栈': ['stack'], '错误': ['error', 'fault'],
+  '异常': ['fault'], '故障': ['fault'], '返回值': ['status', 'return'],
+  /* --- 传感器 / 器件手册 --- */
+  '传感器': ['sht30', 'bmp280', 'bh1750', 'ccs811', 'sensor'],
+  '数据手册': ['datasheet', '寄存器', '0x'], '手册': ['datasheet'],
+  '温湿度': ['sht30', 'temperature', 'humidity'], '温度': ['sht30', 'temperature', 'temp'],
+  '湿度': ['sht30', 'humidity', 'humi'], '气压': ['bmp280', 'pressure'],
+  '大气压': ['bmp280', 'pressure'], '气压计': ['bmp280'], '海拔': ['bmp280', 'pressure'],
+  '光照': ['bh1750', 'lux', 'light'], '照度': ['bh1750', 'lux'], '光照度': ['bh1750', 'lux'],
+  '亮度': ['bh1750', 'lux'], '光敏': ['bh1750', 'adc', 'light'],
+  '空气质量': ['ccs811', 'mq135', 'tvoc', 'eco2'], '空气洁净度': ['ccs811', 'tvoc'],
+  '有害气体': ['mq135', 'ccs811'], '二氧化碳': ['ccs811', 'eco2'], '一氧化碳': ['mq135'],
+  '挥发性有机物': ['ccs811', 'tvoc'], '地址冲突': ['i2c', 'scan', 'addr'],
+  '上拉': ['pull', 'i2c'], '老化': ['ccs811', 'burnin'], '基线': ['ccs811', 'baseline'],
+  '采购': ['datasheet', 'sensor'], '选型': ['datasheet', 'sensor'], '验收': ['scan', 'i2c'],
+
+  /* ===== 第 5 批补充：项目真实主题 ===== */
+  /* 算法 / 数据处理 */
+  '卡尔曼': ['kalman', 'filter', '滤波'], '卡尔曼滤波': ['kalman', 'filter', '滤波'],
+  '滤波': ['filter', 'kalman', 'smooth'], '数字滤波': ['filter', 'mean', 'median'],
+  '均值滤波': ['mean', 'filter'], '中值滤波': ['median', 'filter'],
+  '滑动平均': ['moving', 'mean', 'filter'], '一阶滞后': ['filter', 'smooth'],
+  'pid': ['pid', 'control'], 'pid控制': ['pid', 'control'], '闭环': ['pid', 'control', 'loop'],
+  '控制量': ['pid', 'control', 'output'], '误差': ['error', 'pid'], '积分': ['integral', 'pid'],
+  '微分': ['derivative', 'pid'], '比例': ['proportional', 'pid'],
+  '标定': ['calibrate', 'calibration'], '零点': ['zero', 'calibrate'],
+  '线性插值': ['interp', 'interpolate', 'lut'],
+  /* 协议 / 通信 */
+  'modbus': ['modbus', 'rtu', 'crc16'], '485': ['rs485', 'modbus'], 'rs485': ['modbus', 'rs485'],
+  '组帧': ['frame', 'pack', 'crc16'], '组包': ['pack', 'frame'], '解帧': ['unpack', 'parse', 'frame'],
+  '帧头': ['frame', 'head', '0x'], '帧尾': ['frame', 'tail', '0x'],
+  '数据帧': ['frame', 'sys_frame'], '自定义帧': ['sys_frame', 'frame'],
+  '握手': ['handshake', 'ack'], '应答': ['ack', 'response'], '重传': ['retry', 'resend'],
+  '补传': ['retry', 'cache', 'resend'], '心跳': ['heartbeat', 'keepalive'],
+  '超时': ['timeout', 'tick'], '断网': ['offline', 'cache', 'reconnect'],
+  '缓存': ['cache', 'buffer', '断网'], '落盘': ['flash', 'save', 'cache'],
+  '断网缓存': ['cache', 'flash', '缓存'], '离线缓存': ['cache', 'flash', '缓存'],
+  'lora': ['lora', 'e22', 'sx1278'], '无线': ['lora', 'radio'], '透传': ['lora', 'passthrough'],
+  'esp8266': ['esp8266', 'at'], 'wifi': ['esp8266', 'wifi'], 'at指令': ['esp8266', 'at'],
+  'mqtt': ['mqtt', 'bemfa'], '巴法云': ['bemfa', 'mqtt'], '云端': ['mqtt', 'cloud', 'bemfa'],
+  '上位机': ['qt', 'host'], '网关': ['gateway', '板2'],
+  '双板': ['frame', 'lora', 'gateway'], '联调': ['integrate', 'debug'],
+  /* 显示 / 人机 */
+  'oled': ['oled', 'ssd1306', 'i2c'], 'ssd1306': ['oled', 'i2c'],
+  'tft': ['tft', 'lcd', 'ili9481'], '彩屏': ['tft', 'lcd', 'ili9481'],
+  '液晶': ['lcd', 'tft', 'oled'], '触摸': ['touch', 'xpt2046', 'spi'],
+  '触摸屏': ['touch', 'xpt2046'], '中文字库': ['font', 'gbk', 'spi flash'],
+  '菜单': ['menu', 'ui'], '界面': ['ui', 'menu', 'lcd'],
+  /* 执行器 / 电机 */
+  '电机': ['motor', 'tb6612', 'pwm'], '直流电机': ['motor', 'tb6612', 'pwm'],
+  '步进电机': ['step', 'uln2003', 'motor'], '步进': ['step', 'uln2003'],
+  '舵机': ['servo', 'pwm'], '编码器': ['encoder', 'tim'], '调速': ['pwm', 'motor'],
+  '继电器': ['relay', 'gpio'], '限位': ['limit', 'exti', 'gpio'],
+  '蜂鸣': ['beep', 'pwm'], '报警': ['alarm', 'beep', 'threshold'],
+  /* 电池 / 电源 */
+  '电源': ['pwr', 'power'], '低功耗': ['pwr', 'stop', 'standby'], '待机': ['standby', 'pwr'],
+  '停机': ['stop', 'pwr'], '休眠': ['sleep', 'pwr'], '电池': ['adc', 'voltage'],
+  '电压': ['adc', 'voltage'], '电流': ['adc', 'current'],
+  /* 调试 / 工程 */
+  '调试': ['debug', 'swd', 'jtag'], '下载': ['download', 'swd', 'flash'],
+  '烧录': ['flash', 'download'], '串口助手': ['usart', 'print'],
+  'printf': ['printf', 'fputc', 'usart'], '重定向': ['fputc', 'printf'],
+  '断点': ['breakpoint', 'debug'], '栈溢出': ['stack', 'overflow'],
+  '看门狗复位': ['iwdg', 'reset'], '死机': ['hardfault', 'watchdog'],
+  '时钟树': ['rcc', 'pll', 'clock'], '分频': ['prescaler', 'div'], '倍频': ['pll', 'multiply'],
+  '晶振': ['hse', 'hsi', 'osc'], '外部晶振': ['hse', 'osc'], '内部时钟': ['hsi', 'osc'],
+
+  /* ===== 第 6 批补充：OTA / 固件升级（以前搜 ota / 升级 一条都搜不到） ===== */
+  'ota': ['ota', 'iap', 'bootloader', 'firmware', '升级'],
+  'iap': ['iap', 'ota', 'bootloader', '跳转', '升级'],
+  'bootloader': ['bootloader', 'iap', 'ota', 'boot', '跳转'],
+  '引导程序': ['bootloader', 'iap', 'ota'],
+  '固件': ['firmware', 'bin', 'ota'], '固件升级': ['ota', 'iap', 'firmware', '升级'],
+  '在线升级': ['ota', 'iap', '升级'], '远程升级': ['ota', 'iap', '升级'], '空中升级': ['ota', 'iap'],
+  '升级': ['ota', 'iap', 'update', 'firmware'], '升级固件': ['ota', 'iap', '升级'],
+  '双区': ['ota', '分区', 'a/b'], '双区升级': ['ota', 'iap', '分区'],
+  '分区': ['partition', 'sector', 'flash'], '分区表': ['partition', 'sector'],
+  '应用区': ['app', 'ota'], '运行区': ['app', 'ota'],
+  '下载区': ['backup', 'download', 'ota'], '备份区': ['backup', 'ota'], '暂存区': ['backup', 'ota'],
+  '固件头': ['magic', 'header', 'ota'], '魔数': ['magic', 'ota'], '版本号': ['version', 'ota'],
+  '待安装': ['pending', 'ota', 'flag'], '已安装': ['done', 'ota'],
+  '向量表偏移': ['vtor', 'vector', 'ota'], '跳转': ['jump', 'boot', 'iap'],
+  '回滚': ['rollback', 'a/b', 'ota'], '断电安全': ['rollback', 'a/b', 'ota'],
+  '校验和': ['crc', 'checksum'], '固件校验': ['crc', 'checksum', 'ota'],
+
+  /* ===== 第 6 批补充：FreeRTOS 临界区 / 任务通知 / 调度与堆 ===== */
+  '临界区': ['critical', 'criticalenter'], '任务通知': ['notify', 'notification', 'tasknotify'],
+  '调度器': ['scheduler', 'schedule', 'start'], '空闲任务': ['idle', 'idlehook'],
+  '任务优先级': ['priority', 'task'], '优先级反转': ['priority', 'inversion', 'mutex'],
+  '堆余量': ['heap', 'freeheap'], '堆不足': ['heap', 'malloc'],
+  '软件定时器': ['xtimer', 'timer'], '定时器服务任务': ['xtimer', 'timer'],
+};
+
+/* 错别字 / 常见误写 → 正确写法 */
+const TYPO = {
+  '初使化': '初始化', '看门够': '看门狗', '波特绿': '波特率', '定时期': '定时器',
+  '中段': '中断', '寄成器': '寄存器', '参树': '参数', '反回值': '返回值',
+  '结够体': '结构体', '数剧': '数据', '串口号': '串口', '使能位': '使能',
+  '卡尔漫': '卡尔曼', '滤波起': '滤波器', '按建': '按键', '数码官': '数码管',
+  '看门勾': '看门狗', '定时气': '定时器', '中断服物': '中断服务', '优先极': '优先级',
+};
+
+/* ============================================================
+ *  分词 + 同义词 + idf 加权 + 模糊纠错
+ * ============================================================ */
+
+/* 动作词：只影响排序与分层，不作为“必须命中”的硬条件 */
+const ACTION = new Set(('打开,开启,使能,启动,关闭,禁用,禁止,配置,设置,初始化,初使化,读取,获取,写入,'
+  + '发送,接收,清除,清零,复位,重启,查询,等待,停止,触发,显示,转换,采集,校验,使,开,关,'
+  + 'enable,disable,init,config,set,get,read,write,send,receive,clear,reset,start,stop,trigger').split(','));
+
+/* 极宽泛词：命中数会到几百条，需要提示用户“再给个限定词” */
+const BROAD = new Set(['初始化', '配置', '设置', '使能', '启动', '关闭', '禁用', '读取', '获取',
+  '写入', '发送', '接收', '清除', '复位', '中断', '查询', '状态', '标志', '寄存器', '参数', '结构体',
+  'init', 'config', 'set', 'enable', 'disable', 'get', 'read', 'write', 'it', 'cmd']);
+
+/* 中文近义词（只收长度 ≥2 的词） */
+const SYN = {
+  '打开': ['使能', '开启', '启动'], '开启': ['打开', '使能', '启动'],
+  '使能': ['打开', '开启', '启动'], '关闭': ['禁用', '禁止', '失能'],
+  '禁用': ['关闭', '禁止', '失能'], '禁止': ['关闭', '禁用'],
+  '初始化': ['初使化', '配置', '建立'], '配置': ['设置', '初始化', '设定'],
+  '设置': ['配置', '设定', '写入'], '读取': ['读出', '获取', '读回'],
+  '获取': ['读取', '查询', '得到'], '写入': ['存入', '设置', '写回'],
+  '发送': ['发出', '上传', '输出'], '接收': ['收到', '收取', '输入'],
+  '清除': ['清零', '清空', '清理'], '复位': ['重启', '复原', '初始化'],
+  '查询': ['获取', '查看', '读取'], '等待': ['等候', '阻塞', '轮询'],
+  '中断': ['中断服务', '中断函数', '中断处理'], '中断服务': ['中断函数'],
+  '中断函数': ['中断服务', '中断处理'], '错误': ['故障', '异常', '报错'],
+  '故障': ['错误', '异常'], '停止': ['关闭', '暂停'], '启动': ['开始', '打开', '使能'],
+  '转换': ['采集', '换算'], '采集': ['采样', '读取'], '上报': ['发送', '上传', '传输'],
+  '缓存': ['缓冲', '暂存'], '补传': ['重传', '续传', '回传'], '断网': ['掉线', '离线'],
+  '滤波': ['数字滤波', '平滑', '卡尔曼'], '标定': ['校准'], '校准': ['标定'],
+  '显示': ['刷屏', '绘制'], '喂狗': ['重装载', '看门狗'],
+  '优先级': ['抢占优先级', '分组'], '抢占': ['抢占优先级'],
+  '波特率': ['通信速率'], '占空比': ['比较值'], '定时': ['计时', '定时器'],
+  '组帧': ['组包', '打包', '封帧'], '组包': ['组帧', '打包'],
+  '触摸': ['触摸屏', 'xpt2046'], '电机': ['马达', 'motor'], '步进': ['步进电机'],
+  '调试': ['排错', '验证'], '联调': ['对接', '合调'],
+  /* 第 6 批：升级 / 临界区 相关近义词 */
+  '升级': ['更新', '刷写', '烧写'], '更新': ['升级', '升级固件'],
+  '应用区': ['运行区'], '下载区': ['备份区', '暂存区'], '备份区': ['下载区', '暂存区'],
+  '回滚': ['退回', '还原', '恢复旧版本'], '校验和': ['校验', '核对'],
+  '临界区': ['关中断', '不可打断'], '任务通知': ['通知'], '调度器': ['调度'],
+};
+
+/* 英文拼写变体 / 别名 */
+const ALIAS = {
+  'iic': ['i2c'], 'ii2c': ['i2c'], 'uart': ['usart'], 'usart': ['uart'],
+  'irq': ['irqn', 'handler'], 'irqn': ['irq'], 'isr': ['handler', 'irqhandler'],
+  'interupt': ['interrupt'], 'recieve': ['receive'], 'trasmit': ['transmit'],
+  'systick': ['tick'], 'sem': ['semaphore'], 'mutex': ['semaphore'],
+  'typedef': ['struct'], 'struct': ['typedef'],
+  'e22': ['lora'], 'sx1278': ['lora'], 'ssd1306': ['oled'], 'xpt2046': ['touch'],
+  'bemfa': ['mqtt', 'esp8266'], 'rtu': ['modbus'],
+  /* 第 6 批：OTA 英文别名（dfu / fota 是同一件事的别的叫法） */
+  'dfu': ['ota'], 'fota': ['ota'], 'ota': ['iap'], 'iap': ['ota'],
+  'bootloader': ['iap', 'ota'], 'upgrade': ['ota', 'iap'], 'vtor': ['vector'],
+};
+
+/* 分词补充词典 */
+const CH_WORDS = ('卡尔曼,数字滤波,单总线,触摸屏,空闲中断,中断服务,中断函数,中断优先级,抢占优先级,子优先级,'
+  + '双板,联调,网关,补传,断网,掉线,落盘,云端,上位机,帧头,帧尾,组包,组帧,解析,环形缓冲,缓冲区,缓冲池,'
+  + '温湿度,大气压,光敏电阻,空气质量,时钟树,分频,倍频,死区,互补,编码器,舵机,步进电机,直流电机,'
+  + '数码管,蓝牙,手机端,心跳,看门狗,独立看门狗,窗口看门狗,低功耗,待机,停机,唤醒,闹钟,日历,'
+  + '秒中断,定时器,计数器,预分频,重装值,捕获,脉宽,占空比,输出比较,输入捕获,脉冲宽度调制,'
+  + '推挽,开漏,上拉,下拉,复用,重映射,位带,存储映射,扇区,擦除,读保护,量产,烧录,下载器,'
+  + '逻辑分析仪,示波器,万用表,杜邦线,面包板,分压,串口助手,断点,单步,栈溢出,内存池,任务栈,'
+  + '信号量,互斥量,消息队列,事件组,软件定时器,临界区,调度器,滴答,延时,轮询,阻塞,'
+  + '报警,阈值,回差,上下限,趋势,曲线,统计,平均值,最大值,最小值,采样点,数据序号,时间轴,'
+  + '握手,应答,超时,重发,校验和,帧校验,循环冗余校验,偶校验,奇校验,停止位,数据位,起始位,'
+  + '闭环控制,开环,设定值,反馈,死区补偿,积分饱和,限幅,标定,零点,温漂,线性插值,查表,'
+  + '透传,组网,信道,波特率,自适应,自动重连,心跳包,离线缓存,断点续传,时间戳,数据序号,'
+  + '中文字库,取模,点阵,刷屏,局部刷新,双缓冲,菜单,界面,按键消抖,长按,短按,连击,'
+  + '在线升级,远程升级,固件升级,双区升级,升级固件,应用区,运行区,下载区,备份区,暂存区,固件头,待安装,回滚,断电安全,向量表偏移,任务通知,空闲任务,堆余量,时间片,优先级反转,分块传输,'
+  + '复位原因,看门狗复位,欠压,过流,过压,温度补偿').split(',');
+
+const SEG_DICT = (function () {
+  const s = new Set();
+  Object.keys(CONCEPT).forEach(k => s.add(k));
+  Object.keys(TYPO).forEach(k => { s.add(k); s.add(TYPO[k]); });
+  Object.keys(SYN).forEach(k => { s.add(k); SYN[k].forEach(v => s.add(v)); });
+  CH_WORDS.forEach(w => s.add(w));
+  return [...s].filter(w => w && w.length >= 2).sort((a, b) => b.length - a.length);
+})();
+const SEG_SET = new Set(SEG_DICT);
+
+/* ============================================================
+ *  概念干扰屏蔽
+ *  ------------------------------------------------------------
+ *  中文概念展开成英文后，会和「同拼写但不同含义」的函数撞车：
+ *    组帧/数据帧 → frame → 撞上 SAI_FrameInit / SAI_FrameStructInit
+ *    步进/舵机   → motor/servo → 没有同名的，但 PWM 类会被拉进来
+ *    滤波        → filter → 撞上 I2C_AnalogFilterCmd / CAN_FilterInit
+ *  做法：词 → 该词出现时，**名字命中这些模式**的卡片直接扣分（不是删除，
+ *  只是不让它们靠“概念撞车”爬到前面）。
+ * ============================================================ */
+const CONCEPT_BLOCK = {
+  '组帧': [/^SAI_/, /FrameInit$/, /FrameStructInit$/, /MuteFrameCounter/],
+  '组包': [/^SAI_/, /FrameInit$/, /FrameStructInit$/],
+  '数据帧': [/^SAI_/, /FrameInit$/, /FrameStructInit$/],
+  '帧头': [/^SAI_/], '帧尾': [/^SAI_/],
+  '滤波': [/^CAN_Filter/, /^I2C_AnalogFilter/, /FilterInit$/],
+  '卡尔曼': [/^CAN_Filter/, /^I2C_/, /^RTC_Tamper/, /^RTC_Smooth/],
+  '卡尔曼滤波': [/^CAN_Filter/, /^I2C_/, /^RTC_Tamper/, /^RTC_Smooth/],
+  '数字滤波': [/^CAN_Filter/, /^I2C_/, /^RTC_Tamper/],
+  'pid': [/^TIM_CCPreload/, /FlowController/],
+  '步进电机': [/^SAI_/, /^I2S_/],
+  '舵机': [/^SAI_/, /^I2S_/],
+  '触摸': [/^SAI_/], '触摸屏': [/^SAI_/],
+  'oled': [/^SAI_/, /^LTDC_/],
+  'lora': [/^SYSCFG_ETH/, /^RCC_PLL/],
+  'modbus': [/^SAI_/],
+  '低功耗': [/^SAI_/],
+  'printf': [/^SAI_/],
+};
+
+/* 全局屏蔽：这些卡片是“一览表 / 总表 / 索引”，正文里几乎什么都提一句，
+   所以按概念词搜时它们永远会命中、而且内容很泛。
+   用户搜的是具体功能时，别让它们顶掉真正讲这个功能的条目（只在“没有更精准命中”时兜底）。
+   注意：只有在按 CONCEPT 展开出来的词上才降权；直接搜“驱动一览表”照样能搜到。 */
+const GENERIC_NAME = /(一览表|总表|总览|速查表|映射表|地址总表)/;
+/* 搜到这些概念时，一览表类卡片降权（因为它们只是“提到过”，不是“讲这个”）*/
+const GENERIC_DOWN_TOPICS = [
+  '卡尔曼', '卡尔曼滤波', '数字滤波', '滤波', 'pid', 'modbus', 'lora', 'oled', 'oled显示',
+  '组帧', '组包', '数据帧', '帧头', '帧尾', '步进电机', '舵机', '触摸屏', '触摸', '双板联调',
+  '断网缓存', 'printf重定向', 'printf', '低功耗', '触屏',
+  /* 第 6 批：升级类概念也降权一览表（一览表只是“提到过 flash/sector”，不是讲升级） */
+  'ota', 'iap', '升级', '固件', '分区', '应用区', '下载区'
+];
+
+
+function segCN(run) {
+  const out = [];
+  let i = 0;
+  while (i < run.length) {
+    let hit = '';
+    for (let k = 0; k < SEG_DICT.length; k++) {
+      const w = SEG_DICT[k];
+      if (w.length <= run.length - i && run.startsWith(w, i)) { hit = w; break; }
+    }
+    if (hit) { out.push(hit); i += hit.length; continue; }
+    let j = i + 1;
+    while (j < run.length && !SEG_DICT.some(w => w.length <= run.length - j && run.startsWith(w, j))) j++;
+    out.push(run.slice(i, j));
+    i = j;
+  }
+  return out;
+}
+
+function tokenize(raw) {
+  let s = String(raw == null ? '' : raw).trim().toLowerCase();
+  if (!s) return [];
+  s = s.replace(/[\uff01-\uff5e]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+       .replace(/[\u3000\u00a0]/g, ' ')
+       .replace(/([\u4e00-\u9fff])([0-9a-z])/g, '$1 $2')
+       .replace(/([0-9a-z])([\u4e00-\u9fff])/g, '$1 $2')
+       .replace(/[，。、；：！？（）【】《》""''·,.;:!?()[\]{}<>"']/g, ' ')
+       .replace(/\s+/g, ' ');
+  const out = [];
+  s.split(' ').filter(Boolean).forEach(tok => {
+    const fix = TYPO[tok] || tok;
+    if (/^[\u4e00-\u9fff]+$/.test(fix)) {
+      if (SEG_SET.has(fix)) out.push(fix);
+      else segCN(fix).forEach(w => { if (w) out.push(w); });
+    } else out.push(fix);
+  });
+  return out.filter((t, i) => t && out.indexOf(t) === i);
+}
+
+function nameTokens(f) {
+  if (f._nt) return f._nt;
+  const parts = [];
+  String(f.n).split(/[^0-9A-Za-z\u4e00-\u9fff]+/).filter(Boolean).forEach(seg => {
+    if (/[\u4e00-\u9fff]/.test(seg)) { parts.push(seg); return; }
+    seg.replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+       .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+       .split(/\s+/).filter(Boolean).forEach(p => parts.push(p));
+  });
+  f._nt = parts.map(p => p.toLowerCase());
+  return f._nt;
+}
+
+const BOUND_RE = new Map();
+function hasTok(text, t) {
+  if (!t) return false;
+  if (t.length > 3 || !/^[a-z0-9]+$/.test(t)) return text.indexOf(t) >= 0;
+  let re = BOUND_RE.get(t);
+  if (!re) { re = new RegExp('(^|[^a-z0-9])' + t + '([^a-z0-9]|$)'); BOUND_RE.set(t, re); }
+  return re.test(text);
+}
+
+function dist1(a, b) {
+  if (a === b) return false;
+  if (a.length === b.length) {
+    const d = [];
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d.push(i);
+    if (d.length === 2 && d[1] === d[0] + 1 && a[d[0]] === b[d[1]] && a[d[1]] === b[d[0]]) return true;
+  }
+  let i = 0, j = 0, diff = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (++diff > 1) return false;
+    if (a.length > b.length) i++;
+    else if (b.length > a.length) j++;
+    else { i++; j++; }
+  }
+  return diff + (a.length - i) + (b.length - j) <= 1;
+}
+
+let VOCAB = null;
+const NEAR_CACHE = new Map();
+function vocab() {
+  if (VOCAB) return VOCAB;
+  VOCAB = new Set();
+  ALL.forEach(f => nameTokens(f).forEach(t => { if (/^[a-z][a-z0-9]{2,}$/.test(t)) VOCAB.add(t); }));
+  return VOCAB;
+}
+function nearWords(t) {
+  if (NEAR_CACHE.has(t)) return NEAR_CACHE.get(t);
+  const out = [];
+  if (/^[a-z][a-z0-9]{3,11}$/.test(t)) {
+    for (const v of vocab()) {
+      if (Math.abs(v.length - t.length) > 1) continue;
+      if (dist1(t, v)) { out.push(v); if (out.length >= 3) break; }
+    }
+  }
+  NEAR_CACHE.set(t, out);
+  return out;
+}
+
+const DF = new Map();
+function dfOf(t) {
+  if (DF.has(t)) return DF.get(t);
+  let c = 0;
+  for (let i = 0; i < ALL.length; i++) if (ALL[i]._hay.indexOf(t) >= 0) c++;
+  DF.set(t, c);
+  return c;
+}
+function weightOf(t) {
+  const raw = 1 + 0.25 * Math.log((ALL.length + 1) / (1 + dfOf(t)));
+  return Math.max(0.4, Math.min(2.0, raw));
+}
+
+function conceptsOf(w) {
+  const out = [];
+  const add = arr => arr.forEach(e => { if (out.indexOf(e) < 0) out.push(e); });
+  const fixed = TYPO[w] || w;
+  if (CONCEPT[fixed]) add(CONCEPT[fixed]);
+  if (CONCEPT[w]) add(CONCEPT[w]);
+  if (fixed.length >= 2) {
+    Object.keys(CONCEPT)
+      .filter(k => k.length >= 2 && k !== fixed && fixed.indexOf(k) >= 0)
+      .sort((a, b) => b.length - a.length)
+      .forEach(k => add(CONCEPT[k]));
+  }
+  return out;
+}
+
+function variantGroups(w) {
+  const g = [];
+  const add = x => { if (x && g.indexOf(x) < 0) g.push(x); };
+  const fixed = TYPO[w] || w;
+  add(w); add(fixed);
+  (SYN[w] || []).forEach(add);
+  (SYN[fixed] || []).forEach(add);
+  conceptsOf(w).forEach(add);
+  (ALIAS[w] || []).forEach(add);
+  (ALIAS[fixed] || []).forEach(add);
+  nearWords(fixed).forEach(add);
+  g.slice().forEach(t => conceptsOf(t).forEach(add));
+  return g;
+}
+
+function expandWords(rawWords) {
+  const out = [];
+  rawWords.forEach(w => conceptsOf(w).forEach(e => { if (out.indexOf(e) < 0) out.push(e); }));
+  return out;
+}
+
+function hitTier(f, group) {
+  const nt = nameTokens(f);
+  const nl = f._nl || (f._nl = f.n.toLowerCase());
+  let best = 0;
+  for (let i = 0; i < group.length; i++) {
+    const t = group[i];
+    if (!t) continue;
+    const short = /^[a-z0-9]{1,3}$/.test(t);
+    if (nt.indexOf(t) >= 0) { best = 3; break; }
+    if (nt.some(x => t.length >= 3 && x.indexOf(t) === 0)) { if (best < 2) best = 2; continue; }
+    if (!short && nl.indexOf(t) >= 0) { if (best < 2) best = 2; continue; }
+    if (best < 1 && hasTok(f._hay, t)) best = 1;
+  }
+  return best;
+}
+
+function bagNear(hay, words, maxGap) {
+  const pos = [];
+  for (const w of words) {
+    const i = hay.indexOf(w);
+    if (i < 0) return 0;
+    pos.push(i);
+  }
+  pos.sort((a, b) => a - b);
+  let maxSpan = 0;
+  for (let i = 1; i < pos.length; i++) maxSpan = Math.max(maxSpan, pos[i] - pos[i - 1]);
+  if (pos.length > 1 && maxSpan > maxGap) return 0;
+  return pos.length;
+}
+
+let CUR_G = [], CUR_W = [], CUR_REQ = [], CUR_HEADS = [], CUR_TOT = 1, CUR_REQTOT = 1, CUR_META = [];
+
+function evalEntry(f) {
+  let cov = 0, covReq = 0, sP = 0, sE = 0;
+  const hits = [];
+  for (let i = 0; i < CUR_G.length; i++) {
+    const g = CUR_G[i];
+    const pT = hitTier(f, [g[0]]);
+    const eT = g.length > 1 ? hitTier(f, g.slice(1)) : 0;
+    if (!pT && !eT) continue;
+    const w = CUR_W[i];
+    cov += w;
+    if (CUR_REQ[i] && (pT >= 1 || eT >= 2)) covReq += w;
+    sP += w * (pT >= 3 ? 70 : pT === 2 ? 40 : pT === 1 ? 18 : 0);
+    sE += w * (eT >= 3 ? 28 : eT === 2 ? 16 : eT === 1 ? 6 : 0);
+    hits.push({ i: i, tier: Math.max(pT, eT >= 2 ? 2 : eT), pT: pT, eT: eT });
+  }
+  const near = (CUR_HEADS.length > 1 && bagNear(f._hay, CUR_HEADS, 40)) ? 1 : 0;
+  return {
+    cov: CUR_TOT > 0 ? Math.min(1, cov / CUR_TOT) : 0,
+    covReq: CUR_REQTOT > 0 ? Math.min(1, covReq / CUR_REQTOT) : 1,
+    sP: sP, sE: sE, near: near, hits: hits,
+  };
+}
+
+function scoreOf(f, words, e) {
+  e = e || evalEntry(f);
+  const nl = f._nl || (f._nl = f.n.toLowerCase());
+  let s = e.sP + e.sE + e.cov * 30 + e.covReq * 20;
+  if (e.near) s += 20;
+  if (words.length > 1 && nl.indexOf(words.join("")) >= 0) s += 60;
+
+  /* 类型权重：板块分离要干净 */
+  if (f._t === "guide")  s += (SEC === "guide" ? 400 : -5000);
+  else if (f._t === "flow") s += (SEC === "guide" ? 60 : 10);
+  else if (f._t === "datasheet") s += 30;
+  else if (f._src === "core" && f._t !== "table") s += 4;
+
+  if (f._src === "core" && f.a && f.a.length && f._t !== "table" && f._t !== "datasheet") s += 3;
+
+  if (/typedef$/i.test(f.n) && !/结构体|成员|字段|typedef|定义|参数/.test(qEl.value.toLowerCase())) s -= 14;
+
+  if (f._t === "table" && BIG_TABLE_RE.test(f.n)) {
+    const tableSeeking = words.some(w => /表|向量|宏|映射|分组|扇区|线/.test(w));
+    s -= tableSeeking ? 0 : 60;
+  }
+
+  /* 手写条目（非自动收录）优先露出 —— 自动原型卡满屏是“查不到解释”的体验 */
+  if (f._src === "auto" && SEC === "ref" && words.length) s -= 8;
+  if (f._src === "autostruct" && SEC === "ref" && words.length) s -= 12;
+
+  /* 概念干扰屏蔽：像 SAI_FrameInit 这种“同名不同义”的，别靠概念撞车爬到前面 */
+  if (words.length) {
+    for (let i = 0; i < words.length; i++) {
+      const bl = CONCEPT_BLOCK[words[i]] || CONCEPT_BLOCK[TYPO[words[i]] || words[i]];
+      if (bl && bl.some(re => re.test(f.n))) { s -= 90; break; }
+    }
+  }
+
+  /* 泛化卡片屏蔽：一览表 / 总表 / 映射表这种“什么都提一句”的卡，
+     在搜具体功能词（卡尔曼 / LoRa / Modbus / OLED …）时降权，
+     免得顶掉真正讲这件事的条目；用户直接搜表名时不受影响。 */
+  if (words.length && GENERIC_NAME.test(f.n)) {
+    const spec = words.some(w => {
+      const key = TYPO[w] || w;
+      return GENERIC_DOWN_TOPICS.indexOf(key) >= 0;
+    });
+    if (spec) s -= 120;
+  }
+  return s;
+}
+
+let lastResult = { arr: [], relaxed: false, en: [], words: [], broad: false, mode: "all" };
+
+function filtered() {
+  const words = tokenize(qEl.value);
+  const en = expandWords(words);
+  const m = modSel.value;
+  const inSec = f => (SEC === "guide")
+      ? ((f._t === "guide" || f._t === "flow") && !f._b)
+      : (f._t !== "guide" && f._t !== "flow" && !f._b);
+
+  CUR_G = words.map(variantGroups);
+  CUR_W = words.map(weightOf);
+  CUR_HEADS = words.slice();
+  CUR_REQ = words.map(w => !ACTION.has(w) && !ACTION.has(TYPO[w] || w));
+  if (words.length && !CUR_REQ.some(Boolean)) CUR_REQ = words.map(() => true);
+  CUR_TOT = CUR_W.reduce((a, b) => a + b, 0);
+  CUR_REQTOT = CUR_W.reduce((a, b, i) => a + (CUR_REQ[i] ? b : 0), 0);
+
+  const base = ALL.filter(f => inSec(f) && (!m || modKeyOf(f) === m));
+  const ev = new Map();
+  let arr = [], relaxed = false;
+  if (words.length) {
+    const tight = [], loose = [];
+    base.forEach(f => {
+      const e = evalEntry(f);
+      ev.set(f, e);
+      if (e.covReq >= 0.999) tight.push(f);
+      else if (e.covReq >= 0.6) loose.push(f);
+    });
+    if (tight.length) { arr = tight.concat(loose); relaxed = loose.length > 0; }
+    else if (loose.length) { arr = loose; relaxed = true; }
+    if (!arr.length) {
+      arr = base.filter(f => CUR_G.some(g => g.some(t => hasTok(f._hay, t))));
+      arr.forEach(f => ev.set(f, evalEntry(f)));
+      relaxed = arr.length > 0;
+    }
+  } else {
+    arr = base;
+  }
+
+  if (words.length) {
+    arr.sort((a, b) => {
+      const ea = ev.get(a) || evalEntry(a), eb = ev.get(b) || evalEntry(b);
+      const fa = ea.covReq >= 0.999 ? 1 : 0, fb = eb.covReq >= 0.999 ? 1 : 0;
+      /* 名字命中（用户原词直接出现在条目名里）优先于「只靠同义词展开命中」：
+         搜「断网缓存」时，名字里真有「缓存」的卡要压过只是正文提了一句 Flash 的卡。 */
+      const na = (ea.hits[0] && ea.hits[0].pT >= 2) ? 1 : 0;
+      const nb = (eb.hits[0] && eb.hits[0].pT >= 2) ? 1 : 0;
+      return (fb - fa) || (nb - na) || (scoreOf(b, words, eb) - scoreOf(a, words, ea)) || (a._ord - b._ord);
+    });
+  } else {
+    arr.sort((a, b) => a._ord - b._ord || 0);
+  }
+
+  /* 宽泛词判定：命中数过多 + 含宽泛词 且 用户没给限定词 */
+  const broad = words.length > 0 && words.some(w => BROAD.has(w))
+    && !words.some(w => !BROAD.has(w) && !ACTION.has(w))
+    && arr.length > 60;
+
+  const res = { arr: arr, relaxed: relaxed, en: en, words: words, broad: broad, ev: ev };
+  lastResult = res;
+  return res;
+}
+
+/* ============================================================
+ *  模块 / 主题 归类
+ * ============================================================ */
+const modSel = $("mod");
+const projSel = $("proj");
+const qEl = $("q");
+const listEl = $("list");
+const detailEl = $("detail");
+const countEl = $("count");
+const subEl = null;   /* 旧版有副标题，新版并入占位符 */
+const searchwrapEl = $("searchwrap");
+
+let current = null;
+let listScrollTop = 0;
+let SEC = "ref";
+let buildProj = 0;
+
+const isNarrow = () => window.matchMedia && window.matchMedia("(max-width: 760px)").matches;
+
+const TOPIC_RULES = [
+  ["OTA/升级",    /ota|iap|bootloader|固件升级|在线升级|远程升级|双区升级|升级|固件|应用区|下载区|备份区|回滚|待安装/],
+  ["联调总览",    /双板闭环|闭环联调|联调/],
+  ["LoRa",        /lora|e22|sx1278|无线/],
+  ["ESP8266/MQTT", /esp8266|mqtt|巴法云|bemfa|wifi/],
+  ["协议帧",      /sys_frame|帧协议|组包|组帧|crc16|数据帧|帧头|帧尾/],
+  ["Modbus/RS485", /modbus|rs485|485/],
+  ["滤波/PID",    /卡尔曼|kalman|滤波|pid|闭环控制/],
+  ["FreeRTOS",    /freertos|xtaskcreate|xqueuecreate|任务框架|信号量|互斥量|调度/],
+  ["看门狗",      /iwdg|wwdg|看门狗|喂狗/],
+  ["RTC",         /rtc|电子钟|闹钟|实时时钟/],
+  ["显示",        /oled|ssd1306|tft|ili9481|彩屏|液晶|显示/],
+  ["触摸",        /xpt2046|触摸/],
+  ["测距",        /vl53|hc-sr04|超声波|激光/],
+  ["姿态",        /mpu6050|六轴|姿态/],
+  ["电机/执行器",  /tb6612|uln2003|步进|电机|编码器|舵机|继电器/],
+  ["存储/FLASH",  /w25q|gd25q|spi flash|断网缓存|扇区|flash|参数保存/],
+  ["SPI",         /spi/],
+  ["I2C",         /i2c|iic/],
+  ["FSMC/SRAM",   /fsmc|sram/],
+  ["传感器",      /dht11|ds18b20|sht30|bh1750|bmp280|ccs811|mq-135|aht10|温湿度|温度|光照|气压|空气质量/],
+  ["USART",       /usart|uart|串口|printf/],
+  ["ADC",         /adc/],
+  ["DMA",         /dma/],
+  ["DAC",         /dac/],
+  ["CAN",         /can/],
+  ["TIM",         /tim|定时器|pwm|输入捕获|输出比较|占空比/],
+  ["EXTI",        /exti|外部中断/],
+  ["GPIO/基础外设", /led|按键|蜂鸣器|beep|key/]
+];
+function topicOf(f) {
+  if (f._topic) return f._topic;
+  const name = String(f.n || "").toLowerCase();
+  const head = name.split(/[（(]/)[0];
+  const all = name + " " + String(f.k || "").toLowerCase() + " " + String(f.d || "").toLowerCase();
+  for (const [t, re] of TOPIC_RULES) if (re.test(head)) { f._topic = t; return t; }
+  for (const [t, re] of TOPIC_RULES) if (re.test(name)) { f._topic = t; return t; }
+  for (const [t, re] of TOPIC_RULES) if (re.test(all)) { f._topic = t; return t; }
+  f._topic = "其他";
+  return f._topic;
+}
+function modKeyOf(f) {
+  if (f._t === "guide" || f._t === "flow") return topicOf(f);
+  return f.m;
+}
+function boardCards() {
+  const all = ALL.filter(f => !f._b);
+  if (SEC === "guide") return all.filter(f => f._t === "guide" || f._t === "flow");
+  return all.filter(f => f._t !== "guide" && f._t !== "flow");
+}
+function rebuildModOptions() {
+  const keep = modSel.value;
+  const mods = [...new Set(boardCards().map(f => modKeyOf(f)))];
+  mods.sort((a, b) => a.localeCompare(b, "zh"));
+  modSel.innerHTML = "";
+  const o0 = document.createElement("option");
+  o0.value = "";
+  o0.textContent = (SEC === "guide") ? "全部模块（教程）" : "全部模块";
+  modSel.appendChild(o0);
+  mods.forEach(m => {
+    const o = document.createElement("option");
+    o.value = m;
+    o.textContent = (SEC === "guide")
+      ? (m + "（" + boardCards().filter(f => modKeyOf(f) === m).length + "）") : m;
+    modSel.appendChild(o);
+  });
+  modSel.value = (mods.indexOf(keep) >= 0) ? keep : "";
+}
+
+/* ============================================================
+ *  主题
+ * ============================================================ */
+const THEMES = ["auto", "dark", "light"];
+const THEME_ICON = { auto: "🌗", dark: "🌙", light: "☀️" };
+const THEME_LABEL = { auto: "自动", dark: "深色", light: "浅色" };
+function applyTheme() {
+  const t = DB.theme || "auto";
+  let eff = t;
+  if (t === "auto") {
+    eff = (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) ? "light" : "dark";
+  }
+  document.documentElement.setAttribute("data-theme", eff);
+  const b = $("btnTheme");
+  if (b) { b.textContent = THEME_ICON[t]; b.title = "主题：" + THEME_LABEL[t] + (window.__MOBILE__ ? "" : "（Ctrl+J 切换）"); }
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", eff === "light" ? "#f4f6f9" : "#0f1419");
+}
+function cycleTheme() {
+  const i = THEMES.indexOf(DB.theme || "auto");
+  DB.theme = THEMES[(i + 1) % THEMES.length];
+  dbSave(); applyTheme();
+  toast("主题：" + THEME_LABEL[DB.theme]);
+}
+if (window.matchMedia) {
+  const mq = window.matchMedia("(prefers-color-scheme: light)");
+  if (mq.addEventListener) mq.addEventListener("change", () => { if ((DB.theme || "auto") === "auto") applyTheme(); });
+}
+
+/* ============================================================
+ *  Toast
+ * ============================================================ */
+let toastTimer = null;
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 1700);
+}
+
+/* ============================================================
+ *  搜索词高亮
+ * ============================================================ */
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+/* 用本轮查询的所有候选写法（含近义词/概念英文/纠错）去打高亮 */
+function hlTerms() {
+  const set = new Set();
+  (lastResult.words || []).forEach(w => {
+    variantGroups(w).forEach(t => { if (t && t.length >= 2) set.add(t); });
+  });
+  return [...set].sort((a, b) => b.length - a.length).slice(0, 40);
+}
+function highlight(text, terms) {
+  if (!text) return "";
+  const terms_ = terms || hlTerms();
+  if (!terms_.length) return esc(text);
+  let out = esc(text);
+  const used = [];
+  terms_.forEach(t => {
+    if (!t || t.length < 2) return;
+    const et = esc(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp("(" + et + ")", "gi");
+    if (!re.test(out)) return;
+    used.push(t);
+    out = out.replace(re, "\u0001$1\u0002");
+  });
+  if (!used.length) return out;
+  out = out.replace(/\u0001/g, '<mark class="hl">').replace(/\u0002/g, "</mark>");
+  return out;
+}
+
+/* ============================================================
+ *  收藏 / 最近
+ * ============================================================ */
+function isFav(name) { return DB.fav.indexOf(name) >= 0; }
+function toggleFav(name) {
+  const i = DB.fav.indexOf(name);
+  if (i >= 0) { DB.fav.splice(i, 1); toast("已取消收藏"); }
+  else { DB.fav.unshift(name); toast("已加入收藏 ★"); }
+  dbSave(); syncFavBadge(); refreshFavMarks();
+}
+function syncFavBadge() {
+  const b = $("favBadge");
+  if (!b) return;
+  if (DB.fav.length) { b.style.display = ""; b.textContent = DB.fav.length > 99 ? "99+" : DB.fav.length; }
+  else b.style.display = "none";
+}
+function refreshFavMarks() {
+  [...listEl.querySelectorAll(".item")].forEach(d => {
+    const f = ALL[+d.dataset.i];
+    if (f) d.classList.toggle("fav-on", isFav(f.n));
+  });
+}
+function pushRecent(name) {
+  DB.recent = [name].concat(DB.recent.filter(x => x !== name)).slice(0, 40);
+  dbSave();
+}
+function findByExactName(name) {
+  return ALL.find(x => x.n === name && x._src !== "auto" && x._src !== "autostruct")
+      || ALL.find(x => x.n === name);
+}
+function openPanel(which) {
+  if (which === "fav") renderFavPanel();
+  if (which === "recent") renderRecentPanel();
+  $(which === "fav" ? "panelFav" : "panelRecent").classList.add("show");
+}
+function closePanels() {
+  document.querySelectorAll(".panel.show").forEach(p => p.classList.remove("show"));
+}
+function renderFavPanel() {
+  const body = $("favBody");
+  if (!DB.fav.length) { body.innerHTML = "<div class='pempty'>还没有收藏<br>在详情页右上角点 <b>★ 收藏</b>" + (window.__MOBILE__ ? "" : "，或按 <kbd>Ctrl</kbd>+<kbd>D</kbd>") + "</div>"; return; }
+  body.innerHTML = "";
+  DB.fav.forEach(nm => {
+    const f = findByExactName(nm);
+    body.appendChild(panelRow(nm, f, "收藏", () => { toggleFav(nm); renderFavPanel(); }));
+  });
+}
+function renderRecentPanel() {
+  const body = $("recentBody");
+  const list = DB.recent.slice(0, 30);
+  if (!list.length) { body.innerHTML = "<div class='pempty'>还没有查看记录</div>"; return; }
+  body.innerHTML = "";
+  list.forEach(nm => {
+    const f = findByExactName(nm);
+    body.appendChild(panelRow(nm, f, "最近", null));
+  });
+}
+function panelRow(nm, f, kind, onDel) {
+  const row = document.createElement("div");
+  row.className = "prow";
+  const n = document.createElement("span"); n.className = "pn"; n.textContent = nm;
+  const d = document.createElement("span"); d.className = "pd";
+  d.textContent = f ? (typeLabel(f) + " · " + (f.m || "")) : "（条目已不存在）";
+  row.append(n, d);
+  if (onDel) {
+    const del = document.createElement("button");
+    del.className = "pdel"; del.textContent = "×"; del.title = "移除";
+    del.onclick = (e) => { e.stopPropagation(); onDel(); };
+    row.appendChild(del);
+  }
+  row.onclick = () => { closePanels(); if (f) jumpTo(nm); };
+  return row;
+}
+
+/* ============================================================
+ *  详情跳转 / URL 深链接
+ * ============================================================ */
+function jumpTo(name) {
+  const t = findByExactName(name);
+  if (!t) return;
+  if (SEC === "guide" && t._t !== "guide" && t._t !== "flow") setSection("ref");
+  else if (SEC === "build" && !t._b) setSection(t._t === "guide" || t._t === "flow" ? "guide" : "ref");
+  showDetail(t._i);
+}
+function setHash(i) {
+  if (location.protocol === "file:") return;   /* file:// 下改 hash 会刷新，跳过 */
+  const f = ALL[i];
+  if (!f) return;
+  try { history.replaceState(null, "", "#" + secName() + "/" + encodeURIComponent(f.n)); } catch (e) {}
+}
+function secName() { return SEC; }
+function restoreFromHash() {
+  /* 注意：只按【第一个】/ 切分。
+     卡片名里本来就带 / 的不少（如「🧭 SPI 主机引导（接 W25QXX Flash / NRF24L01 / 触摸屏）」），
+     原来用 split("/") 会把名字切成好几段，于是 m[1] 匹配不上任何条目，
+     分享链接只能落到板块、点不开卡片（还会悄悄退回板块首页）。
+     改成"板块 + 剩余全部"之后，setHash 写出去的链接自己就能还原回来。 */
+  const raw = decodeURIComponent(location.hash.replace(/^#/, ""));
+  const cut = raw.indexOf("/");
+  const secPart = (cut < 0) ? raw : raw.slice(0, cut);
+  const namePart = (cut < 0) ? "" : raw.slice(cut + 1);
+  if (["ref", "guide", "build"].indexOf(secPart) >= 0) SEC = secPart;
+  if (namePart) {
+    const f = findByExactName(namePart);
+    if (f) { SEC = f._b ? "build" : (f._t === "guide" || f._t === "flow" ? "guide" : "ref"); return f._i; }
+  }
+  return null;
+}
+
+/* ============================================================
+ *  列表渲染
+ * ============================================================ */
+function tutorialMatches() {
+  if (!qEl.value.trim()) return 0;
+  return ALL.filter(f => !f._b && (f._t === "guide" || f._t === "flow"))
+            .filter(f => { const e = evalEntry(f); return e.covReq >= 0.6; }).length;
+}
+
+function broadHintNode(res) {
+  const d = document.createElement("div");
+  d.className = "broadhint";
+  const w = res.words.filter(x => BROAD.has(x)).join(" ");
+  d.innerHTML = "「<b>" + esc(w) + "</b>」是很宽泛的词，命中 " + res.arr.length +
+    " 条，容易被淹没。再加一个限定词会准得多 —— ";
+  const chips = document.createElement("div");
+  chips.className = "chips";
+  const sugg = suggestRefine(res.words);
+  sugg.forEach(s => {
+    const c = document.createElement("span");
+    c.className = "chip";
+    c.textContent = s;
+    c.onclick = () => { qEl.value = s; qEl.dispatchEvent(new Event("input")); };
+    chips.appendChild(c);
+  });
+  d.appendChild(chips);
+  return d;
+}
+/* 按当前宽泛词给出“限定组合”建议 */
+function suggestRefine(words) {
+  const w = words[0];
+  const combos = {
+    '初始化': ['USART_Init', 'TIM_TimeBaseInit', 'GPIO_Init', 'ADC_Init', 'SPI_Init'],
+    '配置': ['串口 配置', '定时器 配置', '中断 配置', 'DMA 配置'],
+    '设置': ['占空比', '比较值', '预分频', '重装值'],
+    '使能': ['时钟 使能', 'DMA 使能', '中断 使能'],
+    '启动': ['定时器 启动', 'DMA 启动', 'ADC 启动'],
+    '关闭': ['中断 关闭', 'DMA 关闭', '外设 关闭'],
+    '读取': ['ADC 读取', '串口 读取', 'FLASH 读取'],
+    '写入': ['FLASH 写入', '寄存器 写入'],
+    '发送': ['串口 发送', 'CAN 发送', 'SPI 发送'],
+    '接收': ['串口 接收', '空闲中断 接收', 'CAN 接收'],
+    '中断': ['串口 中断', '定时器 中断', '外部中断', '中断优先级'],
+    '状态': ['标志位', '总线状态', '发送完成'],
+    '结构体': ['GPIO_InitTypeDef', 'USART_InitTypeDef', 'TIM_TimeBaseInitTypeDef'],
+    '寄存器': ['数据手册', '寄存器对照'],
+    'init': ['USART_Init', 'GPIO_Init', 'TIM_TimeBaseInit'],
+    'config': ['中断 配置', 'DMA 配置', 'NVIC 配置'],
+    'it': ['串口 中断', '定时器 中断'],
+    'get': ['读取 状态', '获取 标志'],
+  };
+  return combos[w] || combos[words[0]] || [];
+}
+
+/* ============================================================
+ *  落地页（未搜索时）
+ *  ------------------------------------------------------------
+ *  旧版一进来就是「传感器数据手册 + 一堆 InitTypeDef」，
+ *  最有价值的流程卡 / 向导被藏在第二个板块。
+ *  新版给一个「从这里开始」：先给新手入口，再给热门模块，
+ *  最后才是全部条目的分组列表。
+ * ============================================================ */
+const HOT_MODULES = ["USART", "GPIO", "TIM", "ADC", "DMA", "I2C", "SPI", "NVIC", "EXTI", "RCC", "FLASH", "RTC"];
+const HOT_TOPICS = ["串口 DMA + 空闲中断", "定时器 PWM", "数据帧组包 + CRC16", "FreeRTOS 任务框架",
+  "LoRa 点对点", "ESP8266 + MQTT", "I2C 接传感器", "看门狗", "RTC 电子钟", "Flash 断网缓存"];
+
+function renderLanding() {
+  /* 这里的计数必须现算，不能写死：以前写的是「38 流程卡 + 56 向导」，
+     数据涨到 39 / 57 之后就一直是错的（同文件别处都用 ALL.length 动态取，
+     只有这一处硬编码，属于漏网）。 */
+  const nFlow  = ALL.filter(f => f._t === "flow").length;
+  const nGuide = ALL.filter(f => f._t === "guide").length;
+  countEl.innerHTML = "共 <b>" + ALL.length + "</b> 条 · <span style='opacity:.8'>" +
+    nFlow + " 流程卡 + " + nGuide + " 向导可直接照着做</span>";
+  listEl.innerHTML = "";
+  const res = filtered();
+  const words = res.words;
+
+  /* ---- 从这里开始 ---- */
+  const hero = document.createElement("div");
+  hero.className = "hero";
+  hero.innerHTML =
+    '<div class="hero-t">👋 从这里开始</div>' +
+    '<div class="hero-s">不确定用哪个函数？先看「流程卡」（按功能给完整可抄的初始化流程），' +
+    '或「引导教程」（从零一步步搭到能跑）。下面按你常做的事分组。</div>';
+
+  /* 新手三步路径 */
+  const paths = document.createElement("div");
+  paths.className = "heropaths";
+  [
+    { ic: "🧭", t: "我要自己搭一个外设", d: "打开「引导教程」，从接线到验收一步步做", sec: "guide" },
+    { ic: "📋", t: "我知道要干嘛，只差代码", d: "搜功能词（如「打开DMA中断」），直接看流程卡", q: "打开DMA中断" },
+    { ic: "📖", t: "我要查某个函数的参数", d: "搜函数名或宏名，看参数表 / 返回值 / 示例", q: "USART_Init" },
+  ].forEach(p => {
+    const c = document.createElement("div");
+    c.className = "herocard";
+    c.innerHTML = '<div class="hic">' + p.ic + '</div><div class="hct">' + esc(p.t) +
+      '</div><div class="hcd">' + esc(p.d) + "</div>";
+    c.onclick = () => { if (p.sec) setSection(p.sec); else { qEl.value = p.q; qEl.dispatchEvent(new Event("input")); } };
+    paths.appendChild(c);
+  });
+  hero.appendChild(paths);
+
+  /* 热门主题直搜 */
+  const chips = document.createElement("div");
+  chips.className = "herochips";
+  HOT_TOPICS.forEach(t => {
+    const c = document.createElement("span");
+    c.className = "chip";
+    c.textContent = t;
+    c.onclick = () => { qEl.value = t; qEl.dispatchEvent(new Event("input")); };
+    chips.appendChild(c);
+  });
+  hero.appendChild(chips);
+
+  /* 常用模块入口 */
+  const modrow = document.createElement("div");
+  modrow.className = "heromods";
+  HOT_MODULES.forEach(m => {
+    const n = ALL.filter(f => f.m === m).length;
+    if (!n) return;
+    const c = document.createElement("span");
+    c.className = "modchip";
+    c.innerHTML = esc(m) + '<i>' + n + "</i>";
+    c.onclick = () => { modSel.value = m; DB.mod[SEC] = m; dbSave(); renderList(); };
+    modrow.appendChild(c);
+  });
+  hero.appendChild(modrow);
+
+  listEl.appendChild(hero);
+
+  /* ---- 全部条目（按模块分组，手写在前） ---- */
+  const allList = ALL.filter(f => !f._b && f._t !== "guide" && f._t !== "flow");
+  renderGroupedList(allList, true);
+}
+
+/* 把一批条目按「手写详解 / 自动原型」两组铺进列表。
+   落地页与"选了模块但没搜索"两条路径共用，避免两处各写一份分组逻辑。
+   collapseAuto：true=强制折叠自动组（落地页口径），不传则按 DB.openGroups 判定。 */
+function renderGroupedList(arr, collapseAuto) {
+  const coreArr = arr.filter(f => f._src === "core");
+  const autoArr = arr.filter(f => f._src === "auto" || f._src === "autostruct");
+  const frag = document.createDocumentFragment();
+  if (coreArr.length) {
+    frag.appendChild(groupHeader("手写详解 / 查找表 / 手册", coreArr.length, "core", false));
+    const g = document.createElement("div");
+    g.dataset.group = "core";
+    coreArr.forEach(f => g.appendChild(listRow(f, [])));
+    frag.appendChild(g);
+  }
+  if (autoArr.length) {
+    const collapsed = (collapseAuto === undefined)
+      ? (coreArr.length > 0 && DB.openGroups["auto"] !== true)
+      : collapseAuto;
+    frag.appendChild(groupHeader("自动收录原型 / 结构体", autoArr.length, "auto", collapsed));
+    const g = document.createElement("div");
+    g.dataset.group = "auto";
+    if (collapsed) g.style.display = "none";
+    autoArr.forEach(f => g.appendChild(listRow(f, [])));
+    frag.appendChild(g);
+  }
+  listEl.appendChild(frag);
+}
+
+function renderList() {
+  if (SEC === "build") { renderBuildList(); return; }
+  const res = filtered();
+  const words = res.words;
+  const arr = res.arr;
+
+  if (SEC === "guide") { renderGuideList(arr, words, res.relaxed, res.en); return; }
+
+  /* 未搜索时分两种：
+     ① 选了某个模块 → 列该模块的条目。以前这里直接给落地页，导致"切模块毫无反应"
+        （模块筛选被落地页整个盖掉），用户反馈过。
+     ② 资料查询 · 全部模块 → 才是「从这里开始」落地页该出现的地方。 */
+  if (!words.length) {
+    if (modSel.value) {
+      const m = modSel.value;
+      countEl.innerHTML = "模块：<b>" + esc(m) + "</b> · 共 <b>" + arr.length + "</b> 条";
+      listEl.innerHTML = "";
+      if (!arr.length) {
+        listEl.innerHTML = "<div class='empty'>该模块下暂时没有条目</div>";
+        return;
+      }
+      renderGroupedList(arr);
+      return;
+    }
+    renderLanding();
+    return;
+  }
+
+  const tutN = tutorialMatches();
+  const nCore = arr.filter(f => f._src === "core").length;
+  countEl.innerHTML = "匹配 <b>" + arr.length + "</b> / 共 " + ALL.length +
+      "（详解 " + nCore + "，原型 " + (arr.length - nCore) + "）" + (res.relaxed ? "｜宽松" : "");
+
+  listEl.innerHTML = "";
+
+  if (!arr.length) {
+    listEl.innerHTML = "<div class='empty'>没有匹配的条目<br>试试更短的词，或直接写中文功能词<br>（如: 打开DMA中断 / 串口 中断 / USART_Init）</div>";
+    const tlist0 = relatedTutorials(4);
+    if (tlist0.length) listEl.appendChild(tutorialCardsNode(tlist0));
+    if (tutN > 0) listEl.appendChild(tutHint(tutN));
+    return;
+  }
+  if (res.broad) listEl.appendChild(broadHintNode(res));
+  /* 跨板块直达：资料里没几个结果，但教程里有 → 置顶推给用户 */
+  const tlist = relatedTutorials(3);
+  const coreHit = arr.filter(f => f._src === "core" && f._t !== "table" && f._t !== "chip").length;
+  if (tlist.length && (coreHit < 3 || arr.length < 8)) {
+    const node = tutorialCardsNode(tlist);
+    if (node) listEl.appendChild(node);
+  }
+  if (tutN > 0 && arr.length > 0) listEl.appendChild(tutHint(tutN));
+
+  const terms = hlTerms();
+  /* 分组：手写详解（含流程/手册/查找表）在前，自动原型沉到可折叠组 */
+  const coreArr = arr.filter(f => f._src !== "auto" && f._src !== "autostruct");
+  const autoArr = arr.filter(f => f._src === "auto" || f._src === "autostruct");
+
+  const frag = document.createDocumentFragment();
+
+  if (coreArr.length) {
+    frag.appendChild(groupHeader("详解 / 流程 / 手册", coreArr.length, "core", false));
+    const g = document.createElement("div");
+    g.dataset.group = "core";
+    coreArr.forEach(f => g.appendChild(listRow(f, terms)));
+    frag.appendChild(g);
+  }
+  if (autoArr.length) {
+    /* 有手写命中时，自动原型默认折叠（避免满屏“无解释的原型”） */
+    const collapsed = coreArr.length > 0 && (DB.openGroups["auto"] !== true);
+    frag.appendChild(groupHeader("自动收录原型 / 结构体", autoArr.length, "auto", collapsed));
+    const g = document.createElement("div");
+    g.dataset.group = "auto";
+    if (collapsed) g.style.display = "none";
+    autoArr.forEach(f => g.appendChild(listRow(f, terms)));
+    frag.appendChild(g);
+  }
+  listEl.appendChild(frag);
+}
+
+function groupHeader(label, n, key, collapsed) {
+  const h = document.createElement("div");
+  h.className = "grouphead" + (collapsed ? " collapsed" : "");
+  h.innerHTML = '<span class="caret">▼</span><span>' + esc(label) + '</span><span class="gcnt">(' + n + ')</span>';
+  h.onclick = () => {
+    const g = listEl.querySelector('[data-group="' + key + '"]');
+    if (!g) return;
+    const nowHidden = g.style.display !== "none";
+    g.style.display = nowHidden ? "none" : "";
+    h.classList.toggle("collapsed", nowHidden);
+    DB.openGroups[key] = !nowHidden;
+    dbSave();
+  };
+  return h;
+}
+
+function listRow(f, terms) {
+  const div = document.createElement("div");
+  div.className = "item" + (current === f._i ? " active" : "") + (isFav(f.n) ? " fav-on" : "");
+  div.dataset.i = f._i;
+
+  const fn = document.createElement("div");
+  fn.className = "fn";
+  const b1 = document.createElement("span"); b1.className = "badge"; b1.textContent = f.m;
+  const b2 = document.createElement("span"); b2.className = "badge btype"; b2.textContent = typeLabel(f);
+  if (f._src === "auto" || f._src === "autostruct") b2.classList.add("raw");
+  if (f._t === "flow") b2.classList.add("flow");
+  if (f._t === "guide") b2.classList.add("guide");
+  if (f._t === "datasheet") b2.classList.add("datasheet");
+  const nm = document.createElement("span");
+  nm.innerHTML = highlight(f.n, terms);
+  fn.append(b1, b2, nm);
+
+  let fdText = f.d || f.p || "";
+  const cnList = (f._src === "auto") ? cnNote(f) : "";
+  if (cnList) fdText = cnList;
+  else if (f._src === "auto" && !f.d) fdText = guessUse(f);
+
+  const fd = document.createElement("div");
+  fd.className = "fd";
+  fd.innerHTML = highlight(fdText, terms);
+
+  div.append(fn, fd);
+
+  /* 命中原因（只在搜索时显示，帮用户理解为什么这条会出来） */
+  const ev = lastResult.ev && lastResult.ev.get(f);
+  if (lastResult.words.length && ev && ev.hits && ev.hits.length) {
+    const r = document.createElement("div");
+    r.className = "hitreason";
+    ev.hits.slice(0, 3).forEach(h => {
+      const tag = document.createElement("span");
+      tag.className = "rtag" + (h.tier >= 2 ? "" : " lvl2");
+      tag.textContent = lastResult.words[h.i] + (h.tier >= 3 ? " · 名称" : h.tier === 2 ? " · 名称" : " · 正文");
+      r.appendChild(tag);
+    });
+    div.appendChild(r);
+  }
+
+  div.onclick = () => showDetail(f._i);
+  return div;
+}
+
+function tutHint(n) {
+  const d = document.createElement("div");
+  d.className = "searchhint";
+  d.innerHTML = "📚 「引导教程」里有 <b>" + n + "</b> 个相关教程（向导 / 流程卡）—— 点这里切过去看";
+  d.onclick = () => setSection("guide");
+  return d;
+}
+
+/* ============================================================
+ *  跨板块主题直达
+ *  ------------------------------------------------------------
+ *  问题：像「卡尔曼滤波」「Modbus」「OLED」「步进电机」这类主题，
+ *  在资料库里根本没有对应函数卡，只在【流程卡 / 向导】里有 ——
+ *  于是在「资料查询」板块搜它们，只会命中一堆无关的 Filter/FastMode 函数。
+ *  做法：搜索时额外在流程卡 / 向导里按同一套引擎打分，
+ *  把命中的教程以醒目条目置顶，让用户一眼就能跳过去。
+ * ============================================================ */
+function relatedTutorials(limit) {
+  if (!qEl.value.trim()) return [];
+  const words = lastResult.words;
+  if (!words.length) return [];
+  const pool = ALL.filter(f => !f._b && (f._t === "guide" || f._t === "flow"));
+  const scored = [];
+  pool.forEach(f => {
+    const e = evalEntry(f);
+    if (e.covReq < 0.6) return;
+    /* 同一套评分，但不叠加“板块惩罚”——这里的目的是找出相关教程 */
+    let s = e.sP + e.sE + e.cov * 30 + e.covReq * 20;
+    if (e.near) s += 20;
+    if (f._t === "guide") s += 40;
+    scored.push({ f: f, s: s });
+  });
+  scored.sort((a, b) => b.s - a.s);
+  return scored.slice(0, limit || 3).map(x => x.f);
+}
+
+function tutorialCardsNode(list_) {
+  if (!list_.length) return null;
+  const wrap = document.createElement("div");
+  wrap.className = "grpcard";
+  const head = document.createElement("div");
+  head.className = "grphead";
+  const htxt = document.createElement("span");
+  htxt.className = "hgtxt";
+  htxt.innerHTML = "📚 匹配到 <b>" + list_.length + "</b> 个「引导教程」—— 这个主题的完整做法在这里";
+  const go = document.createElement("button");
+  go.className = "btn sm pri";
+  go.textContent = "看全部 →";
+  go.onclick = (e) => { e.stopPropagation(); setSection("guide"); };
+  head.append(htxt, go);
+  wrap.appendChild(head);
+  const terms = hlTerms();
+  list_.forEach(f => {
+    const row = document.createElement("div");
+    row.className = "grprow";
+    const t = document.createElement("div");
+    t.className = "gt";
+    t.innerHTML = '<span class="badge btype ' + (f._t === "flow" ? "flow" : "guide") + '">' +
+      (f._t === "flow" ? "流程" : "引导") + "</span>" + highlight(f.n, terms);
+    const d = document.createElement("div");
+    d.className = "gd";
+    d.innerHTML = highlight(f.d || "", terms).slice(0, 260);
+    row.append(t, d);
+    row.onclick = () => showDetail(f._i);
+    wrap.appendChild(row);
+  });
+  return wrap;
+}
+
+/* ---------- 引导教程列表 ---------- */
+function renderGuideList(arr, words, relaxed, en) {
+  countEl.innerHTML = words.length ? "教程匹配 <b>" + arr.length + "</b>" + (relaxed ? "｜宽松" : "")
+                                  : "共 <b>" + arr.length + "</b> 个教程（向导 / 流程）";
+  listEl.innerHTML = "";
+  if (!arr.length) {
+    const tips = en && en.length ? "（已按同义词展开「" + esc(words.join(" ")) + "」仍未命中）" : "";
+    listEl.innerHTML = "<div class='guide-empty'>没有匹配的引导教程<br>" +
+      "试试搜：<b>FreeRTOS</b> / <b>RTC 电子钟</b> / <b>串口</b> / <b>定时器</b> / " +
+      "<b>看门狗</b> / <b>FLASH</b> / <b>帧</b> / <b>按键</b><br>也可以只选上面的模块下拉框<br>" + tips + "</div>";
+    return;
+  }
+  const terms = hlTerms();
+  const frag = document.createDocumentFragment();
+  arr.forEach(f => {
+    const steps = (f.f || []).length;
+    const div = document.createElement("div");
+    div.className = "gcard" + (current === f._i ? " active" : "");
+    div.dataset.i = f._i;
+    const t = document.createElement("div"); t.className = "gt"; t.innerHTML = highlight(f.n, terms);
+    const d = document.createElement("div"); d.className = "gd"; d.innerHTML = highlight(f.d || "", terms);
+    const meta = document.createElement("div"); meta.className = "gm";
+    const done = DB.prog[cmdKey(f)] ? Object.keys(DB.prog[cmdKey(f)]).length : 0;
+    meta.innerHTML = "共 <b>" + steps + "</b> 步"
+      + (done ? "　已完成 <b>" + done + "</b> 步" : "")
+      + "　模块：<b>" + topicOf(f) + "</b>"
+      + (f.g ? "<br>" + esc(f.g) : "");
+    div.append(t, d, meta);
+    div.onclick = () => showDetail(f._i);
+    frag.appendChild(div);
+  });
+  listEl.appendChild(frag);
+}
+
+/* ---------- 项目引导列表 ---------- */
+if (typeof STD_BUILD_PROJ !== "undefined") {
+  /* 首项"全部工程"：这一栏列的是工程（板1 / 板2 / Qt），不是模块 ——
+     所以首项别跟着资料查询叫"全部模块"，统称"全部工程"，与桌面版（工具箱查询页）口径一致。
+     值 -1 = 不过滤（列出三个工程的全部阶段卡）。 */
+  const oAll = document.createElement("option");
+  oAll.value = "-1";
+  oAll.textContent = "全部工程";
+  projSel.appendChild(oAll);
+  STD_BUILD_PROJ.forEach((p, i) => {
+    const o = document.createElement("option");
+    o.value = String(i);
+    o.textContent = p.name || p.tag;
+    projSel.appendChild(o);
+  });
+}
+function buildCurProj() { return (typeof STD_BUILD_PROJ !== "undefined") ? STD_BUILD_PROJ[buildProj] : null; }
+function buildItems() {
+  if (buildProj < 0) return ALL.filter(f => f._b);   /* 全部工程：不按工程过滤 */
+  const p = buildCurProj();
+  if (!p) return [];
+  return ALL.filter(f => f._b === p.tag);
+}
+function renderBuildList() {
+  const p = buildCurProj();
+  const isAll = (buildProj < 0);
+  const q = qEl.value.trim().toLowerCase();
+  let arr = buildItems();
+  if (q) arr = arr.filter(f => (f.n + " " + (f.d || "") + " " + (f.g || "")).toLowerCase().indexOf(q) >= 0);
+  countEl.innerHTML = "「" + esc(isAll ? "全部工程" : (p ? p.name : "项目引导")) + "」共 <b>" + arr.length + "</b> 个阶段";
+  listEl.innerHTML = "";
+  if (!p && !isAll) { listEl.innerHTML = "<div class='guide-empty'>还没有项目引导数据<br>（data_build*.js 未加载或内容为空）</div>"; return; }
+  if (!arr.length) {
+    listEl.innerHTML = "<div class='guide-empty'>这个工程还没有引导内容<br>项目引导按 <b>板1 → 板2 → Qt</b> 分次补齐，先做哪个就写哪个。</div>";
+    return;
+  }
+  const terms = hlTerms();
+  const frag = document.createDocumentFragment();
+  arr.forEach(f => {
+    const div = document.createElement("div");
+    div.className = "gcard" + (current === f._i ? " active" : "");
+    div.dataset.i = f._i;
+    const t = document.createElement("div"); t.className = "gt"; t.innerHTML = highlight(f.n, terms);
+    const d = document.createElement("div"); d.className = "gd"; d.innerHTML = highlight(f.d || "", terms);
+    const meta = document.createElement("div"); meta.className = "gm";
+    const done = DB.prog[cmdKey(f)] ? Object.keys(DB.prog[cmdKey(f)]).length : 0;
+    meta.innerHTML = "共 <b>" + (f.f || []).length + "</b> 个动作"
+      + (done ? "　已完成 <b>" + done + "</b> 个" : "")
+      + (f.g ? "<br>" + esc(f.g) : "");
+    div.append(t, d, meta);
+    div.onclick = () => showDetail(f._i);
+    frag.appendChild(div);
+  });
+  listEl.appendChild(frag);
+}
+
+/* ============================================================
+ *  板块切换
+ * ============================================================ */
+function setSection(sec, keepQuery) {
+  SEC = sec;
+  document.querySelectorAll("#tabs button").forEach(b => {
+    b.classList.toggle("active", b.dataset.sec === sec);
+  });
+  const isGuide = (sec === "guide");
+  const isBuild = (sec === "build");
+  $("modwrap").style.display = isBuild ? "none" : "";
+  $("projwrap").style.display = isBuild ? "" : "none";
+  rebuildModOptions();
+  qEl.placeholder = isBuild
+    ? "搜阶段（如: 时钟 / 任务 / 组帧 / LoRa / 验收）"
+    : (isGuide
+      ? "搜引导教程（如: 打开DMA中断 / FreeRTOS / RTC 电子钟 / 看门狗 / 卡尔曼）"
+      : "中文 / 英文 / 混排都能搜（如: 打开DMA中断、串口 中断、USART_Init）");
+  if (!keepQuery && sec !== "build") { /* 保留用户输入，跨板块搜索体验更连贯 */ }
+  current = null;
+  detailEl.innerHTML = "<div class='empty'>" +
+    (isBuild ? "点选左侧阶段开始 →<br>（每个阶段：一串动作 + 真实 API + 验收标准 + 常见坑）"
+      : (isGuide ? "点选左侧教程开始 →" : "点选列表中的条目查看详情<br>（参数 / 返回值 / 调用示例）")) +
+    "</div>";
+  DB.sec = sec; dbSave();
+  renderList();
+  if (sec !== "build") DB.mod[sec] = modSel.value, dbSave();
+}
+
+function updateActiveList() {
+  [...listEl.children].forEach(d => {
+    if (d.dataset && d.dataset.i !== undefined) d.classList.toggle("active", d.dataset.i === String(current));
+  });
+}
+function goBackToList() {
+  document.body.classList.remove("show-detail");
+  listEl.scrollTop = listScrollTop;
+}
+window.goBackToList = goBackToList;
+
+/* ============================================================
+ *  详情渲染
+ * ============================================================ */
+function addSection(parent, title, makeNode, icon) {
+  const wrap = document.createElement("div");
+  wrap.className = "secblock";
+  const h = document.createElement("h3");
+  h.innerHTML = (icon ? '<span class="h3ic">' + icon + '</span>' : "") + esc(title);
+  h.dataset.anchor = title;
+  wrap.appendChild(h);
+  wrap.appendChild(makeNode());
+  parent.appendChild(wrap);
+  return wrap;
+}
+
+function tocBuild(box, anchors) {
+  if (anchors.length < 3) return null;
+  const toc = document.createElement("nav");
+  toc.className = "toc";
+  toc.innerHTML = '<div class="tt">本页目录</div>';
+  anchors.forEach(a => {
+    const link = document.createElement("a");
+    link.textContent = a.label;
+    link.onclick = () => {
+      const el = box.querySelector('[data-anchor="' + a.anchor.replace(/"/g, '\\"') + '"]');
+      if (el) el.scrollIntoView({ block: "start", behavior: "smooth" });
+    };
+    toc.appendChild(link);
+  });
+  return toc;
+}
+
+function showDetail(i) {
+  current = i;
+  const f = ALL[i];
+  if (!f) return;
+  if (isNarrow()) {
+    listScrollTop = listEl.scrollTop;
+    document.body.classList.add("show-detail");
+  }
+  detailEl.innerHTML = "";
+  detailEl.scrollTop = 0;
+  pushRecent(f.n);
+  setHash(i);
+
+  const box = document.createElement("div");
+  box.className = "detail";
+  detailEl.appendChild(box);
+
+  /* ---- 头部：标题 + 操作 ---- */
+  const dhead = document.createElement("div");
+  dhead.className = "dhead";
+  if (isNarrow()) {
+    const back = document.createElement("button");
+    back.className = "backbtn";
+    back.textContent = "← 返回列表";
+    back.onclick = goBackToList;
+    box.appendChild(back);
+  }
+  const h2 = document.createElement("h2");
+  const titleSpan = document.createElement("span");
+  titleSpan.className = "title";
+  titleSpan.textContent = f.n;
+  const bBrand = document.createElement("span"); bBrand.className = "badge"; bBrand.textContent = f.m;
+  const bType = document.createElement("span"); bType.className = "badge btype"; bType.textContent = typeLabel(f);
+  if (f._src === "auto" || f._src === "autostruct") bType.classList.add("raw");
+  if (f._t === "flow") bType.classList.add("flow");
+  if (f._t === "guide") bType.classList.add("guide");
+  if (f._t === "datasheet") bType.classList.add("datasheet");
+  h2.append(bBrand, bType, titleSpan);
+  dhead.appendChild(h2);
+
+  /* 操作按钮 */
+  const acts = document.createElement("div");
+  acts.className = "dh-actions";
+  const favBtn = document.createElement("button");
+  favBtn.className = "btn sm";
+  const syncFav = () => {
+    const on = isFav(f.n);
+    favBtn.textContent = on ? "★ 已收藏" : "☆ 收藏";
+    favBtn.classList.toggle("pri", on);
+    favBtn.title = (on ? "取消收藏" : "加入收藏") + (window.__MOBILE__ ? "" : "（Ctrl+D）");
+  };
+  syncFav();
+  favBtn.onclick = () => { toggleFav(f.n); syncFav(); };
+  acts.appendChild(favBtn);
+  if (f.e) {
+    const cpAll = document.createElement("button");
+    cpAll.className = "btn sm";
+    cpAll.textContent = "⧉ 复制代码";
+    cpAll.onclick = () => copy(f.e, cpAll);
+    acts.appendChild(cpAll);
+  }
+  dhead.appendChild(acts);
+  box.appendChild(dhead);
+
+  /* ===== 引导向导：完全不同的渲染 ===== */
+  if (f._t === "guide") {
+    box.appendChild(renderGuide(f));
+    updateActiveList();
+    return;
+  }
+
+  /* ---- 用途 ---- */
+  const p = document.createElement("div");
+  p.className = "purpose";
+  if (f._src === "auto") {
+    const cn = cnNote(f);
+    if (cn) p.textContent = cn + (f.d ? "　（官方注释原文：" + f.d + "）" : "");
+    else if (f.d) p.textContent = "官方说明：" + f.d;
+    else p.textContent = guessUse(f) + "【自动收录条目】这是函数声明（原型，不是变量定义），按原型调用即可；中文详解见同模块紫色“详解”条目。";
+  } else if (f._src === "autostruct") {
+    const cn = cnNote(f);
+    p.textContent = (cn ? cn + "　" : "") + "【自动收录条目】这是结构体的字段清单（成员定义，不是变量定义）。怎么填用见同模块手写结构体卡的“典型配置流程与结果”。";
+  } else {
+    p.textContent = f.d || "";
+  }
+  box.appendChild(p);
+
+  /* ---- 收集要渲染的段落（先构建，再插目录） ---- */
+  const anchors = [];
+  const stage = document.createElement("div");
+
+  if (f._t === "flow" && f.f && f.f.length) {
+    anchors.push({ label: "流程步骤（" + f.f.length + " 步）", anchor: "流程步骤（按顺序做）" });
+    addSection(stage, "流程步骤（按顺序做）", () => {
+      const tb = document.createElement("table");
+      tb.className = "params";
+      tb.innerHTML = "<thead><tr><th style='width:44px'>#</th><th style='width:32%'>步骤</th><th>要做什么</th></tr></thead><tbody></tbody>";
+      const tbody = tb.querySelector("tbody");
+      f.f.forEach((st, k) => {
+        const tr = document.createElement("tr");
+        const td0 = document.createElement("td"); td0.className = "pname"; td0.textContent = String(k + 1);
+        const td1 = document.createElement("td"); td1.className = "pval"; td1.textContent = Array.isArray(st) ? st[0] : String(st);
+        const td2 = document.createElement("td"); td2.textContent = Array.isArray(st) ? (st[1] || "") : "";
+        tr.append(td0, td1, td2);
+        tbody.appendChild(tr);
+      });
+      return wrapTable(tb);
+    }, "①");
+  }
+
+  if (f._t !== "table" && f.p) {
+    const label = f._t === "datasheet" ? "器件说明" : (f._t === "chip" ? "说明" : (f._t === "struct" ? "结构体格式" : "函数原型"));
+    anchors.push({ label: label, anchor: label });
+    addSection(stage, label, () => {
+      const pre = document.createElement("pre");
+      pre.className = "code";
+      pre.textContent = f.p;
+      return pre;
+    }, "②");
+  }
+
+  if (f.a && f.a.length) {
+    const lab = f._t === "chip" ? "差异对照表"
+      : ((f._t === "table" || f._t === "datasheet")
+        ? (f._t === "datasheet" ? "寄存器 / 器件对照表" : "表格内容")
+        : (f._t === "struct" ? "字段说明（取值 = 标准库宏名）"
+          : (f._t === "flow" ? "关键参数速查" : "参数说明（可选值 = 标准库宏名）")));
+    anchors.push({ label: lab, anchor: lab });
+    addSection(stage, lab, () => {
+      const tb = document.createElement("table");
+      tb.className = "params";
+      if (f._t === "table" || f._t === "datasheet") {
+        const cols = f.h || ["条目", "值", "说明"];
+        tb.innerHTML = "<thead><tr>" + cols.map((c, k) =>
+          "<th" + (k === 0 ? " style='width:26%'" : (k === 1 ? " style='width:24%'" : "")) + ">" + esc(c) + "</th>").join("") + "</tr></thead><tbody></tbody>";
+        const tbody = tb.querySelector("tbody");
+        f.a.forEach(pa => {
+          const tr = document.createElement("tr");
+          (Array.isArray(pa) ? pa : [String(pa)]).forEach((v, k) => {
+            const td = document.createElement("td");
+            td.textContent = v;
+            if (k === 0) td.className = "pname";
+            else if (k === 1) td.className = "pval";
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+        return wrapTable(tb);
+      }
+      let h1 = "参数", h2 = "传什么值", h3 = "说明";
+      if (f._t === "struct") { h1 = "字段"; h2 = "类型与取值"; }
+      if (f._t === "chip") { h1 = "项目"; h2 = "ZET6（板1）"; h3 = "ZGT6（板2）"; }
+      if (f._docA && f._docA.length) { h1 = "参数"; h2 = "可选值 / 取值"; h3 = "这个参数是什么（中文解释）"; }
+      tb.innerHTML = "<thead><tr><th style='width:24%'>" + esc(h1) + "</th><th style='width:26%'>" + esc(h2) + "</th><th>" + esc(h3) + "</th></tr></thead><tbody></tbody>";
+      const tbody = tb.querySelector("tbody");
+      f.a.forEach(pa => {
+        const row = Array.isArray(pa) ? pa : [String(pa)];
+        const tr = document.createElement("tr");
+        const td1 = document.createElement("td"); td1.className = "pname"; td1.textContent = row[0] || "";
+        const td2 = document.createElement("td"); td2.className = "pval"; td2.textContent = row[1] || "";
+        const td3 = document.createElement("td"); td3.textContent = row[2] || "";
+        tr.append(td1, td2, td3);
+        tbody.appendChild(tr);
+      });
+      return wrapTable(tb);
+    }, "③");
+  } else if (f._src === "autostruct" && f.f) {
+    const lab = "字段说明（自动收录）";
+    anchors.push({ label: lab, anchor: lab });
+    addSection(stage, lab, () => {
+      const tb = document.createElement("table");
+      tb.className = "params";
+      tb.innerHTML = "<thead><tr><th style='width:24%'>字段</th><th style='width:26%'>类型</th><th>说明</th></tr></thead><tbody></tbody>";
+      const tbody = tb.querySelector("tbody");
+      f.f.forEach(fd => {
+        const row = Array.isArray(fd) ? fd : [String(fd)];
+        const tr = document.createElement("tr");
+        const td1 = document.createElement("td"); td1.className = "pname"; td1.textContent = row[0] || "";
+        const td2 = document.createElement("td"); td2.className = "pval"; td2.textContent = row[1] || "";
+        const cn = cnField(f.n, row[0]);
+        const td3 = document.createElement("td");
+        td3.textContent = cn ? (row[2] ? cn + "（原文：" + row[2] + "）" : cn) : (row[2] || "");
+        tr.append(td1, td2, td3);
+        tbody.appendChild(tr);
+      });
+      return wrapTable(tb);
+    }, "③");
+  }
+
+  if (f.s) {
+    const lab = f._t === "datasheet" ? "寄存器操作 / 换算公式 / 初始化流程" : "典型配置流程与结果";
+    anchors.push({ label: lab, anchor: lab });
+    addSection(stage, lab, () => {
+      const pre = document.createElement("pre");
+      pre.className = "code";
+      pre.textContent = f.s;
+      return pre;
+    }, "④");
+  }
+
+  if (f.r) {
+    const lab = f._t === "chip" ? "小结" : (f._t === "datasheet" ? "常见问题与结论" : "返回值（作用）");
+    anchors.push({ label: lab, anchor: lab });
+    addSection(stage, lab, () => {
+      const d = document.createElement("div");
+      d.className = "ret";
+      d.textContent = f.r;
+      return d;
+    }, "⑤");
+  }
+
+  if (f.e) {
+    const lab = (f._src === "auto" || f._src === "autostruct") ? "调用示例（自动补充）" : "调用示例";
+    anchors.push({ label: lab, anchor: lab });
+    addSection(stage, lab, () => {
+      const wrap = document.createElement("div");
+      wrap.className = "codewrap";
+      const btn = document.createElement("button");
+      btn.className = "copybtn always";
+      btn.textContent = "复制";
+      btn.onclick = () => copy(f.e, btn);
+      const pre = document.createElement("pre");
+      pre.className = "code";
+      pre.textContent = f.e;
+      wrap.append(btn, pre);
+      return wrap;
+    }, "⑥");
+  }
+
+  if (f.u && f.u.length) {
+    const lab = "本项目使用位置（自动扫描）";
+    anchors.push({ label: lab, anchor: lab });
+    addSection(stage, lab, () => {
+      const d = document.createElement("div");
+      d.className = "usebox";
+      const PROJ = ["S1检测端", "S2网关"];
+      const KIND = { "调用": "k-call", "定义": "k-def", "声明": "k-def" };
+      f.u.forEach(r => {
+        if (typeof r === "string") {
+          const s = document.createElement("span");
+          s.className = "useitem";
+          s.innerHTML = '<span class="usetag t-ref">参考</span><span class="usepath">' + esc(r) + "</span>";
+          d.appendChild(s);
+          return;
+        }
+        const s = document.createElement("span");
+        s.className = "useitem";
+        const isProj = PROJ.indexOf(r.tag) >= 0;
+        s.innerHTML = '<span class="usetag ' + (isProj ? "t-proj" : "t-ref") + '">' + esc(r.tag) +
+          '</span><span class="usepath">' + esc(r.f + ":" + r.l) + "</span>" +
+          '<span class="usekind ' + (KIND[r.p] || "") + '">' + esc(r.p || "调用") + "</span>";
+        d.appendChild(s);
+      });
+      const note = document.createElement("div");
+      note.className = "usenote";
+      note.textContent = "「调用」= 这里真的调用了这个函数（最有用）；「定义」= 这个函数在本文件里实现；绿色标签是本项目两个工程，优先收录。由 gen_usage.py 扫描源码生成。";
+      d.appendChild(note);
+      return d;
+    }, "⑦");
+  }
+
+  if (f.rel && f.rel.length) {
+    const lab = "相关与联动（点击条目名跳转）";
+    anchors.push({ label: lab, anchor: lab });
+    addSection(stage, lab, () => {
+      const d = document.createElement("div");
+      d.className = "relbox";
+      f.rel.forEach(pair => {
+        const p2 = Array.isArray(pair) ? pair : [String(pair)];
+        const line = document.createElement("div");
+        const a = document.createElement("a");
+        a.className = "jumplink";
+        a.textContent = p2[0];
+        a.onclick = () => jumpTo(p2[0]);
+        line.appendChild(a);
+        line.appendChild(document.createTextNode("　" + (p2[1] || "")));
+        d.appendChild(line);
+      });
+      return d;
+    }, "⑧");
+  }
+
+  /* 自动条目：列同模块中文详解 */
+  if (f._src === "auto" || f._src === "autostruct") {
+    const hs = ALL.filter(x => x.m === f.m && x._src !== "auto" && x._src !== "autostruct"
+      && x._t !== "table" && x.n !== f.n);
+    if (hs.length) {
+      const lab = "本模块中文详解（点击跳转）";
+      anchors.push({ label: lab, anchor: lab });
+      addSection(stage, lab, () => {
+        const d = document.createElement("div");
+        d.className = "relbox";
+        hs.slice(0, 16).forEach(x => {
+          const a = document.createElement("a");
+          a.className = "jumplink";
+          a.textContent = x.n;
+          a.onclick = () => jumpTo(x.n);
+          d.appendChild(a);
+          d.appendChild(document.createTextNode("　"));
+        });
+        if (hs.length > 16) d.appendChild(document.createTextNode("…（共 " + hs.length + " 个）"));
+        return d;
+      }, "⑨");
+    }
+  }
+
+  /* 目录（长内容才显示） */
+  const toc = tocBuild(box, anchors);
+  if (toc) box.appendChild(toc);
+  box.appendChild(stage);
+
+  const note = document.createElement("div");
+  note.className = "footer-note";
+  note.innerHTML = "提示：宏名（如 GPIO_Mode_OUT）可直接搜索；本表收录 ST 标准库 + FreeRTOS + 初始化流程卡（共 " + ALL.length + " 条）；" +
+    "绿色徽章 = <b>初始化流程</b>；紫色徽章 = 手写详解（中文）；灰色徽章 = 自动收录。配套/联动关系见“相关与联动”段。";
+  box.appendChild(note);
+
+  updateActiveList();
+}
+
+function wrapTable(tb) {
+  const w = document.createElement("div");
+  w.className = "tablewrap";
+  w.appendChild(tb);
+  return w;
+}
+
+/* ============================================================
+ *  引导向导渲染（进度持久化到 localStorage）
+ * ============================================================ */
+function cmdKey(f) { return f.n; }
+
+function makeCodeBox(code, label) {
+  const wrap = document.createElement("div");
+  wrap.className = "codewrap";
+  const btn = document.createElement("button");
+  btn.className = "copybtn always";
+  btn.textContent = label || "复制本步代码";
+  btn.onclick = () => copy(code, btn);
+  const pre = document.createElement("pre");
+  pre.className = "code";
+  pre.textContent = code;
+  wrap.append(btn, pre);
+  return wrap;
+}
+
+function makeRelLine(names) {
+  const d = document.createElement("div");
+  d.className = "rel";
+  const lab = document.createElement("span");
+  lab.textContent = "相关条目：";
+  lab.style.color = "var(--fg-faint)";
+  d.appendChild(lab);
+  String(names).split(/\s+/).filter(Boolean).forEach(nm => {
+    const a = document.createElement("a");
+    a.className = "jumplink";
+    a.textContent = nm;
+    a.onclick = () => jumpTo(nm);
+    d.appendChild(a);
+    d.appendChild(document.createTextNode("　"));
+  });
+  return d;
+}
+
+function renderGuide(f) {
+  const box = document.createElement("div");
+  box.className = "guide-wrap";
+  const steps = f.f || [];
+  const key = cmdKey(f);
+  if (!DB.prog[key]) DB.prog[key] = {};
+  const done = DB.prog[key];
+  const doneSet = new Set(Object.keys(done).map(Number));
+
+  if (f.g) {
+    const g = document.createElement("div");
+    g.className = "ret";
+    g.textContent = f.g;
+    box.appendChild(g);
+  }
+
+  const prog = document.createElement("div");
+  prog.className = "guide-progress";
+  const ptxt = document.createElement("div"); ptxt.className = "txt";
+  const pbar = document.createElement("div"); pbar.className = "bar";
+  const pfill = document.createElement("i"); pbar.appendChild(pfill);
+  const phint = document.createElement("div"); phint.className = "hint";
+  phint.innerHTML = "点每一步的标题展开详情；做完一步点「标记完成」。进度会自动保存在本机（刷新不丢）。";
+  prog.append(ptxt, pbar, phint);
+  box.appendChild(prog);
+
+  if (f.e) {
+    const det = document.createElement("details");
+    det.style.margin = "0 0 15px 0";
+    const sm = document.createElement("summary");
+    sm.textContent = "▼ 想直接抄？点开看全部 " + steps.length + " 步拼好的完整代码";
+    sm.style.cssText = "cursor:pointer;font-size:var(--fs-md);color:var(--accent);font-weight:700;padding:9px 0";
+    det.appendChild(sm);
+    det.appendChild(makeCodeBox(f.e, "复制完整代码"));
+    box.appendChild(det);
+  }
+
+  const nodes = [];
+  steps.forEach((st, i) => {
+    const arr = Array.isArray(st) ? st : [String(st)];
+    const [title, why, todo, code, verify, pitfall, rel] = arr;
+    const d = document.createElement("div");
+    d.className = "gstep";
+    d.dataset.i = i;
+
+    const hd = document.createElement("div"); hd.className = "hd";
+    const num = document.createElement("div"); num.className = "num"; num.textContent = String(i + 1);
+    const ttl = document.createElement("div"); ttl.className = "ttl"; ttl.textContent = title || ("第 " + (i + 1) + " 步");
+    const ar = document.createElement("div"); ar.className = "arrow"; ar.textContent = "▸";
+    hd.append(num, ttl, ar);
+
+    const bd = document.createElement("div"); bd.className = "bd";
+    const L = (cls, txt, boxCls) => {
+      if (!txt) return;
+      const l = document.createElement("div"); l.className = "lbl" + (cls ? " " + cls : ""); l.textContent = txt;
+      bd.appendChild(l);
+    };
+    if (why) { L("", "为什么要这一步"); const t = document.createElement("div"); t.className = "txt"; t.textContent = why; bd.appendChild(t); }
+    if (todo) { L("", "这一步做什么"); const t = document.createElement("div"); t.className = "txt"; t.textContent = todo; bd.appendChild(t); }
+    if (code) { L("", "本步代码（可直接复制）"); bd.appendChild(makeCodeBox(code)); }
+    if (verify) { L("ok", "怎么验证这一步成功"); const t = document.createElement("div"); t.className = "txt okbox"; t.textContent = verify; bd.appendChild(t); }
+    if (pitfall) { L("warn", "常见问题 / 注意"); const t = document.createElement("div"); t.className = "txt warnbox"; t.textContent = pitfall; bd.appendChild(t); }
+    if (rel) bd.appendChild(makeRelLine(rel));
+
+    const btns = document.createElement("div"); btns.className = "mkbtns";
+    const bDone = document.createElement("button"); bDone.className = "pri";
+    const bNext = document.createElement("button"); bNext.textContent = "下一步 ▸";
+    btns.append(bDone, bNext);
+    bd.appendChild(btns);
+
+    d.append(hd, bd);
+    box.appendChild(d);
+    nodes.push({ d, bDone, bNext, num, ar });
+
+    hd.onclick = () => {
+      const open = d.classList.toggle("open");
+      ar.textContent = open ? "▾" : "▸";
+    };
+    bDone.onclick = () => {
+      if (doneSet.has(i)) { doneSet.delete(i); delete done[i]; }
+      else { doneSet.add(i); done[i] = 1; }
+      dbSave();
+      syncGuide();
+    };
+    bNext.onclick = () => {
+      const nx = nodes[i + 1];
+      if (nx) {
+        d.classList.remove("open"); ar.textContent = "▸";
+        nx.d.classList.add("open"); nx.ar.textContent = "▾";
+        nx.d.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+    };
+  });
+
+  function syncGuide() {
+    let n = 0;
+    nodes.forEach((o, i) => {
+      const isDone = doneSet.has(i);
+      if (isDone) n++;
+      o.d.classList.toggle("done", isDone);
+      o.num.textContent = isDone ? "✓" : String(i + 1);
+      o.bDone.textContent = isDone ? "已标记完成（点此撤销）" : "标记完成";
+      o.bDone.classList.toggle("done", isDone);
+    });
+    const pct = steps.length ? Math.round(n / steps.length * 100) : 0;
+    pfill.style.width = pct + "%";
+    ptxt.textContent = "第 " + n + " / " + steps.length + " 步完成（" + pct + "%）" +
+      (n === steps.length && steps.length ? "　🎉 全部完成，可以去编译验收了" : "");
+  }
+  syncGuide();
+
+  if (nodes.length) {
+    const firstOpen = nodes.findIndex(o => !doneSet.has(o.d.dataset.i * 1));
+    const idx = firstOpen >= 0 ? firstOpen : 0;
+    nodes[idx].d.classList.add("open");
+    nodes[idx].ar.textContent = "▾";
+  }
+  return box;
+}
+
+/* ============================================================
+ *  复制
+ * ============================================================ */
+function copy(text, btn) {
+  const orig = btn ? btn.textContent : "";
+  const done = () => { if (btn) { btn.textContent = "已复制 ✓"; setTimeout(() => btn.textContent = orig || "复制", 1300); } };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+  } else fallbackCopy(text, done);
+}
+function fallbackCopy(text, done) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.cssText = "position:fixed;opacity:0";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); done(); } catch (e) {}
+  document.body.removeChild(ta);
+}
+
+/* ============================================================
+ *  事件绑定
+ * ============================================================ */
+qEl.addEventListener("input", () => {
+  searchwrapEl.classList.toggle("hasq", !!qEl.value);
+  renderList();
+});
+qEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); const first = listEl.querySelector(".item, .gcard"); if (first) first.click(); }
+});
+$("clearq").onclick = () => { qEl.value = ""; searchwrapEl.classList.remove("hasq"); renderList(); qEl.focus(); };
+
+modSel.addEventListener("change", () => { DB.mod[SEC] = modSel.value; dbSave(); renderList(); });
+projSel.addEventListener("change", () => {
+  buildProj = parseInt(projSel.value, 10) || 0;
+  current = null;
+  detailEl.innerHTML = "<div class='empty'>点选左侧阶段开始 →</div>";
+  renderBuildList();
+});
+
+document.querySelectorAll("#tabs button").forEach(b => {
+  b.addEventListener("click", () => setSection(b.dataset.sec));
+});
+
+$("btnTheme").onclick = cycleTheme;
+$("btnFav").onclick = () => openPanel("fav");
+$("btnRecent").onclick = () => openPanel("recent");
+$("btnHelp").onclick = () => $("panelHelp").classList.add("show");
+$("favClear").onclick = () => { DB.fav = []; dbSave(); syncFavBadge(); refreshFavMarks(); renderFavPanel(); toast("收藏已清空"); };
+
+document.querySelectorAll(".panel").forEach(pn => {
+  pn.addEventListener("click", (e) => { if (e.target === pn) closePanels(); });
+});
+document.querySelectorAll("[data-close]").forEach(b => {
+  b.onclick = () => $(b.dataset.close).classList.remove("show");
+});
+
+/* 回到顶部 */
+const totop = $("totop");
+totop.onclick = () => detailEl.scrollTo({ top: 0, behavior: "smooth" });
+detailEl.addEventListener("scroll", () => {
+  totop.classList.toggle("show", detailEl.scrollTop > 400);
+}, { passive: true });
+
+/* ---------- 键盘导航 ---------- */
+document.addEventListener("keydown", (e) => {
+  const tag = (e.target.tagName || "").toLowerCase();
+  const inField = tag === "input" || tag === "select" || tag === "textarea";
+  const ctrl = e.ctrlKey || e.metaKey;
+
+  /* 手机版没有键盘：跳过全部快捷键（含 ? 快捷键面板、Ctrl+B/H/J/D、/、方向键） */
+  if (window.__MOBILE__) return;
+
+  if (ctrl && (e.key === "b" || e.key === "B")) { e.preventDefault(); openPanel("fav"); return; }
+  if (ctrl && (e.key === "h" || e.key === "H")) { e.preventDefault(); openPanel("recent"); return; }
+  if (ctrl && (e.key === "j" || e.key === "J")) { e.preventDefault(); cycleTheme(); return; }
+  if (ctrl && (e.key === "d" || e.key === "D")) {
+    e.preventDefault();
+    if (current !== null && ALL[current]) { toggleFav(ALL[current].n); showDetail(current); }
+    return;
+  }
+  if (e.key === "?" && !inField) { e.preventDefault(); $("panelHelp").classList.toggle("show"); return; }
+  if (e.key === "/" && !inField) { e.preventDefault(); qEl.focus(); qEl.select(); return; }
+  if (e.key === "Escape") {
+    const open = document.querySelector(".panel.show");
+    if (open) { closePanels(); return; }
+    if (document.body.classList.contains("show-detail")) {
+      if (listEl.querySelectorAll(".item.active, .gcard.active").length) { goBackToList(); return; }
+    }
+    if (qEl.value) { qEl.value = ""; searchwrapEl.classList.remove("hasq"); renderList(); return; }
+    if (document.activeElement === qEl) qEl.blur();
+    return;
+  }
+  if (inField) return;
+
+  const rows = [...listEl.querySelectorAll(".item, .gcard")];
+  if (!rows.length) return;
+
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    let idx = rows.findIndex(r => r.classList.contains("active"));
+    idx = e.key === "ArrowDown" ? (idx < 0 ? 0 : Math.min(rows.length - 1, idx + 1))
+                                : (idx < 0 ? 0 : Math.max(0, idx - 1));
+    const target = rows[idx];
+    /* 若目标在折叠的分组里，先展开 */
+    const grp = target.closest('[data-group]');
+    if (grp && grp.style.display === "none") {
+      grp.style.display = "";
+      const gh = listEl.querySelector('.grouphead[data-key="' + grp.dataset.group + '"]')
+              || [...listEl.querySelectorAll(".grouphead")].find(h => h.textContent.indexOf(String(grp.dataset.group)) >= 0);
+      if (gh) gh.classList.remove("collapsed");
+    }
+    rows.forEach(r => r.classList.remove("active"));
+    target.classList.add("active");
+    target.scrollIntoView({ block: "nearest" });
+    return;
+  }
+  if (e.key === "Enter") {
+    const cur = rows.find(r => r.classList.contains("active"));
+    if (cur) { e.preventDefault(); cur.click(); }
+    return;
+  }
+  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    const order = ["ref", "guide", "build"];
+    const i = order.indexOf(SEC);
+    const ni = e.key === "ArrowRight" ? (i + 1) % 3 : (i + 2) % 3;
+    setSection(order[ni]);
+  }
+});
+
+/* ============================================================
+ *  初始化
+ * ============================================================ */
+function initCounts() {
+  const ref = ALL.filter(f => !f._b && f._t !== "guide" && f._t !== "flow").length;
+  const gd = ALL.filter(f => !f._b && (f._t === "guide" || f._t === "flow")).length;
+  const bd = ALL.filter(f => f._b).length;
+  $("cntRef").textContent = ref;
+  $("cntGuide").textContent = gd;
+  $("cntBuild").textContent = bd;
+}
+
+function boot() {
+  dbLoad();
+  applyTheme();
+  syncFavBadge();
+  /* 手机提示缩短 */
+  if (isNarrow()) qEl.placeholder = "搜功能词 / 函数名 / 宏名";
+
+  /* 从 URL hash 恢复（含板块与条目） */
+  const hashIdx = restoreFromHash();
+
+  setSection(SEC || "ref", true);
+  if (DB.mod && DB.mod[SEC]) { modSel.value = DB.mod[SEC]; renderList(); }
+  buildProj = Math.max(0, Math.min((typeof STD_BUILD_PROJ !== "undefined" ? STD_BUILD_PROJ.length : 1) - 1, buildProj));
+  projSel.value = String(buildProj);
+
+  initCounts();
+
+  if (hashIdx !== null && hashIdx !== undefined) showDetail(hashIdx);
+  else if (DB.last && !isNarrow() && DB.recent.length && false) { /* 预留：可自动打开上次条目 */ }
+}
+boot();
+</script>
+<!-- ============================================================
+     手机版专用脚本（只对手机版生效）
+     ------------------------------------------------------------
+     只做网页版不需要、手机上才有意义的事：字号三档按钮。
+     桌面浏览器打开时 data-platform 不是 mobile，这里直接返回，不产生任何影响。
+     ============================================================ -->
+<script>
+(function () {
+  var H = document.documentElement;
+  if (H.getAttribute('data-platform') !== 'mobile') return;
+
+  var SCALES = ['s', 'm', 'l'];
+  var NAME = { s: '小', m: '中', l: '大' };
+  var cur = 'm';
+  try { var saved = localStorage.getItem('stm32.fs'); if (SCALES.indexOf(saved) >= 0) cur = saved; } catch (e) {}
+
+  var btn = document.createElement('button');
+  btn.className = 'iconbtn';
+  btn.id = 'btnFs';
+  btn.title = '字号（小 / 中 / 大）';
+
+  function apply(v) {
+    cur = v;
+    H.setAttribute('data-fs', v);
+    btn.textContent = NAME[v];
+    try { localStorage.setItem('stm32.fs', v); } catch (e) {}
+  }
+  btn.onclick = function () {
+    apply(SCALES[(SCALES.indexOf(cur) + 1) % SCALES.length]);
+  };
+
+  var bar = document.querySelector('.toolbar');
+  if (bar) bar.insertBefore(btn, bar.firstChild); else document.body.appendChild(btn);
+
+  /* 手机上没有键盘：把所有 title 里的快捷键提示抹掉
+     （例：收藏夹（Ctrl+B）→ 收藏夹、清空（Esc）→ 清空、主题：深色（Ctrl+J 切换）→ 主题：深色）。
+     一条正则收掉全部情况，免得以后又冒出一个带 Ctrl 的按钮。 */
+  var KEYRE = /（[^）]*(?:Ctrl|Esc|Shift|Alt|Enter|↑|↓|←|→|\?)[^）]*）/g;
+  var titled = document.querySelectorAll('[title]');
+  for (var i = 0; i < titled.length; i++) {
+    var t = titled[i].getAttribute('title');
+    if (!t) continue;
+    var n = t.replace(KEYRE, '').trim();
+    if (n !== t) titled[i].setAttribute('title', n);
+  }
+
+  apply(cur);
+})();
+</script>
+</body>
+</html>
