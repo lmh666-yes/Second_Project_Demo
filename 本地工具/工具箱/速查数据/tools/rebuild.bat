@@ -126,6 +126,10 @@ if /i NOT "%~1"=="/nodb" (
 echo.
 echo ============================================================
 call :tick "7/8 mobile + APK"
+rem ---- H14: write the rebuild marker right before 8/8 so check_sync can verify links 1-7 ran ----
+> "%HERE%..\_rebuild_status.txt" echo chain=rebuilt
+>> "%HERE%..\_rebuild_status.txt" echo finished_at=%DATE% %TIME%
+>> "%HERE%..\_rebuild_status.txt" echo note=links 1-7 ok, 8/8 sync check runs next
 echo  [8/8] sync check  web / mobile / APK / dataset
 echo ============================================================
 rem 上面这行别写成 ^<-> 那种带转义箭头的写法：cmd 会把 ^< 转义后剩下的 > 当成重定向，

@@ -165,6 +165,7 @@ compile_commands.json
 # 属"自行再生的运行记录"，入库会让每次跑检查都产生一次提交噪声，故排除；
 # 文件仍留在本地，趋势图照常用。
 本地工具/工具箱/检查/进度跟踪/_progress_history.json
+本地工具/工具箱/速查数据/_rebuild_status.txt
 
 # Android 构建产物与本机 sdk 配置（源码与工程配置入库）
 本地工具/标准库速查手机版/android/.gradle/

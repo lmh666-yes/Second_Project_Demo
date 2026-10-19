@@ -11,6 +11,10 @@ r"""check_sync.py —— 校验「网页版 ↔ 手机版 ↔ APK ↔ 桌面 dat
 
 退出码 0 = 全同步；1 = 有不同步项（会逐条列出）。
 本脚本只读，不改任何文件（"重导 dataset 比内容"那一步会先备份再还原）。
+
+H14：第 0 节核对"重建链前几环有没有真跑过" —— rebuild.bat 会在第 8 环之前落一份
+`速查数据\_rebuild_status.txt` 标记；这里比"标记时间"与"各产物 mtime"，
+标记比某份产物旧就说明那份产物改完后没重跑整链（以前漏跑前几环只会静默用旧数据）。
 """
 import hashlib
 import io
@@ -20,6 +24,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 
 try:
@@ -40,6 +45,7 @@ ASSETS = os.path.join(MOB, "android", "app", "src", "main", "assets", "index.htm
 DSET = os.path.join(DATA, "data", "dataset.json")
 EXPORT = os.path.join(HERE, "export_json.js")
 STAMP = os.path.join(STD, "data_build_info.js")   # H2：三端页脚数据版本戳（export_json.js 生成）
+STATUS = os.path.join(DATA, "_rebuild_status.txt")  # H14：重建链跑到 8/8 之前落的标记（rebuild.bat 写）
 APKS = [os.path.join(MOB, "STM32-Lookup.apk"), os.path.join(MOB, "STM32速查.apk")]
 
 SKIP_APK = "--skip-apk" in sys.argv
@@ -78,6 +84,24 @@ def exists(p):
     return os.path.exists(p)
 
 
+def artifact_mtimes():
+    """把"该被重建链刷新"的那几份产物 → mtime 收集起来：判"前几环有没有真跑过"就看它们。"""
+    out = {}
+    for p in (WEB, MOBHTML, ASSETS, DSET):
+        if os.path.exists(p):
+            out[p] = os.path.getmtime(p)
+    if os.path.isdir(STD):
+        for f in os.listdir(STD):
+            if f.startswith("data_") and f.endswith(".js"):
+                fp = os.path.join(STD, f)
+                out[fp] = os.path.getmtime(fp)
+    return out
+
+
+def fmt_mtime(t):
+    return time.strftime("%m-%d %H:%M", time.localtime(t))
+
+
 def main():
     for p, what in ((WEB, "网页版主页"), (MOBHTML, "手机版单文件"), (ASSETS, "Android 资源页")):
         if not exists(p):
@@ -85,6 +109,27 @@ def main():
             print("\n缺关键文件，终止。")
             return 1
 
+    print("=== 0. 重建链是否真跑过（H14）===")
+    # 这条链历史上踩过两次：只跑后半段（或只跑本脚本）时，前半段（数据自检 / 引擎回归 /
+    # 导出）没跑也不会报错，只会静默沿用旧数据。所以让 rebuild.bat 在第 8 环**之前**落一份
+    # 标记；这里核对"标记不比任何一份产物旧" —— 比它新就说明那份产物改完后没重跑整链。
+    if not exists(STATUS):
+        chk(False, "重建链标记在（_rebuild_status.txt）",
+            "缺 —— 第 1~7 环没跑过（或只跑过本脚本）；请整体重跑 rebuild.bat")
+    else:
+        mk = os.path.getmtime(STATUS)
+        arts = artifact_mtimes()
+        newest = max(arts.items(), key=lambda kv: kv[1]) if arts else None
+        fresh = (newest is None) or (mk >= newest[1] - 1)     # 允许 1 秒容差
+        chk(fresh, "重建链标记不比产物旧（前几环真跑过）",
+            ("标记 %s · 最新产物 %s" % (fmt_mtime(mk), fmt_mtime(newest[1]))) if newest else "")
+        if not fresh and newest is not None:
+            print("      → 比标记还新的是：%s（说明它改完后没重跑整链）"
+                  % os.path.relpath(newest[0], LOCALTOOLS))
+        elif VERBOSE:
+            print("      标记 %s 覆盖了 %d 份产物的刷新时间" % (fmt_mtime(mk), len(arts)))
+
+    print()
     print("=== 1. 网页版引用的数据文件 ===")
     web = io.open(WEB, encoding="utf-8").read()
     js_files = re.findall(r'<script src="(data_[^"]+\.js)"></script>', web)
