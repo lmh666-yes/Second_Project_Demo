@@ -189,7 +189,7 @@ OverviewPage::OverviewPage(const QString &toolsDir, QWidget *parent)
     desc->setStyleSheet(QStringLiteral("color:rgba(127,127,127,255);"));
     lay->addWidget(desc);
 
-    /* E1：上手三步 —— 不必先搞清侧栏那 15 个页面，从这三个入口就能开始 */
+    /* E1：上手三步 —— 不必先搞清侧栏里各页在哪一栏，从这三个入口就能开始 */
     QLabel *first = new QLabel(QStringLiteral(
         "上手三步：① 先跑一次全量体检 ② 有问题按卡片点进去看 ③ 要开工就去生成工程骨架。"), this);
     first->setWordWrap(true);

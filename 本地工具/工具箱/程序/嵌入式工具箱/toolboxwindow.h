@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QList>
 #include <QMainWindow>
+#include <QStringList>
 
 class QCloseEvent;
 class QCheckBox;
@@ -49,7 +50,20 @@ public:
     static QStringList overdueSnapshots(const QString &dir, int keep);
     static QStringList reportFiles(const QString &toolsDir);
 
+    /* H1：页面表做成**单一来源** —— 侧栏、页面堆栈、自检、量测都从这一份推，
+       文档与注释不再写死页数（原来"15 个页面"散在 5 处，实际 16 个，改一处漏一处）。
+       四个查询按侧栏顺序：分组名 / 每组页数 / 页名 / 总页数。
+       做成 public static 是为了让 --selftest 能直接断言（不必构造窗口）。 */
+    static QStringList pageGroupNames();
+    static QList<int>   pageGroupCounts();
+    static QStringList pageNames();
+    static int          pageCount();
+
 private:
+    /* 页面表的载体：分组名 + 侧栏项名 + 该页的构造函数。构造函数在下面 pageDefs() 里
+       一次列全，构造窗口时按它逐页建、逐组插分组头。 */
+    struct PageDef { const char *group; const char *name; QWidget *(ToolboxWindow::*build)(); };
+    static const QList<PageDef> &pageDefs();
     QWidget *buildKickstartPage();
     QWidget *buildRtosGenPage();
     QWidget *buildWorkbenchPage();

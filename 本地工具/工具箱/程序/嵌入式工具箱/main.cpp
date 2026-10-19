@@ -53,6 +53,26 @@ static QString findRepoRoot()
     return QString();
 }
 
+/* H1：认出侧栏 —— 带分组头（不可选行）且可选行数正好等于**页面表页数**的那一个列表。
+   原先按"条目数 ≥15"猜，页数一变（加/删页）这个门限就得跟着改；现在页数取自
+   ToolboxWindow::pageDefs() 这一份单一来源，量测与审计都跟着它走。 */
+static QListWidget *findSidebar(QWidget *w)
+{
+    for (QListWidget *l : w->findChildren<QListWidget *>()) {
+        bool hasHeader = false;
+        int rows = 0;
+        for (int r = 0; r < l->count(); ++r) {
+            if (l->item(r)->flags() == Qt::NoItemFlags)
+                hasHeader = true;   /* 侧栏的分组头 */
+            else
+                ++rows;
+        }
+        if (hasHeader && rows == ToolboxWindow::pageCount())
+            return l;
+    }
+    return nullptr;
+}
+
 /* 命令行自检：验证内嵌的 Qt 工具逻辑（不开界面）。 */
 static int runCli(const QStringList &args)
 {
@@ -149,6 +169,58 @@ static int runCli(const QStringList &args)
                .arg(tdir.isEmpty() ? QString::fromUtf8("没解析出来") : tdir) << "\n";
     if (!dirOk)
         ++fail;
+
+    /* H1：页面表口径 —— 页数/分组从 ToolboxWindow::pageDefs() 这一份推（侧栏、堆栈、
+       量测同源）。这里断言结构自洽（分组数与组数一致、各组之和=总页数、页名不重），
+       扫现行文档与注释挡住"再加一页忘了改说明"（审计时这类写死的页数散在 5 处、
+       与页面表不符）。 */
+    {
+        const QStringList names  = ToolboxWindow::pageNames();
+        const QStringList groups = ToolboxWindow::pageGroupNames();
+        const QList<int>  counts = ToolboxWindow::pageGroupCounts();
+        int sum = 0;
+        for (int c : counts)
+            sum += c;
+        bool ok = names.size() == ToolboxWindow::pageCount()
+               && groups.size() == counts.size()
+               && sum == names.size()
+               && QSet<QString>(names.begin(), names.end()).size() == names.size();
+        /* 现行文档/注释里不许再写死页数 —— 写死的地方改了页面表却忘改，就是这个病根。
+           数字与后缀拼起来写，免得本自检读到自己这份源码时误判"文档里还留着旧页数"。 */
+        const QString oldNum = QStringLiteral("15");
+        const QStringList staleTokens = {oldNum + QString::fromUtf8(" 个页面"),
+                                         oldNum + QString::fromUtf8(" 页")};
+        QStringList stale;
+        const QStringList docs = {
+            QStringLiteral("程序/嵌入式工具箱/说明.md"),
+            QStringLiteral("程序/嵌入式工具箱/toolboxwindow.cpp"),
+            QStringLiteral("程序/嵌入式工具箱/overviewpage.cpp"),
+            QStringLiteral("程序/嵌入式工具箱/main.cpp"),
+        };
+        for (const QString &rel : docs) {
+            QFile f(QDir(tdir).filePath(rel));
+            if (!f.open(QIODevice::ReadOnly))
+                continue;
+            const QString txt = QString::fromUtf8(f.readAll());
+            for (const QString &bad : staleTokens)
+                if (txt.contains(bad))
+                    stale << QStringLiteral("%1:%2").arg(rel, bad);
+        }
+        ok = ok && stale.isEmpty();
+        out << QString::fromUtf8("页面表口径：")
+            << (ok ? QString::fromUtf8("PASS") : QString::fromUtf8("FAIL"))
+            << QString::fromUtf8("（%1 页 / %2 组，各组页数 ").arg(names.size()).arg(groups.size());
+        QStringList cnt;
+        for (int c : counts)
+            cnt << QString::number(c);
+        out << cnt.join(QStringLiteral("·")) << QString::fromUtf8("）\n");
+        if (!ok) {
+            ++fail;
+            if (!stale.isEmpty())
+                out << QString::fromUtf8("  文档/注释仍写死旧页数：")
+                    << stale.join(QStringLiteral("、")) << "\n";
+        }
+    }
 
     /* OTA 台架页引用的 ota_send.py 在仓库根的 OTA/tools/ 下（工具箱树之外）。
        判据是一路向上找到含 EnvMonitor/.git 的那层再拼 OTA/tools/ota_send.py；
@@ -646,19 +718,7 @@ int main(int argc, char *argv[])
         /* 切页走**侧栏**（与 --gui-smoke 同一条已验证安全的路径），不要直接 setCurrentIndex：
            实测直接切主堆栈会在退出阶段报堆损坏（0xC0000374），走侧栏则干净，
            而且侧栏切换还会触发"首次进手册页装载数据"的真实路径，量到的更接近实际使用。 */
-        QListWidget *side = nullptr;
-        for (QListWidget *l : w.findChildren<QListWidget *>()) {
-            bool hasHeader = false;
-            for (int r = 0; r < l->count(); ++r)
-                if (l->item(r)->flags() == Qt::NoItemFlags) {   /* 侧栏的分组头 */
-                    hasHeader = true;
-                    break;
-                }
-            if (hasHeader && l->count() >= 15) {
-                side = l;
-                break;
-            }
-        }
+        QListWidget *side = findSidebar(&w);
         if (side) {
             /* 找主堆栈：页数 == 侧栏里"可选行"数（分组头不算），比靠父子关系猜更稳。 */
             int rows = 0;
@@ -785,20 +845,14 @@ int main(int argc, char *argv[])
         QElapsedTimer t;
         t.start();
         ToolboxWindow w(nullptr, true);
-        const qint64 tCtor = t.elapsed();      /* 构造 15 个页面（含起手助手等）的耗时 */
+        const qint64 tCtor = t.elapsed();      /* 构造全部页面（含起手助手等）的耗时 */
         w.resize(1200, 900);
         w.show();
         QApplication::processEvents();
         QApplication::processEvents();          /* 一次布局、一次首帧 */
         const qint64 tShow = t.elapsed();
 
-        QListWidget *side = nullptr;
-        for (QListWidget *l : w.findChildren<QListWidget *>()) {
-            bool hasHeader = false;
-            for (int r = 0; r < l->count(); ++r)
-                if (l->item(r)->flags() == Qt::NoItemFlags) { hasHeader = true; break; }
-            if (hasHeader && l->count() >= 15) { side = l; break; }
-        }
+        QListWidget *side = findSidebar(&w);
 
         QList<QPair<qint64, QString>> pageMs;   /* (耗时ms, 页名) */
         qint64 total = 0;

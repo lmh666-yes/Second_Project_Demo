@@ -66,6 +66,68 @@ static QString py(const QString &dir, const QString &rel)
     return QDir(dir).filePath(rel);
 }
 
+/* H1：页面表 —— 全工具箱**唯一**一份"有哪些页、在哪一组"的口径。
+   加/删页面只改这里：侧栏、页面堆栈、--selftest、--ui-audit/--perf-probe 都跟着走。 */
+const QList<ToolboxWindow::PageDef> &ToolboxWindow::pageDefs()
+{
+    static const QList<PageDef> defs = {
+        {"查资料", "单片机手册",     &ToolboxWindow::buildLookupPage},
+        {"设计",   "项目起手助手",   &ToolboxWindow::buildKickstartPage},
+        {"设计",   "RTOS 骨架生成",  &ToolboxWindow::buildRtosGenPage},
+        {"设计",   "协议工作台",     &ToolboxWindow::buildWorkbenchPage},
+        {"检查",   "进度扫描",       &ToolboxWindow::buildProgressPage},
+        {"检查",   "引脚规划",       &ToolboxWindow::buildPinPage},
+        {"检查",   "RTOS 检查",      &ToolboxWindow::buildRtosPage},
+        {"检查",   "编码守卫",       &ToolboxWindow::buildEncodingPage},
+        {"检查",   "链路仿真",       &ToolboxWindow::buildLinkPage},
+        {"检查",   "LoRa 检查",      &ToolboxWindow::buildLoraPage},
+        {"检查",   "OTA 台架",       &ToolboxWindow::buildOtaPage},
+        {"检查",   "断网缓存",       &ToolboxWindow::buildCachePage},
+        {"检查",   "工程模板",       &ToolboxWindow::buildScaffoldPage},
+        {"汇总",   "工程体检总览",   &ToolboxWindow::buildOverviewPage},
+        {"汇总",   "全量检查",       &ToolboxWindow::buildFullCheckPage},
+        {"设置",   "设置",           &ToolboxWindow::buildSettingsPage},
+    };
+    return defs;
+}
+
+QStringList ToolboxWindow::pageGroupNames()
+{
+    QStringList gs;
+    for (const PageDef &d : pageDefs())
+        if (gs.isEmpty() || gs.last() != QString::fromUtf8(d.group))
+            gs << QString::fromUtf8(d.group);
+    return gs;
+}
+
+QList<int> ToolboxWindow::pageGroupCounts()
+{
+    QList<int> cs;
+    QString cur;
+    for (const PageDef &d : pageDefs()) {
+        const QString g = QString::fromUtf8(d.group);
+        if (cs.isEmpty() || g != cur) {
+            cs << 0;
+            cur = g;
+        }
+        cs.last() += 1;
+    }
+    return cs;
+}
+
+QStringList ToolboxWindow::pageNames()
+{
+    QStringList ns;
+    for (const PageDef &d : pageDefs())
+        ns << QString::fromUtf8(d.name);
+    return ns;
+}
+
+int ToolboxWindow::pageCount()
+{
+    return pageDefs().size();
+}
+
 ToolboxWindow::ToolboxWindow(QWidget *parent, bool suppressFirstRun)
     : QMainWindow(parent), m_suppressWelcome(suppressFirstRun)
 {
@@ -120,58 +182,20 @@ ToolboxWindow::ToolboxWindow(QWidget *parent, bool suppressFirstRun)
 
     m_pages = new QStackedWidget(central);
 
-    struct Item { const char *name; QWidget *page; };
-    const Item lookup[] = {
-        {"单片机手册",   buildLookupPage()},
-    };
-    const Item design[] = {
-        {"项目起手助手",  buildKickstartPage()},
-        {"RTOS 骨架生成", buildRtosGenPage()},
-        {"协议工作台",    buildWorkbenchPage()},
-    };
-    const Item check[] = {
-        {"进度扫描",     buildProgressPage()},
-        {"引脚规划",     buildPinPage()},
-        {"RTOS 检查",    buildRtosPage()},
-        {"编码守卫",     buildEncodingPage()},
-        {"链路仿真",     buildLinkPage()},
-        {"LoRa 检查",    buildLoraPage()},
-        {"OTA 台架",     buildOtaPage()},
-        {"断网缓存",     buildCachePage()},
-        {"工程模板",     buildScaffoldPage()},
-    };
-    const Item wrap[] = {
-        {"工程体检总览", buildOverviewPage()},
-        {"全量检查",     buildFullCheckPage()},
-    };
-    const Item prefs[] = {
-        {"设置",         buildSettingsPage()},
-    };
-
-    addHeader(QStringLiteral("查资料"));
-    for (const Item &it : lookup) {
-        m_list->addItem(QString::fromUtf8(it.name));
-        m_pages->addWidget(it.page);
-    }
-    addHeader(QStringLiteral("设计"));
-    for (const Item &it : design) {
-        m_list->addItem(QString::fromUtf8(it.name));
-        m_pages->addWidget(it.page);
-    }
-    addHeader(QStringLiteral("检查"));
-    for (const Item &it : check) {
-        m_list->addItem(QString::fromUtf8(it.name));
-        m_pages->addWidget(it.page);
-    }
-    addHeader(QStringLiteral("汇总"));
-    for (const Item &it : wrap) {
-        m_list->addItem(QString::fromUtf8(it.name));
-        m_pages->addWidget(it.page);
-    }
-    addHeader(QStringLiteral("设置"));
-    for (const Item &it : prefs) {
-        m_list->addItem(QString::fromUtf8(it.name));
-        m_pages->addWidget(it.page);
+    /* H1：逐页按**唯一一份**页面表（pageDefs）建 —— 分组一变就插一次分组头。
+       侧栏项名、页面堆栈、自检断言、量测都从这一份推，不再各自维护页数。 */
+    {
+        const QList<PageDef> &defs = pageDefs();
+        QString curGroup;
+        for (const PageDef &d : defs) {
+            const QString g = QString::fromUtf8(d.group);
+            if (g != curGroup) {
+                addHeader(g);
+                curGroup = g;
+            }
+            m_list->addItem(QString::fromUtf8(d.name));
+            m_pages->addWidget((this->*(d.build))());
+        }
     }
 
     sidelay->addWidget(m_list, 1);
@@ -206,7 +230,7 @@ ToolboxWindow::ToolboxWindow(QWidget *parent, bool suppressFirstRun)
     });
 
     /* C1：Ctrl+K 全局搜索 —— 一个框同时搜「页面名 / 检查项 / 手册条目」，回车直达。
-       不必先搞清侧栏那 15 个页面在哪一栏。 */
+       不必先搞清侧栏里各页在哪一栏。 */
     {
         QShortcut *sc = new QShortcut(QKeySequence(QStringLiteral("Ctrl+K")), this);
         sc->setContext(Qt::ApplicationShortcut);
