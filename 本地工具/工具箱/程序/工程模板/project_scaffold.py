@@ -11,9 +11,18 @@ r"""工程模板与驱动脚手架生成器。
     python project_scaffold.py --style register --preset minimal --out D:/MyProject
     python project_scaffold.py --style driver  --preset envmonitor --out D:/MyProject
     python project_scaffold.py --list          # 列出可用外设
+    python project_scaffold.py --progress-docs # C1：给三份工程进度文档铺可填骨架
+
+进度文档：
+  · C2：生成骨架时**顺手在输出目录里铺一份 `<目录名>进度文档.md`** —— 起手助手里
+    填的"阶段安排"（外设 / 任务）直接落到里面，不用再手抄一遍（已有内容的不会被覆盖）。
+  · C1：`--progress-docs` 按「🧭 项目引导」的阶段卡，给 EnviMonitor 里那三份
+    `板1/板2/QT上位机进度文档.md` 铺「阶段总表 + 里程碑 + 验收判据 + 待填表」骨架。
 """
 import argparse
+import json
 import os
+import re
 import shutil
 import sys
 
@@ -779,6 +788,8 @@ def run(board, periph_names, tasks, out_dir, style='driver'):
         readme_path = generate_readme(out_dir, board, periph_names, tasks, style)
         print('生成完成（寄存器风格）：%s' % out_dir)
         print('  生成文件：main.c' + (', FreeRTOSConfig.h' if tasks else ''))
+        # C2：顺手铺进度文档 —— 起手助手填的阶段安排（外设/任务）落进去，不用再手抄
+        write_scaffold_progress_doc(out_dir, board, periph_names, tasks, style)
         return True
 
     # driver 风格：复制驱动库文件
@@ -813,6 +824,8 @@ def run(board, periph_names, tasks, out_dir, style='driver'):
     if missing:
         print('  缺失：%s' % ', '.join(missing))
     print('  生成文件：main.c, FreeRTOSConfig.h, README.md')
+    # C2：顺手铺进度文档 —— 起手助手填的阶段安排（外设/任务）落进去，不用再手抄
+    write_scaffold_progress_doc(out_dir, board, periph_names, tasks, style)
     return True
 
 
@@ -882,6 +895,236 @@ FREERTOS_CONFIG_TEMPLATE = r'''#ifndef FREERTOS_CONFIG_H
 '''
 
 
+# ============================================================
+#  C1 / C2：进度文档骨架
+# ============================================================
+#  C1：EnviMonitor 里那三份工程进度文档原来是**空文件**（进度扫描每轮都报"还空着"），
+#      这里按「🧭 项目引导」的阶段卡顺序铺出可填骨架（阶段 + 里程碑 + 验收判据 + 待填表）。
+#  C2：生成工程骨架时顺手把进度文档骨架也铺好 —— 起手助手的"答案里的阶段安排"
+#      就这样落到进度文档里，不用再手抄一遍。
+
+DATASET_REL = os.path.join('本地工具', '工具箱', '速查数据', 'data', 'dataset.json')
+BOARDCFG_REL = os.path.join('本地工具', '工具箱', '速查数据', 'rules', 'board_envmonitor.json')
+
+# 「🏗 板1 · 阶段 3｜FreeRTOS 任务框架」→ ('3', 'FreeRTOS 任务框架')
+_STAGE_RE = re.compile(r'阶段\s*(\d+)\s*[｜|]\s*(.+)$')
+
+
+def _cell(s):
+    """表格单元：竖线与换行都要清掉，否则一格会撑歪整张表。"""
+    return (s or '').replace('|', '\\|').replace('\r', ' ').replace('\n', ' ').strip()
+
+
+def load_dataset(path=None):
+    """读速查数据的 dataset.json（项目引导的阶段卡就在里面）。读不到返回 None。"""
+    p = path or os.path.join(ROOT, DATASET_REL)
+    if not os.path.exists(p):
+        return None
+    try:
+        with open(p, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def progress_doc_paths(cfg_path=None):
+    """EnviMonitor 里三份进度文档的路径，顺序与 dataset 的 proj 一致（板1 / 板2 / Qt）。
+    优先读板级配置 extra.progress_docs（换板/改名只改那份 JSON），读不到回退内置默认。"""
+    default = [os.path.join('EnvMonitor', 'Project_1_检测端', '板1进度文档.md'),
+               os.path.join('EnvMonitor', 'Project_2_数据通信端', '板2进度文档.md'),
+               os.path.join('EnvMonitor', 'QT_project', 'QT上位机进度文档.md')]
+    p = cfg_path or os.path.join(ROOT, BOARDCFG_REL)
+    try:
+        with open(p, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+        docs = ((cfg.get('extra') or {}).get('progress_docs') or [])
+        if docs:
+            return list(docs)
+    except Exception:
+        pass
+    return default
+
+
+def stage_of(card):
+    """取阶段号与阶段名。认不出编号就返回 ('', 卡名)。"""
+    m = _STAGE_RE.search(card.get('n') or '')
+    if not m:
+        return ('', (card.get('n') or '').strip())
+    return (m.group(1), m.group(2).strip())
+
+
+def _doc_head(title, subtitle, n_stage):
+    return ['# %s · 进度文档' % title, '',
+            '> %s' % subtitle,
+            '> 阶段与验收判据的**顺序**来自「🧭 项目引导」（本工程 %d 个阶段），'
+            '改了那边可以重新生成本骨架（已有内容不会被覆盖，除非加 `--force`）。' % n_stage,
+            '']
+
+
+def render_progress_skeleton(proj, cards):
+    """C1：按「🧭 项目引导」的阶段卡铺一份可填的进度文档骨架。
+
+    四块：① 阶段总表（状态/证据/日期待你填）② 各阶段明细（里程碑 + 每条动作的验收判据）
+    ③ 本阶段完成判定 ④ 待填表。只搬卡里的 n/d/g/f，不内置任何手写内容。
+    """
+    title = proj.get('name') or proj.get('tag') or '未命名工程'
+    out = _doc_head(title,
+                    '这份文档**只由你自己写**：工具箱只铺骨架、把每一步的验收判据抄进来，'
+                    '状态与证据要你自己填。', len(cards))
+    out.append('## 1. 阶段总表（每完成一个阶段就来勾一次）')
+    out.append('')
+    out.append('| 阶段 | 阶段名 | 状态 | 证据（怎么证明做完了） | 日期 |')
+    out.append('|---|---|---|---|---|')
+    for c in cards:
+        st, cname = stage_of(c)
+        out.append('| %s | %s | ☐ 未开始 | | |' % (st or '—', _cell(cname)))
+    out.append('')
+    out.append('## 2. 各阶段明细（里程碑 + 验收判据）')
+    out.append('')
+    for c in cards:
+        st, cname = stage_of(c)
+        out.append('### 阶段 %s｜%s' % (st or '—', cname))
+        out.append('')
+        if c.get('d'):
+            out.append('**这一阶段要交什么**：%s' % _cell(c['d']))
+            out.append('')
+        out.append('| 里程碑（每个动作） | 验收判据（怎么算过） | 完成 |')
+        out.append('|---|---|---|')
+        for step in (c.get('f') or []):
+            if not isinstance(step, (list, tuple)) or not step:
+                continue
+            name = _cell(step[0])
+            if not name:
+                continue
+            ver = _cell(step[4] if len(step) > 4 else '')
+            out.append('| %s | %s | ☐ |'
+                       % (name, ver or '（手册这条没写验收 —— 自己定一条看得见的证据）'))
+        out.append('')
+        if c.get('g'):
+            out.append('**本阶段完成判定**：%s' % _cell(c['g']))
+            out.append('')
+    out.append('## 3. 待填表（随手记：今天做了什么、卡在哪）')
+    out.append('')
+    out.append('| 日期 | 做了什么 | 证据 / 现象 | 卡住的地方 | 下一步 |')
+    out.append('|---|---|---|---|---|')
+    out.append('|  |  |  |  |  |')
+    out.append('')
+    return '\n'.join(out)
+
+
+def render_scaffold_progress_doc(out_dir, board, periph_names, tasks, style):
+    """C2：给"刚生成的工程骨架"铺一份进度文档 —— 阶段就是骨架自己的阶段安排。
+
+    骨架的阶段（与 main.c 里的注释编号一致）：
+      阶段 1 时钟与滴答 → 阶段 2 基础外设（逐个 init）→ 阶段 3 FreeRTOS 任务 / 主循环。
+    """
+    title = os.path.basename(os.path.abspath(out_dir)) or '新建工程'
+    out = _doc_head(title,
+                    '这是生成工程骨架时顺手铺下的进度文档 —— 起手助手里填的**阶段安排**'
+                    '（外设 / 任务）已经落到下面，你只管填状态与证据。', 3)
+    out.append('| 阶段 | 阶段名 | 状态 | 证据（怎么证明做完了） | 日期 |')
+    out.append('|---|---|---|---|---|')
+    out.append('| 1 | 时钟与滴答 | ☐ 未开始 | | |')
+    out.append('| 2 | 基础外设逐个 init | ☐ 未开始 | | |')
+    out.append('| 3 | %s | ☐ 未开始 | | |'
+               % ('FreeRTOS 任务跑起来' if tasks else '主循环（裸机）'))
+    out.append('')
+    out.append('## 阶段 1｜时钟与滴答')
+    out.append('')
+    out.append('| 里程碑（每个动作） | 验收判据（怎么算过） | 完成 |')
+    out.append('|---|---|---|')
+    out.append('| HSE → PLL → 168MHz | Keil 编译 **0 Error 0 Warning**，下载后能跑 | ☐ |')
+    out.append('| 滴答起来（SysTick 或 FreeRTOS tick） | 串口能打印一行，或 LED 闪烁周期与预期一致 | ☐ |')
+    out.append('')
+    out.append('## 阶段 2｜基础外设逐个 init')
+    out.append('')
+    out.append('| 里程碑（每个动作） | 验收判据（怎么算过） | 完成 |')
+    out.append('|---|---|---|')
+    if periph_names:
+        for name in periph_names:
+            out.append('| `%s` 初始化 | 能看见现象（LED 可控 / 串口打印 / 按键响应 / 波形 …），'
+                       '按你板上的实际接线核一遍 | ☐ |' % _cell(name))
+    else:
+        out.append('| （本次没选外设） | — | ☐ |')
+    out.append('')
+    out.append('## 阶段 3｜%s' % ('FreeRTOS 任务框架' if tasks else '主循环'))
+    out.append('')
+    out.append('| 里程碑（每个动作） | 验收判据（怎么算过） | 完成 |')
+    out.append('|---|---|---|')
+    if tasks:
+        for t in tasks:
+            parts = t.split(':')
+            out.append('| 任务 `%s`（优先级 %s，栈 %s 字） | 任务里打印心跳、'
+                       '`uxTaskGetStackHighWaterMark` 有余量 | ☐ |'
+                       % (_cell(parts[0]), _cell(parts[1] if len(parts) > 1 else '?'),
+                          _cell(parts[2] if len(parts) > 2 else '?')))
+        out.append('| `vTaskStartScheduler()` 之后 main 不再往下走 | 各任务都按周期跑起来，'
+                   '没有任务卡死或饿死 | ☐ |')
+    else:
+        out.append('| 主循环里各步骤按序执行 | 每步有可观测输出，不靠"应该没问题" | ☐ |')
+    out.append('')
+    out.append('## 待填表（随手记：今天做了什么、卡在哪）')
+    out.append('')
+    out.append('| 日期 | 做了什么 | 证据 / 现象 | 卡住的地方 | 下一步 |')
+    out.append('|---|---|---|---|---|')
+    out.append('|  |  |  |  |  |')
+    out.append('')
+    return '\n'.join(out)
+
+
+def write_doc_if_room(path, text):
+    """已存在且非空就不覆盖（那是你自己写过的内容）。返回 ('written'|'kept')。"""
+    if os.path.exists(path) and os.path.getsize(path) > 0:
+        return 'kept'
+    d = os.path.dirname(os.path.abspath(path))
+    if d:
+        os.makedirs(d, exist_ok=True)
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(text)
+    return 'written'
+
+
+def gen_standard_progress_docs(force=False, quiet=False):
+    """C1：给 EnviMonitor 里那三份进度文档铺骨架。返回 (写入数, 保留数)。"""
+    ds = load_dataset()
+    if not ds:
+        print('读不到 %s，没法按「项目引导」铺骨架。' % DATASET_REL)
+        return (0, 0)
+    projs = ds.get('proj') or []
+    docs = progress_doc_paths()
+    if not projs or len(projs) != len(docs):
+        print('工程清单（%d）与进度文档（%d）对不上，先把板级配置的 progress_docs 补齐。'
+              % (len(projs), len(docs)))
+        return (0, 0)
+    written = kept = 0
+    for proj, rel in zip(projs, docs):
+        cards = [c for c in (ds.get('all') or [])
+                 if c.get('_b') and c.get('_b') == proj.get('tag')]
+        path = os.path.join(ROOT, rel)
+        if os.path.exists(path) and os.path.getsize(path) > 0 and not force:
+            kept += 1
+            if not quiet:
+                print('  保留（已有内容，不动）：%s' % rel)
+            continue
+        r = write_doc_if_room(path, render_progress_skeleton(proj, cards))
+        written += 1 if r == 'written' else 0
+        if not quiet:
+            print('  写入 %-46s（%s · %d 个阶段）' % (rel, proj.get('tag'), len(cards)))
+    print('进度文档骨架：写入 %d 份，保留 %d 份。' % (written, kept))
+    return (written, kept)
+
+
+def write_scaffold_progress_doc(out_dir, board, periph_names, tasks, style):
+    """C2：生成骨架时顺手铺进度文档（放在工程根下，名字 = 目录名 + 进度文档.md）。"""
+    name = '%s进度文档.md' % (os.path.basename(os.path.abspath(out_dir)) or '新建工程')
+    path = os.path.join(out_dir, name)
+    r = write_doc_if_room(path,
+                          render_scaffold_progress_doc(out_dir, board, periph_names, tasks, style))
+    print('  进度文档：%s' % ('%s（已存在且有内容，未覆盖）' % name if r == 'kept'
+                          else '%s（按起手助手的阶段安排铺好）' % name))
+    return path
+
+
 def selftest():
     """自检「骨架阶段提示」的结构（错例 + 反例），生成到临时目录，不碰仓库。
 
@@ -941,6 +1184,54 @@ def selftest():
             expect(n == 1, '%s·%s：生成物只有一个 int main（实际 %d 个）' % (name, label, n))
             expect('for (;;)' in body, '%s·%s：有主循环（兜底放着自己的逻辑）' % (name, label))
 
+    # C2：生成骨架时顺手铺的进度文档 —— 错例（阶段 1/2/3 + 选的外设 + 任务都落进去）/
+    #     反例（没有任务时不许出现 FreeRTOS 任务那一段；已有内容的文档不许被覆盖）
+    d = os.path.join(tmp, 'doc_case')
+    with contextlib.redirect_stdout(io.StringIO()):
+        run('F407ZE', ['usart', 'led'], ['Led:2:128'], d, style='driver')
+    doc = os.path.join(d, 'doc_case进度文档.md')
+    body = open(doc, encoding='utf-8').read() if os.path.exists(doc) else ''
+    expect(os.path.exists(doc), 'C2 生成骨架时铺出了进度文档（%s）' % os.path.basename(doc))
+    for k in ('## 阶段 1｜时钟与滴答', '## 阶段 2｜基础外设逐个 init',
+              '## 阶段 3｜FreeRTOS 任务框架', '## 待填表'):
+        expect(k in body, 'C2 进度文档含"%s"' % k)
+    expect('`usart` 初始化' in body and '`led` 初始化' in body,
+           'C2 起手助手选的外设落进了进度文档（usart / led）')
+    expect('任务 `Led`（优先级 2，栈 128 字）' in body,
+           'C2 起手助手填的任务落进了进度文档（名字/优先级/栈都在）')
+
+    d2 = os.path.join(tmp, 'doc_bare')
+    with contextlib.redirect_stdout(io.StringIO()):
+        run('F407ZE', ['usart'], [], d2, style='driver')
+    body2 = open(os.path.join(d2, 'doc_bare进度文档.md'), encoding='utf-8').read()
+    expect('FreeRTOS 任务框架' not in body2 and '主循环' in body2,
+           'C2 反例：没给任务时进度文档写"主循环"，不出现 FreeRTOS 任务框架')
+    # 用户自己写过内容的文档不许被覆盖（重跑一次生成，内容应保持）
+    with open(doc, 'a', encoding='utf-8') as f:
+        f.write('\nUSER_WROTE_THIS\n')
+    with contextlib.redirect_stdout(io.StringIO()):
+        run('F407ZE', ['usart', 'led'], ['Led:2:128'], d, style='driver')
+    kept = open(doc, encoding='utf-8').read()
+    expect('USER_WROTE_THIS' in kept, 'C2 反例：已有内容的进度文档不会被覆盖（保留用户内容）')
+
+    # C1：三份进度文档骨架 —— 错例（三份都铺出来且阶段数对得上「项目引导」）/
+    #     反例（工程清单与文档清单对不上时不许乱铺）
+    ds = load_dataset()
+    docs_rel = progress_doc_paths()
+    expect(ds is not None and len(ds.get('proj') or []) == 3,
+           'C1 读得到 dataset.json 且项目引导有 3 个工程')
+    if ds:
+        expect(len(docs_rel) == 3, 'C1 进度文档清单有 3 份（板级配置 extra.progress_docs）')
+        for proj, rel in zip(ds['proj'], docs_rel):
+            cards = [c for c in ds['all'] if c.get('_b') == proj.get('tag')]
+            skel = render_progress_skeleton(proj, cards)
+            expect(skel.count('### 阶段 ') == len(cards),
+                   'C1 %s：骨架里阶段明细数 = 项目引导阶段卡数（%d）' % (proj.get('tag'), len(cards)))
+            expect('| 阶段 | 阶段名 | 状态 | 证据（怎么证明做完了） | 日期 |' in skel
+                   and '待填表' in skel and '验收判据（怎么算过）' in skel
+                   and '本阶段完成判定' in skel,
+                   'C1 %s：骨架含总表 / 里程碑 / 验收判据 / 待填表' % proj.get('tag'))
+
     shutil.rmtree(tmp, ignore_errors=True)
     print()
     print('失败项 %d' % len(fails))
@@ -958,12 +1249,21 @@ def main():
                         help='生成风格：driver=调用驱动库（默认），register=寄存器操作')
     parser.add_argument('--list', action='store_true', help='列出可用外设')
     parser.add_argument('--list-presets', action='store_true', help='列出可用预设')
+    parser.add_argument('--progress-docs', action='store_true',
+                        help='C1：给 EnviMonitor 里那三份工程进度文档铺可填骨架'
+                             '（按「项目引导」的阶段顺序；已有内容的文档不动）')
+    parser.add_argument('--force', action='store_true',
+                        help='配合 --progress-docs：连已有内容的文档也重铺（会覆盖，慎用）')
     parser.add_argument('--selftest', action='store_true',
-                        help='自检：生成到临时目录，核对「骨架阶段提示」结构（不碰仓库）')
+                        help='自检：生成到临时目录，核对「骨架阶段提示」与进度文档骨架（不碰仓库）')
     args = parser.parse_args()
 
     if args.selftest:
         sys.exit(selftest())
+
+    if args.progress_docs:
+        w, _k = gen_standard_progress_docs(force=args.force)
+        sys.exit(0 if w or not args.force else 1)
 
     if args.list:
         print('可用外设（driver 风格，%d 个）：' % len(PERIPHERALS))
