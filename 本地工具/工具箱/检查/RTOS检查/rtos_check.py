@@ -1679,6 +1679,27 @@ def selftest():
            and set(j['boards'][0]['findings'][0]) == {'level', 'loc', 'msg', 'key'},
            '、'.join(sorted(j['boards'][0])))
 
+        # H9：**语义**断言 —— 面板按 severe/warn 上红黄线；"字段名/类型"契约抓不到"语义漂移"
+        #（比如 severe 一不小心把"注意"也算进去，卡片就会把"注意"报成红）。按定义复核：
+        # severe 只数"严重"、warn 只数"注意"、两者之和 = findings 总数。
+        _bd = j['boards'][0]
+        ck('H9 语义：severe 只数「严重」、warn 只数「注意」，两者之和 = findings 总数',
+           _bd['severe'] == sum(1 for f in _bd['findings'] if f['level'] == '严重')
+           and _bd['warn'] == sum(1 for f in _bd['findings'] if f['level'] == '注意')
+           and _bd['severe'] + _bd['warn'] == len(_bd['findings']),
+           'sev=%d warn=%d all=%d' % (_bd['severe'], _bd['warn'], len(_bd['findings'])))
+        # 反例：只有「注意」时 ok 必须为 True（ok 只看 severe）
+        j_note = to_json([('板Z', None, [('注意', 'l', 'm', 'k')], [])])
+        ck('H9 反例：只有「注意」时 ok 为 True（ok 只看 severe，不把注意当红）',
+           j_note['ok'] is True and j_note['boards'][0]['severe'] == 0
+           and j_note['boards'][0]['warn'] == 1)
+        # 错例：把「注意」也算进 severe，按定义复核必须判它不合格（否则等于没测）
+        j_mix = to_json([('板Y', None, [('严重', 'a', 'm', 'x'), ('注意', 'b', 'm', 'y')], [])])
+        _wrong = {'severe': 2, 'warn': 0, 'findings': j_mix['boards'][0]['findings']}
+        ck('H9 错例：把「注意」错记进 severe 时，按定义复核应判不合格',
+           _wrong['severe'] != sum(1 for f in _wrong['findings'] if f['level'] == '严重'),
+           'sev=%d warn=%d' % (_wrong['severe'], _wrong['warn']))
+
         # ---- C1+C2 板级配置读取器（换装口）：正例读到 2 块板 / 反例配置被改名后返回 None ----
         if boardcfg is None:
             ck('板级配置读取器可用（boardcfg 导入成功）', False, 'boardcfg 导入失败')

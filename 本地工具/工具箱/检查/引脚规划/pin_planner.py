@@ -1076,6 +1076,29 @@ def selftest():
            and isinstance(j['boards'][0]['pin_detail'], dict),
            '、'.join(sorted(j['boards'][0])))
 
+        # H9：**语义**断言 —— 面板拿 conflicts 上红黄线，可 B1 只改了它的"语义"（从"声明重叠
+        # 全算"改成"只算真会撞"），字段名/类型没变，光靠上面的契约断言抓不到。
+        # 真会撞的每一项都必须同时满足：① 同脚 ≥2 个占用者；② 每个占用者都"真启用"（在 live_b 里）；
+        # ③ 与"仅声明重叠"不相交；④ 是 occupied 同脚占用者的子集。
+        _c = j['boards'][0]['conflicts']
+        _d = j['boards'][0]['conflicts_decl']
+        _occ = j['boards'][0]['occupied']
+        ck('H9 语义：conflicts 每项 ≥2 占用者、占用者全"真启用"、不与声明重叠相交、是 occupied 子集',
+           _c
+           and all(len(v) >= 2 for v in _c.values())
+           and all(b in live_b for v in _c.values() for b in v)
+           and not (set(_c) & set(_d))
+           and all(set(v) <= set(_occ.get(k, [])) for k, v in _c.items()),
+           '真撞=%s live=%s' % (_c, sorted(live_b)))
+        # 错例：把"没启用的占用者"混进 conflicts，这条语义断言必须能抓出来（否则等于没测）。
+        _mixed = dict(_c)
+        _mixed.update(_d)
+        ck('H9 错例：把"声明重叠（没启用）"的脚混进 conflicts，语义断言应判它不合格',
+           not all(b in live_b for v in _mixed.values() for b in v))
+        ck('H9 反例：conflicts_decl 每项都必须**至少有一个**占用者没启用（否则该进真撞栏）',
+           _d and all(any(b not in live_b for b in v) for v in _d.values()),
+           str(_d))
+
         # ---- C1+C2 板级配置读取器（换装口）：正例读到 2 块板 / 反例配置被改名后返回 None ----
         if boardcfg is None:
             ck('板级配置读取器可用（boardcfg 导入成功）', False, 'boardcfg 导入失败')

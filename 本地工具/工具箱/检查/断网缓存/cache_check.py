@@ -657,6 +657,22 @@ def selftest():
        and set(j['findings'][0]) == {'level', 'loc', 'msg', 'key'},
        '、'.join(sorted(j)))
 
+    # H9：**语义**断言 —— 面板按 hold_seconds / 容量上红黄线；"字段名/类型"契约抓不到语义漂移。
+    # hold_seconds 的定义 = 容量条数 × 上报周期(秒)：**换一个非 1000ms 的周期**复核一遍，
+    # 公式被改（漏 /1000、或直接把条数当秒数）立刻红。
+    _f2, _s2 = run(LOG_SAMPLE, FLASH_SAMPLE, period_ms=2000)
+    ck('H9 语义：hold_seconds = 容量条数 × 上报周期(秒)（换 2s 周期复核，防公式被改）',
+       abs(_s2['hold_seconds'] - _s2['capacity_slots'] * 2.0) < 0.01,
+       'hold=%s slots=%s' % (_s2.get('hold_seconds'), _s2.get('capacity_slots')))
+    ck('H9 语义：ok 只看 severe；severe/warn 按 level 两分、notes = findings 总数',
+       j['ok'] == (sum(1 for x in j['findings'] if x['level'] == '严重') == 0)
+       and j['severe'] == sum(1 for x in j['findings'] if x['level'] == '严重')
+       and j['warn'] == sum(1 for x in j['findings'] if x['level'] == '注意')
+       and j['notes'] == len(j['findings']))
+    ck('H9 错例：把 hold_seconds 当成"容量条数"（漏 ×周期/1000）时，按定义复核判不合格',
+       abs(_s2['capacity_slots'] - _s2['hold_seconds']) >= 0.01,
+       'slots=%s hold=%s' % (_s2['capacity_slots'], _s2['hold_seconds']))
+
     # C1+C2 板级配置读取器（换装口）：正例读到 2 块板 / 反例配置被改名后返回 None
     if boardcfg is None:
         ck('板级配置读取器可用（boardcfg 导入成功）', False, 'boardcfg 导入失败')
