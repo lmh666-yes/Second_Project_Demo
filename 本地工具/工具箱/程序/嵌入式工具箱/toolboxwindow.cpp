@@ -170,6 +170,17 @@ QList<ToolboxWindow::PageDef> ToolboxWindow::discoverPlugins(const QString &tool
     return out;
 }
 
+/* B3：闸门要的插件清单 —— (侧栏页名, 脚本绝对路径)，顺序 = 侧栏顺序。
+   只是把 discoverPlugins 的结果转个形状，不另立口径。 */
+QList<QPair<QString, QString>> ToolboxWindow::pluginShells(const QString &toolsDir)
+{
+    QList<QPair<QString, QString>> out;
+    for (const PageDef &d : discoverPlugins(toolsDir))
+        if (!d.plugin.isEmpty())
+            out.append(qMakePair(d.name, d.plugin));
+    return out;
+}
+
 const QList<ToolboxWindow::PageDef> &ToolboxWindow::pageDefs()
 {
     static const QList<PageDef> defs = []() {

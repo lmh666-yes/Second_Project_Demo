@@ -59,6 +59,12 @@ public:
     static QStringList pageNames();
     static int          pageCount();
 
+    /* B3：闸门要的那份插件清单 —— (侧栏页名, 插件脚本绝对路径) 列表，顺序同侧栏。
+       与 discoverPlugins 同源，免得"侧栏一份口径、闸门另一份口径"。
+       做成 public static 是为了让 main.cpp 的 --selftest 能把插件壳**自动收进闸门**
+       （之前是手工往表里补一行：B1 没做全的那半）。 */
+    static QList<QPair<QString, QString>> pluginShells(const QString &toolsDir);
+
 private:
     /* 页面表的载体：分组名 + 侧栏项名 + 该页的构造函数。构造函数在下面 pageDefs() 里
        一次列全，构造窗口时按它逐页建、逐组插分组头。 */

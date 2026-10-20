@@ -13,6 +13,7 @@
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QLayout>
+#include <QPair>
 #include <QProcess>
 #include <QPushButton>
 #include <QScrollArea>
@@ -25,6 +26,7 @@
 #include <QTabWidget>
 #include <QTextStream>
 #include <QTimer>
+#include <QVector>
 
 #include <algorithm>
 #include <functional>
@@ -272,21 +274,53 @@ static int runCli(const QStringList &args)
             /* B2：JSON 契约 —— 跑一遍各脚本的 --json，比"统一信封 + 逐脚本字段"，
                谁改字段名谁红（点名校验器在 检查/契约校验/json_contract.py）。 */
             {"契约校验",     "检查/契约校验/json_contract.py"},
+            /* B3：脚手架与平台清单 —— 前者"生成检查器"，后者"列出全平台家底"。
+               它们的 --selftest 都是真跑一遍（生成→发现→登记、解析→跑通→渲染），
+               不挂进闸门就会"这一轮加的东西，只在手动跑的时候才验"。 */
+            {"新检查器脚手架", "检查/脚手架/new_checker.py"},
+            {"平台清单",     "检查/平台清单/platform_manifest.py"},
             /* 生成器也挂进来：它的"骨架阶段提示"曾出现"两种风格不一致 / 无任务时阶段3缺号"，
                靠自检钉住输出结构，别靠人想起来去比对。 */
             {"工程模板生成", "程序/工程模板/project_scaffold.py"},
         };
-        out << QString::fromUtf8("\n── 各脚本自检（--selftest）：19 个脚本 + 工程模板生成器 ──\n");
+        /* B3：这一轮要跑什么 = 上面的**显式表** + 下面**自动发现的插件壳**。
+           为什么需要自动那一半：B1 只做到"新加一个检查器目录 → 进侧栏"，
+           要它进这道闸门还得手工往表里补一行 —— 补漏了就"这一轮的检查器没人踩"。
+           插件壳的出口是统一的（--manifest / --selftest），所以按目录自动收；
+           与显式表按脚本路径去重（「示例插件」两边都有，只跑一次）。 */
+        QVector<QPair<QString, QString>> run;
+        for (const Checker &c : checkers)
+            run.append(qMakePair(QString::fromUtf8(c.name),
+                                 tdir.isEmpty()
+                                     ? QString()
+                                     : QDir(tdir).filePath(QString::fromUtf8(c.rel))));
+        const int explicitN = run.size();
+        QSet<QString> seen;
+        for (const QPair<QString, QString> &t : run)
+            if (!t.second.isEmpty())
+                seen.insert(QDir::cleanPath(t.second));
+        if (!tdir.isEmpty()) {
+            const QList<QPair<QString, QString>> shells = ToolboxWindow::pluginShells(tdir);
+            for (const QPair<QString, QString> &p : shells) {
+                const QString key = QDir::cleanPath(p.second);
+                if (key.isEmpty() || seen.contains(key))
+                    continue;                  /* 显式表里列过了 → 不重复跑 */
+                seen.insert(key);
+                run.append(p);
+            }
+        }
+        out << QString::fromUtf8(
+                   "\n── 各脚本自检（--selftest）：%1 项（显式表 %2 + 自动发现的插件壳 %3）──\n")
+                   .arg(run.size()).arg(explicitN).arg(run.size() - explicitN);
         out.flush();
         const QStringList py = PyFind::detect();
         if (py.isEmpty()) {
             out << QString::fromUtf8("FAIL 未找到 Python，跑不了各检查器自检\n");
             ++fail;
         } else {
-            for (const Checker &c : checkers) {
-                const QString script = tdir.isEmpty()
-                                           ? QString()
-                                           : QDir(tdir).filePath(QString::fromUtf8(c.rel));
+            for (const QPair<QString, QString> &t : run) {
+                const QString &cname = t.first;
+                const QString &script = t.second;
                 QString note;
                 int rc = -1;                        /* 脚本退出码；-1 = 没跑起来 */
                 if (script.isEmpty() || !QFile::exists(script)) {
@@ -309,10 +343,10 @@ static int runCli(const QStringList &args)
                             for (const QString &ln :
                                  QString::fromUtf8(p.readAllStandardOutput())
                                      .split(QLatin1Char('\n'))) {
-                                const QString t = ln.trimmed();
-                                if (skippedRun ? t.startsWith(QStringLiteral("SKIP"))
-                                               : t.contains(QStringLiteral("FAIL"))) {
-                                    note = t;   /* 失败摘 FAIL 行；跳过摘 SKIP 行 */
+                                const QString s = ln.trimmed();
+                                if (skippedRun ? s.startsWith(QStringLiteral("SKIP"))
+                                               : s.contains(QStringLiteral("FAIL"))) {
+                                    note = s;   /* 失败摘 FAIL 行；跳过摘 SKIP 行 */
                                     break;
                                 }
                             }
@@ -320,19 +354,26 @@ static int runCli(const QStringList &args)
                     }
                 }
                 if (rc == 3) {
-                    out << QString::fromUtf8("SKIP ") << QString::fromUtf8(c.name)
+                    out << QString::fromUtf8("SKIP ") << cname
                         << (note.isEmpty() ? QString()
                                            : QString::fromUtf8("（%1）").arg(note)) << "\n";
                     ++skipped;
                 } else {
                     const bool ok = (rc == 0);
                     out << (ok ? QString::fromUtf8("PASS ") : QString::fromUtf8("FAIL "))
-                        << QString::fromUtf8(c.name)
+                        << cname
                         << (note.isEmpty() ? QString()
                                            : QString::fromUtf8("（%1）").arg(note)) << "\n";
                     if (!ok)
                         ++fail;
                 }
+            }
+            /* B3：发现链本身要断言 —— 万一 `检查/_manifest_all.py` 坏了，
+               autoN 会**悄悄**变成 0（闸门照样打 PASS 行），"新检查器自动进闸门"就成了空话。 */
+            if (run.size() - explicitN < 1) {
+                out << QString::fromUtf8(
+                           "FAIL 插件壳自动发现：一个都没发现（检查 _manifest_all.py / 插件目录）\n");
+                ++fail;
             }
         }
     }

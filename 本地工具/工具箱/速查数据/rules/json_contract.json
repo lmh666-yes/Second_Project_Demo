@@ -48,6 +48,10 @@
      "why": "没有 --json（生成工程骨架，输出是文件）"},
     {"script": "检查/覆盖率/coverage_board.py",
      "why": "有 --json 但会**真跑全部脚本**（分钟级）——不进闸门；信封三键已补齐，它自己的 --selftest 守自己"},
+    {"script": "检查/平台清单/platform_manifest.py",
+     "why": "同上一档：有 --json 但会**真跑全部脚本**（分钟级）——不进闸门；B4 的清单页正靠这份数据，它自己的 --selftest 守自己"},
+    {"script": "检查/脚手架/new_checker.py",
+     "why": "没有 --json（它**生成**脚本，输出是文件 + 提示；生成的检查器各自带 --json 并由生成时自动登记）"},
     {"script": "检查/_plugin_host.py 与各检查目录的 check.py 壳",
      "why": "插件壳没有 --json（它们转发上游脚本的输出）"}
   ]
