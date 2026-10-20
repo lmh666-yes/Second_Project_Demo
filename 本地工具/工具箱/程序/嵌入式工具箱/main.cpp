@@ -255,11 +255,24 @@ static int runCli(const QStringList &args)
             {"LoRa 检查",    "检查/LoRa检查/lora_check.py"},
             {"协议校验",     "检查/协议校验/protocol_check.py"},
             {"断网缓存",     "检查/断网缓存/cache_check.py"},
+            /* 2026-10-20：本轮新增的脚本也挂进这道闸门 —— 它们各自都有 --selftest，
+               不挂进来就等于"新加的自检没人踩"，只在 coverage_board 汇总时才动一下。
+               注意：链路仿真的「全链路时序」是 chain_sim.py（link_sim.py 仍管造帧）。 */
+            {"代码索引",     "检查/代码索引/code_index.py"},
+            {"协议对照",     "检查/协议对照/host_compare.py"},
+            {"工程配置",     "检查/工程配置/config_audit.py"},
+            {"阶段判定",     "检查/阶段判定/stage_status.py"},
+            {"链路时序",     "检查/链路仿真/chain_sim.py"},
+            {"构建烧录",     "检查/构建烧录/build_flash.py"},
+            {"阶段自检生成", "检查/构建烧录/gen_selftest.py"},
+            {"报告生成",     "检查/报告/report_gen.py"},
+            {"覆盖率看板",   "检查/覆盖率/coverage_board.py"},
+            {"示例插件",     "检查/示例插件/check.py"},
             /* 生成器也挂进来：它的"骨架阶段提示"曾出现"两种风格不一致 / 无任务时阶段3缺号"，
                靠自检钉住输出结构，别靠人想起来去比对。 */
             {"工程模板生成", "程序/工程模板/project_scaffold.py"},
         };
-        out << QString::fromUtf8("\n── 各脚本自检（--selftest）：8 个检查器 + 工程模板生成器 ──\n");
+        out << QString::fromUtf8("\n── 各脚本自检（--selftest）：18 个脚本 + 工程模板生成器 ──\n");
         out.flush();
         const QStringList py = PyFind::detect();
         if (py.isEmpty()) {
