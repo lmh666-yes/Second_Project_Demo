@@ -23,7 +23,9 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonDocument>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QProcess>
 #include <QFile>
@@ -93,12 +95,65 @@ static QJsonObject readPluginManifest(const QString &script)
     return QJsonDocument::fromJson(proc.readAllStandardOutput()).object();
 }
 
+/* B1：插件 manifest 缓存 —— 发现阶段（discoverPlugins）已经把每个插件的元信息读回来了，
+   建页阶段（buildPluginPage）**不该再起一次 python 进程**：那是冷启动的第二笔大开销
+   （7 个插件 ≈ 1.4s，实测过）。这里按脚本绝对路径存，发现阶段填、建页阶段取；
+   取不到才回落到"当场读一次"（保证单独用 buildPluginPage 时也对）。 */
+static QHash<QString, QJsonObject> g_pluginManifests;
+
+static QJsonObject pluginManifest(const QString &script)
+{
+    if (g_pluginManifests.contains(script))
+        return g_pluginManifests.value(script);
+    return readPluginManifest(script);
+}
+
+/* B1 性能修补：原来**逐个插件起一个 python 进程**读 manifest —— 插件从 1 个涨到 7 个后，
+   冷启动多花 ~1.5-2s（实测 24 页 2574ms，超了 1500ms 那条线）。
+   改成**一个** python 进程把 `检查/_manifest_all.py` 跑一遍，一次拿回全部元信息。
+   约定没变（每个插件照样回答 `--manifest`），只是"问"的方式从挨个敲门变成一次问完。 */
+static QJsonArray readAllPluginManifests(const QString &toolsDir)
+{
+    QJsonArray out;
+    const QStringList py = PyFind::detect();
+    if (py.isEmpty() || toolsDir.isEmpty())
+        return out;
+    const QString driver = QDir(toolsDir).filePath(QStringLiteral("检查/_manifest_all.py"));
+    if (!QFileInfo::exists(driver))
+        return out;                     /* 没有批读脚本 → 调用方回落到逐个读 */
+    QProcess proc;
+    proc.setWorkingDirectory(QFileInfo(driver).absolutePath());
+    QStringList args = py.mid(1);
+    args << driver;
+    proc.start(py.value(0), args);
+    if (!proc.waitForFinished(15000))
+        return out;
+    return QJsonDocument::fromJson(proc.readAllStandardOutput()).array();
+}
+
 QList<ToolboxWindow::PageDef> ToolboxWindow::discoverPlugins(const QString &toolsDir)
 {
     QList<PageDef> out;
     if (toolsDir.isEmpty())
         return out;
     const QDir root(QDir(toolsDir).filePath(QStringLiteral("检查")));
+
+    /* 快路径：一次进程拿全部 manifest（B1） */
+    for (const QJsonValue &v : readAllPluginManifests(toolsDir)) {
+        const QJsonObject m = v.toObject();
+        const QString name = m.value(QStringLiteral("name")).toString().trimmed();
+        const QString script = m.value(QStringLiteral("script")).toString();
+        if (name.isEmpty() || script.isEmpty() || !QFileInfo::exists(script))
+            continue;
+        const QString group = m.value(QStringLiteral("group")).toString().trimmed();
+        g_pluginManifests.insert(script, m);       /* B1：留给建页阶段复用，省掉第二次 python */
+        out.append(PageDef{group.isEmpty() ? QStringLiteral("检查") : group,
+                           name, nullptr, script});
+    }
+    if (!out.isEmpty())
+        return out;
+
+    /* 兜底：批读脚本缺失 / 跑不起来时，仍按"逐目录敲门"来一遍（不至于一个插件都没有） */
     for (const QFileInfo &fi : root.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
         const QString script = QDir(fi.absoluteFilePath()).filePath(QStringLiteral("check.py"));
         if (!QFileInfo::exists(script))
@@ -106,8 +161,9 @@ QList<ToolboxWindow::PageDef> ToolboxWindow::discoverPlugins(const QString &tool
         const QJsonObject m = readPluginManifest(script);
         const QString name = m.value(QStringLiteral("name")).toString().trimmed();
         if (name.isEmpty())
-            continue;                       /* 没 manifest = 不是插件，跳过 */
+            continue;                   /* 没 manifest = 不是插件，跳过 */
         const QString group = m.value(QStringLiteral("group")).toString().trimmed();
+        g_pluginManifests.insert(script, m);
         out.append(PageDef{group.isEmpty() ? QStringLiteral("检查") : group,
                            name, nullptr, script});
     }
@@ -1084,7 +1140,7 @@ QWidget *ToolboxWindow::buildScaffoldPage()
    所以加检查器只写一个 py 文件 + 一个 --manifest，**不用改这里**。 */
 QWidget *ToolboxWindow::buildPluginPage(const QString &script)
 {
-    const QJsonObject m = readPluginManifest(script);
+    const QJsonObject m = pluginManifest(script);   /* 发现阶段已读过 → 命中缓存，不再起 python */
     const QString name = m.value(QStringLiteral("name")).toString().trimmed();
     QString desc = m.value(QStringLiteral("desc")).toString();
     if (desc.isEmpty())
