@@ -12476,7 +12476,13 @@ const $ = (id) => document.getElementById(id);
 
 /* ---------- 排序等级 ---------- */
 function orderOf(f) {
-  if (f._t === "guide") return -2;
+  /* A2：阶段卡（带 _b，只在「项目引导」板块里显示）自带「阶段 N」序号 —— 拿它当真序号，
+     不再靠 data_*.js 的数组顺序（重导顺序一变，阶段顺序就乱）。
+     它们只跟同板阶段卡一起排，所以给 0..9 不会扰动「资料查询 / 引导」两块的顺序与搜索基线。 */
+  if (f._t === "guide") {
+    const m = /阶段\s*(\d+)/.exec(f.n || "");
+    return m ? Number(m[1]) : -2;
+  }
   if (f._t === "flow") return -1;
   if (f._t === "datasheet") return 0;
   if (f._t === "chip" || f._t === "table") return 9;

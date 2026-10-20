@@ -245,6 +245,34 @@ def main():
                 os.remove(sbak)
                 os.utime(STAMP, stamp_times)
 
+    print("=== 5. 阶段卡序号是真值（A2：不靠数组顺序排） ===")
+    if not exists(DSET):
+        chk(False, "找得到 dataset.json", DSET)
+    else:
+        ds = json.loads(io.open(DSET, encoding="utf-8").read())
+        cards = [c for c in ds.get("all", []) if c.get("_b")]
+        per_board, bad_fmt = {}, []
+        for c in cards:
+            m = re.search(r"阶段\s*(\d+)", c.get("n") or "")
+            o = c.get("_ord")
+            if (not m) or (not isinstance(o, int)) or o < 0 or o != int(m.group(1)):
+                bad_fmt.append("%s（_ord=%s）" % ((c.get("n") or "")[:24], o))
+                continue
+            per_board.setdefault(c["_b"], {})[o] = c.get("n")
+        chk(len(cards) == 28, "阶段卡 28 张（板1 10 / 板2 10 / Qt 8）", str(len(cards)))
+        chk(not bad_fmt, "每张阶段卡的 _ord = 名字里的「阶段 N」且 ≥ 0", "；".join(bad_fmt[:4]))
+        seq_bad = ["%s：%s" % (b, sorted(mp)) for b, mp in sorted(per_board.items())
+                   if sorted(mp) != list(range(len(mp)))]
+        chk(not seq_bad, "每块板的阶段号 0..N 连续、不重号", "；".join(seq_bad))
+        # 验收那条"故意打乱导出顺序仍按 0~9"：把数组整个倒过来，再按 _ord 排 ——
+        # 各板顺序必须与原来一致（因为序号现在写在卡上，与数组位置无关）。
+        def _order(lst, b):
+            return [c["_ord"] for c in sorted([x for x in lst if x["_b"] == b],
+                                              key=lambda c: c["_ord"])]
+        rev = list(reversed(cards))
+        same = all(_order(rev, b) == _order(cards, b) for b in per_board)
+        chk(same, "把数组倒过来再按 _ord 排，各板阶段顺序不变（打乱顺序也乱不了）")
+
     print()
     print("=== 小结 ===")
     print("同步检查：%d 项通过 / %d 项失败 / %d 项跳过"
