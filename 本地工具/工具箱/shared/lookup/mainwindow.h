@@ -44,6 +44,10 @@ public:
        返回横幅文字（空 = 没显示）。不依赖窗口是否 show，便于命令行自检。 */
     QString nextStageHintFor(const QString &projectTag);
 
+    /* A3：供 --selftest 断言「跑这一步」按钮 —— 切到「项目引导」并选中该工程，
+       返回按钮**显示没显示**（板1 / 板2 能跑；「全部工程」不猜，必须不显示）。 */
+    bool canRunNextStageFor(const QString &projectTag);
+
 signals:
     /* 本页的「🌗 主题」按钮切的是工具箱全局主题（与侧栏那个是同一份 QSS），
        切完得让侧栏把自己的按钮文字刷新一下，否则两处显示不一致。 */
@@ -79,6 +83,9 @@ private:
     /* A1：跑一遍阶段判定并回写进度文档（脚本 stage_status.py --apply），
        跑完立刻刷新「下一步」横幅 —— 判完就知道该干哪一段了。 */
     void runStageJudge();
+    /* A3：把「下一步」从"跳过去"变成"跑起来" —— 直接调 build_flash.py --stage-run N，
+       走完 判定→生成自检→编译→烧录→串口→回写→归档，跑完把结果回填（横幅跟着走）。 */
+    void runNextStage();
     /* 复位「模块」筛选（按名字跳 / 报告里点条目名之前都调，免得条目被筛掉） */
     void resetModuleFilter();
     /* 按条目名跳转（收藏 / 最近 / 相关与联动都走这里） */
@@ -100,6 +107,7 @@ private:
     QPushButton  *m_btnRecent = nullptr;
     QPushButton  *m_nextHint = nullptr;      /* 项目引导的「下一步：阶段 N」入口 */
     QPushButton  *m_btnJudge = nullptr;      /* A1：判定阶段并回写进度文档 */
+    QPushButton  *m_btnRunStage = nullptr;   /* A3：跑这一步（触发 build_flash --stage-run N） */
     QLabel       *m_count  = nullptr;
     QListWidget  *m_list   = nullptr;
     QTextBrowser *m_detail = nullptr;

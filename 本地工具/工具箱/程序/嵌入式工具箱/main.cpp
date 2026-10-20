@@ -398,6 +398,19 @@ static int runCli(const QStringList &args)
         if (!hintOk)
             ++fail;
 
+        /* A3：横幅旁边多了个「跑这一步」按钮（直接触发 build_flash.py --stage-run N）。
+           错例：板1 有下一步 → 按钮必须显示；反例：「全部工程」不猜 → 必须不显示。 */
+        const bool runB1  = lw.canRunNextStageFor(QStringLiteral("板1"));
+        const bool runAll = lw.canRunNextStageFor(QStringLiteral("全部工程"));
+        const bool runOk  = runB1 && !runAll;
+        out << QString::fromUtf8("项目引导「跑这一步」按钮：")
+            << (runOk ? QString::fromUtf8("PASS") : QString::fromUtf8("FAIL"))
+            << QString::fromUtf8("（板1 → %1；全部工程 → %2）\n")
+                   .arg(runB1 ? QString::fromUtf8("显示") : QString::fromUtf8("不显示(错)"),
+                        runAll ? QString::fromUtf8("显示了(错)") : QString::fromUtf8("不显示"));
+        if (!runOk)
+            ++fail;
+
         /* H13：手册数据与网页版同源。Qt 版（内嵌页）读的是网页版那条链导出的
            dataset.json —— 断言它导出时写下的 meta.sourceHtml 正是网页版 HTML，
            且 meta.total 与 all 实际条数一致。这样"Qt 版看到的就是网页版同一份数据"

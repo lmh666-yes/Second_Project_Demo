@@ -264,6 +264,17 @@ void MainWindow::buildUi()
         connect(m_nextHint, &QPushButton::clicked, this, &MainWindow::jumpToNextStage);
         hintRow->addWidget(m_nextHint, 1);
 
+        /* A3：把「下一步」从"跳过去"变成"跑起来" —— 直接调 build_flash.py --stage-run N。
+           只在能真跑的工程（板1 / 板2）上出现；OTA / Qt 不在编译烧录的板表里，不显示。 */
+        m_btnRunStage = new QPushButton(QStringLiteral("跑这一步"), this);
+        m_btnRunStage->setToolTip(QStringLiteral(
+            "一条命令走完这一步：判定 → 生成阶段自检 → 接入检查 → 编译 → 烧录 →\n"
+            "串口收 STAGE<N>=PASS → 回写进度文档 → 归档快照（任一步失败即停并说清卡在哪）。\n"
+            "需要先在 Keil 里接入 board_selftest 一次 —— 工具不替你改代码/工程。"));
+        m_btnRunStage->hide();
+        connect(m_btnRunStage, &QPushButton::clicked, this, &MainWindow::runNextStage);
+        hintRow->addWidget(m_btnRunStage);
+
         m_btnJudge = new QPushButton(QStringLiteral("判定阶段"), this);
         m_btnJudge->setToolTip(QStringLiteral(
             "按代码现状判定各阶段（关键 API 有没有真调用），并回写进度文档的阶段总表"));
@@ -444,6 +455,8 @@ void MainWindow::updateNextStageHint()
     if (m_btnJudge)
         m_btnJudge->hide();
     m_nextHint->setProperty("stageNo", -1);
+    if (m_btnRunStage)
+        m_btnRunStage->hide();
     if (m_section != int(Card::Build))
         return;
     const QString tag = (m_module->currentIndex() > 0) ? m_module->currentText() : QString();
@@ -472,6 +485,17 @@ void MainWindow::updateNextStageHint()
     m_nextHint->show();
     if (m_btnJudge)
         m_btnJudge->show();
+    /* A3：「跑这一步」只在有下一步、且这块板真能跑（板1 / 板2）时才给。 */
+    if (m_btnRunStage) {
+        const bool runnable = (next >= 0)
+                              && (tag.startsWith(QStringLiteral("板1"))
+                                  || tag.startsWith(QStringLiteral("板2")));
+        m_btnRunStage->setEnabled(runnable);
+        if (runnable)
+            m_btnRunStage->show();
+        else
+            m_btnRunStage->hide();
+    }
 }
 
 /* A1：按代码现状判阶段，并把结果回写进度文档（脚本自己只改「状态/证据」两列，
@@ -519,6 +543,62 @@ void MainWindow::runStageJudge()
                 {script, QStringLiteral("--apply"), QStringLiteral("--board"), tag});
 }
 
+/* A3：跑这一步 —— 调 build_flash.py --stage-run N（一条命令走完一个阶段）。
+   跑完（可能已把进度文档回写了）刷新横幅，并把过程末尾几行摆给用户看。 */
+void MainWindow::runNextStage()
+{
+    if (!m_nextHint || !m_btnRunStage)
+        return;
+    const int no = m_nextHint->property("stageNo").toInt();
+    const QString tag = m_module->currentText();
+    if (no < 0 || tag.isEmpty())
+        return;
+    const QString tool = AppPaths::toolRoot();
+    if (tool.isEmpty())
+        return;
+    const QString script = QDir::cleanPath(
+        QDir(tool).filePath(QStringLiteral("../检查/构建烧录/build_flash.py")));
+    if (!QFileInfo::exists(script)) {
+        QMessageBox::warning(this, QStringLiteral("跑这一步"),
+                             QStringLiteral("找不到脚本：\n%1").arg(script));
+        return;
+    }
+
+    m_btnRunStage->setEnabled(false);
+    m_btnRunStage->setText(QStringLiteral("跑着呢…"));
+    auto *proc = new QProcess(this);
+    proc->setWorkingDirectory(QFileInfo(script).absolutePath());
+    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this, proc, no, tag](int code, QProcess::ExitStatus) {
+        QString body = (QString::fromUtf8(proc->readAllStandardOutput())
+                        + QString::fromUtf8(proc->readAllStandardError())).trimmed();
+        const QStringList ls = body.split(QLatin1Char('\n'));
+        if (ls.size() > 16)
+            body = QStringLiteral("…（只显示最后 16 行）\n") + ls.mid(ls.size() - 16).join(QLatin1Char('\n'));
+        m_btnRunStage->setEnabled(true);
+        m_btnRunStage->setText(QStringLiteral("跑这一步"));
+        updateNextStageHint();          /* 跑完可能已回写进度文档 → 横幅跟着走 */
+        const QString title = QStringLiteral("阶段验收：%1 · 阶段 %2").arg(tag).arg(no);
+        if (code == 0)
+            QMessageBox::information(this, title, body);
+        else
+            QMessageBox::warning(this, title,
+                                 QStringLiteral("这一步没跑完（退出码 %1）。\n\n%2")
+                                     .arg(code).arg(body));
+        proc->deleteLater();
+    });
+    connect(proc, &QProcess::errorOccurred, this, [this, proc](QProcess::ProcessError) {
+        m_btnRunStage->setEnabled(true);
+        m_btnRunStage->setText(QStringLiteral("跑这一步"));
+        QMessageBox::warning(this, QStringLiteral("跑这一步"),
+                             QStringLiteral("启动失败：没找到 Python。"));
+        proc->deleteLater();
+    });
+    proc->start(QStringLiteral("python"),
+                {script, QStringLiteral("--stage-run"), QString::number(no),
+                 QStringLiteral("--board"), tag});
+}
+
 /* 点「下一步」→ 在左侧列表里选中那张阶段卡（卡名形如「🏗 板1 · 阶段 3｜…」）。 */
 void MainWindow::jumpToNextStage()
 {
@@ -549,6 +629,17 @@ QString MainWindow::nextStageHintFor(const QString &projectTag)
     if (idx >= 0)
         m_module->setCurrentIndex(idx);      /* 触发 onModuleChanged → refreshList */
     return m_nextHint ? m_nextHint->text() : QString();
+}
+
+/* A3：自检入口 —— 切到项目引导 + 选中该工程，看「跑这一步」按钮显示没显示。
+   用 isHidden() 而不是 isVisible()：命令行自检不 show 窗口，isVisible() 恒为 false。 */
+bool MainWindow::canRunNextStageFor(const QString &projectTag)
+{
+    onSectionClicked(int(Card::Build));
+    const int idx = m_module->findText(projectTag);
+    if (idx >= 0)
+        m_module->setCurrentIndex(idx);
+    return m_btnRunStage && !m_btnRunStage->isHidden();
 }
 
 void MainWindow::showEvent(QShowEvent *e)
