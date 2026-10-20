@@ -359,13 +359,20 @@ def _search_header(name, dirs):
     return ''
 
 
-def check_compile(src, project_dir, uvprojx, keil_root, quiet=True):
-    """用 armcc 单独编译 src。返回 (ok, 日志, 用到的 -I 列表)。"""
+def check_compile(src, project_dir, uvprojx, keil_root, quiet=True, extra_incs=()):
+    """用 armcc 单独编译 src。返回 (ok, 日志, 用到的 -I 列表)。
+
+    `extra_incs`（D1 流程卡 demo 用）：额外优先的 -I 目录，排在工程自身的 IncludePath
+    之前 —— 因为流程卡的代码来自"手册"，一张卡的头文件可能落在另一块板的 FWLIB/inc 里
+    （两板同名头文件内容不同，先命中的胜出）。传进来的目录同时参与"缺头文件现场搜"，
+    免得跨板头文件被误报成缺。
+    """
     armcc = find_armcc(keil_root)
     if not armcc:
         return False, '没找到 armcc.exe（可用环境变量 KEIL_ROOT 指定 Keil 安装根）', []
     incs, defs = read_uvprojx(uvprojx)
-    args_inc = []
+    extra = [d for d in extra_incs if os.path.isdir(d)]
+    args_inc = list(extra)
     for rel in incs:
         p = os.path.normpath(os.path.join(project_dir, rel))
         if os.path.isdir(p):
@@ -418,7 +425,7 @@ def check_compile(src, project_dir, uvprojx, keil_root, quiet=True):
         if not m:
             return False, log, inc2
         miss = m.group(1)
-        hit = _search_header(miss, [project_dir] + glob.glob(
+        hit = _search_header(miss, [project_dir] + extra + glob.glob(
             os.path.join(keil_root, 'ARM', 'PACK', '*', '*', '**'), recursive=True))
         if not hit:
             return False, log, inc2
