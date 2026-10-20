@@ -464,7 +464,7 @@ def main():
                             'changed': n, 'error': err})
 
     if a.json:
-        print(json.dumps({'ok': True, 'rules': rules_path,
+        print(json.dumps({'tool': '阶段判定', 'schema': 1, 'ok': True, 'rules': rules_path,
                           'boards': [r for _, _, r in boards],
                           'applied': applied}, ensure_ascii=False))
         return

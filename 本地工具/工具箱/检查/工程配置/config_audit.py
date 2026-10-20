@@ -271,7 +271,8 @@ def main():
     ok = all(r[1] for r in rows) and all(r['ok'] for r in inj)
 
     if a.json:
-        print(json.dumps({'ok': ok, 'audit': [{'what': w, 'ok': o, 'detail': str(d)}
+        print(json.dumps({'tool': '工程配置', 'schema': 1, 'ok': ok,
+                          'audit': [{'what': w, 'ok': o, 'detail': str(d)}
                                               for w, o, d in rows],
                           'inject': inj}, ensure_ascii=False))
         sys.exit(0 if ok else 1)

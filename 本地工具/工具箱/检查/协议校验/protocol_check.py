@@ -968,7 +968,7 @@ def selftest():
 
         # B6 JSON 契约：面板读 boards[].issues 与 findings，字段名/类型一改就红
         _, j_findings, j_details = run(d, quiet=True)
-        j = {'tool': 'protocol_check', 'schema': '1.0',
+        j = {'tool': 'protocol_check', 'schema': 1,
              'ok': not any(f[0] == '严重' for f in j_findings),
              'boards': j_details,
              'findings': [{'lvl': f[0], 'loc': f[1], 'msg': f[2], 'cat': f[3]}
@@ -1101,7 +1101,7 @@ def main():
     if json_out:
         out = {
             'tool': 'protocol_check',
-            'schema': '1.0',
+            'schema': 1,
             'ok': ok,
             'boards': details,
             'findings': [

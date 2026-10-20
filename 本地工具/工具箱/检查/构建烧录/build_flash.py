@@ -1241,7 +1241,8 @@ def main():
         results['snapshot'] = d
 
     if a.json:
-        print(json.dumps({'ok': ok, 'boards': results['boards']}, ensure_ascii=False))
+        print(json.dumps({'tool': '构建烧录', 'schema': 1, 'ok': ok, 'boards': results['boards']},
+                         ensure_ascii=False))
     sys.exit(0 if ok else 1)
 
 

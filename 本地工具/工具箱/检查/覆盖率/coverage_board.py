@@ -138,9 +138,11 @@ def build_board(with_mutation=False):
     total_p = sum(r['passed'] for r in rows)
     total_f = sum(r['failed'] for r in rows)
     total_s = sum(1 for r in rows if r.get('skipped'))
-    return {'scripts': rows, 'total_passed': total_p, 'total_failed': total_f,
+    all_ok = all(r['ok'] for r in rows)
+    return {'tool': '覆盖率看板', 'schema': 1, 'ok': all_ok,
+            'scripts': rows, 'total_passed': total_p, 'total_failed': total_f,
             'total_skipped': total_s,
-            'all_ok': all(r['ok'] for r in rows),
+            'all_ok': all_ok,
             'mutation': mutation_info() if with_mutation else {'available': False,
                                                                'note': '未跑（加 --with-mutation）'}}
 

@@ -229,7 +229,7 @@ def main():
     ok = all(x['ok'] for x in r['consts']) and all(x['ok'] for x in r['vectors'])
 
     if a.json:
-        print(json.dumps({'ok': ok, 'layer3': r['layer3'],
+        print(json.dumps({'tool': '协议对照', 'schema': 1, 'ok': ok, 'layer3': r['layer3'],
                           'host_stubs': r['host_stubs'],
                           'consts': r['consts'], 'vectors': r['vectors']},
                          ensure_ascii=False))

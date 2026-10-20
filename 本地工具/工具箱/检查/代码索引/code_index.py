@@ -59,10 +59,25 @@ ROOT = find_root(HERE) or os.path.abspath(os.path.join(HERE, '..', '..', '..', '
 CFG_REL = os.path.join('本地工具', '工具箱', '速查数据', 'rules', 'board_envmonitor.json')
 
 def cfg_file():
-    """板级配置路径：TOOLBOX_BOARDCFG 优先（D3 的"加假工程"验收靠它），否则仓库里那份。"""
-    return os.environ.get('TOOLBOX_BOARDCFG', '').strip() or cfg_file()
+    """板级配置路径：TOOLBOX_BOARDCFG 优先（D3 的"加假工程"验收靠它），否则仓库里那份。
+
+    B2 修：原来写成 `… or cfg_file()` —— 环境变量为空时**自己调自己**，直接 RecursionError
+    （`--json` 一跑就崩；因为自检没测 --json，这个坑一直没被发现）。
+    """
+    env = os.environ.get('TOOLBOX_BOARDCFG', '').strip()
+    if env:
+        return env
+    return os.path.join(ROOT, CFG_REL)
 
 DS_REL = os.path.join('本地工具', '工具箱', '速查数据', 'data', 'dataset.json')
+
+
+def with_envelope(name, obj, ok=True):
+    """B2 统一信封：每支脚本的 `--json` 都带 **tool / schema / ok** 三个键，后面才是各自的字段。
+    契约校验器（检查/契约校验/json_contract.py）按这份信封 + 契约表逐字段比对。"""
+    d = dict(obj)
+    d['tool'], d['schema'], d['ok'] = name, 1, bool(ok)
+    return d
 
 # 认为是"库函数"的前缀（工程自己写的辅助函数不列进来，否则索引会变成函数清单）
 API_PREFIX = ('SYS_', 'LORA_', 'LED_', 'KEY_', 'BEEP_', 'ESP8266_', 'MQTT_', 'LCD_',
@@ -523,6 +538,11 @@ def selftest():
     import tempfile
     tmp = tempfile.mkdtemp(prefix='ci_')
     try:
+        # B2 修：板级配置路径原来在"环境变量为空"时**自己调自己**（RecursionError），
+        # 导致 `--json` 一跑就崩。这里钉住"能解析出真实路径、且不递归"。
+        cf = cfg_file()
+        ck('板级配置路径能解析且文件存在（不再自己调自己 → RecursionError）',
+           bool(cf) and os.path.isfile(cf), cf)
         # 正例与错例分开放，免得互相污染（错例目录里只有坏文件）
         for d in ('good', 'bad'):
             os.makedirs(os.path.join(tmp, d, 'inc'))
@@ -637,7 +657,8 @@ def main():
         protos = parse_prototypes(glob.glob(os.path.join(ROOT, board['dir'], 'FWLIB', 'inc', '*.h')))
         res = check_signatures(board, protos)
         if a.json:
-            print(json.dumps(res, ensure_ascii=False))
+            print(json.dumps(with_envelope('代码索引', res, ok=not res['issues']),
+                             ensure_ascii=False))
         else:
             print('%s：查了 %d 处调用，发现 %d 个确定错' % (board['name'], res['checked'], len(res['issues'])))
             for i in res['issues']:
@@ -655,7 +676,7 @@ def main():
                 f.write(svg)
             print('数据流图：%s' % a.svg)
         if a.json:
-            print(json.dumps(flow, ensure_ascii=False))
+            print(json.dumps(with_envelope('代码索引', flow), ensure_ascii=False))
         else:
             if not flow['frame']:
                 print('%s：没找到 SYS_FRAME_BuildEnv 调用 —— 组帧那段还没写，追不到帧字段。' % board['name'])
@@ -693,7 +714,7 @@ def main():
             f.write(md)
         print('报告：%s' % a.write)
     if a.json:
-        print(json.dumps(idx, ensure_ascii=False))
+        print(json.dumps(with_envelope('代码索引', idx), ensure_ascii=False))
     else:
         apis = idx['apis']
         doc = [x for x in apis if x['doc']]

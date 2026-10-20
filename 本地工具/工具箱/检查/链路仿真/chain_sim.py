@@ -522,7 +522,8 @@ def main():
             print()
 
     if a.json:
-        print(json.dumps({'ok': ok_all, 'scenarios': report}, ensure_ascii=False))
+        print(json.dumps({'tool': '链路时序', 'schema': 1, 'ok': ok_all, 'scenarios': report},
+                     ensure_ascii=False))
     else:
         print('全部剧本：%s' % ('通过' if ok_all else '有断言失败'))
     sys.exit(0 if ok_all else 1)

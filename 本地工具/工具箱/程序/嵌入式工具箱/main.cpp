@@ -269,11 +269,14 @@ static int runCli(const QStringList &args)
             {"报告生成",     "检查/报告/report_gen.py"},
             {"覆盖率看板",   "检查/覆盖率/coverage_board.py"},
             {"示例插件",     "检查/示例插件/check.py"},
+            /* B2：JSON 契约 —— 跑一遍各脚本的 --json，比"统一信封 + 逐脚本字段"，
+               谁改字段名谁红（点名校验器在 检查/契约校验/json_contract.py）。 */
+            {"契约校验",     "检查/契约校验/json_contract.py"},
             /* 生成器也挂进来：它的"骨架阶段提示"曾出现"两种风格不一致 / 无任务时阶段3缺号"，
                靠自检钉住输出结构，别靠人想起来去比对。 */
             {"工程模板生成", "程序/工程模板/project_scaffold.py"},
         };
-        out << QString::fromUtf8("\n── 各脚本自检（--selftest）：18 个脚本 + 工程模板生成器 ──\n");
+        out << QString::fromUtf8("\n── 各脚本自检（--selftest）：19 个脚本 + 工程模板生成器 ──\n");
         out.flush();
         const QStringList py = PyFind::detect();
         if (py.isEmpty()) {
