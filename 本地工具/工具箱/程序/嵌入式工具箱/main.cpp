@@ -90,6 +90,7 @@ static int runCli(const QStringList &args)
     QTextStream out(stdout);
     out.setEncoding(QStringConverter::Utf8);
     int fail = 0;
+    int skipped = 0;   /* 脚本因**本机缺外部工具链**（如没装 Keil）自己声明跳过（退出码 3）时计数 */
 
     QStringList plog;
     const int pfail = Proto::selftest(plog);
@@ -284,7 +285,7 @@ static int runCli(const QStringList &args)
                                            ? QString()
                                            : QDir(tdir).filePath(QString::fromUtf8(c.rel));
                 QString note;
-                bool ok = false;
+                int rc = -1;                        /* 脚本退出码；-1 = 没跑起来 */
                 if (script.isEmpty() || !QFile::exists(script)) {
                     note = QString::fromUtf8("脚本不存在");
                 } else {
@@ -297,26 +298,38 @@ static int runCli(const QStringList &args)
                         p.kill();
                         note = QString::fromUtf8("启动失败或超时");
                     } else {
-                        ok = (p.exitStatus() == QProcess::NormalExit && p.exitCode() == 0);
-                        if (!ok) {
-                            /* 失败时把带 FAIL 的那一行摘出来，省得再手跑一遍 */
+                        rc = (p.exitStatus() == QProcess::NormalExit) ? p.exitCode() : -1;
+                        /* 约定：0=全过；1=有失败；**3=跳过**（本机缺外部工具链，如没装 Keil
+                           时的 armcc 编译校验）。跳过**不算失败** —— 换台没工具的机器也能过闸门。 */
+                        const bool skippedRun = (rc == 3);
+                        if (skippedRun || rc != 0) {
                             for (const QString &ln :
                                  QString::fromUtf8(p.readAllStandardOutput())
                                      .split(QLatin1Char('\n'))) {
-                                if (ln.contains(QStringLiteral("FAIL"))) {
-                                    note = ln.trimmed();
+                                const QString t = ln.trimmed();
+                                if (skippedRun ? t.startsWith(QStringLiteral("SKIP"))
+                                               : t.contains(QStringLiteral("FAIL"))) {
+                                    note = t;   /* 失败摘 FAIL 行；跳过摘 SKIP 行 */
                                     break;
                                 }
                             }
                         }
                     }
                 }
-                out << (ok ? QString::fromUtf8("PASS ") : QString::fromUtf8("FAIL "))
-                    << QString::fromUtf8(c.name)
-                    << (note.isEmpty() ? QString()
-                                       : QString::fromUtf8("（%1）").arg(note)) << "\n";
-                if (!ok)
-                    ++fail;
+                if (rc == 3) {
+                    out << QString::fromUtf8("SKIP ") << QString::fromUtf8(c.name)
+                        << (note.isEmpty() ? QString()
+                                           : QString::fromUtf8("（%1）").arg(note)) << "\n";
+                    ++skipped;
+                } else {
+                    const bool ok = (rc == 0);
+                    out << (ok ? QString::fromUtf8("PASS ") : QString::fromUtf8("FAIL "))
+                        << QString::fromUtf8(c.name)
+                        << (note.isEmpty() ? QString()
+                                           : QString::fromUtf8("（%1）").arg(note)) << "\n";
+                    if (!ok)
+                        ++fail;
+                }
             }
         }
     }
@@ -413,7 +426,10 @@ static int runCli(const QStringList &args)
             ++fail;
     }
 
-    out << QString::fromUtf8("\n失败项 ") << fail << "\n";
+    out << QString::fromUtf8("\n失败项 ") << fail
+        << (skipped > 0 ? QString::fromUtf8("（另有 %1 项跳过：本机缺外部工具链）").arg(skipped)
+                        : QString())
+        << "\n";
     return fail;
 }
 

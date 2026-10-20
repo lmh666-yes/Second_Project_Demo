@@ -95,13 +95,19 @@ def run_one(path, timeout=240):
         out = (p.stdout or '') + (p.stderr or '')
         rc = p.returncode
     except subprocess.TimeoutExpired:
-        return {'script': rel, 'ok': False, 'passed': 0, 'failed': 0,
+        return {'script': rel, 'ok': False, 'skipped': False, 'passed': 0, 'failed': 0,
                 'seconds': round(time.time() - t0, 1), 'note': '超时（>%ds）' % timeout}
     except OSError as e:
-        return {'script': rel, 'ok': False, 'passed': 0, 'failed': 0,
+        return {'script': rel, 'ok': False, 'skipped': False, 'passed': 0, 'failed': 0,
                 'seconds': 0.0, 'note': '启动失败：%s' % e}
     passed, failed = parse_result(out)
-    return {'script': rel, 'ok': (rc == 0 and failed == 0), 'passed': passed,
+    # 退出码 3 = 脚本自己声明"跳过"（本机缺外部工具链，如没装 Keil 时的 armcc 编译校验）。
+    # 这不是失败，看板里单列，别把它算红。
+    if rc == 3:
+        return {'script': rel, 'ok': True, 'skipped': True, 'passed': passed,
+                'failed': failed, 'seconds': round(time.time() - t0, 1),
+                'note': '跳过（本机缺外部工具链）'}
+    return {'script': rel, 'ok': (rc == 0 and failed == 0), 'skipped': False, 'passed': passed,
             'failed': failed, 'seconds': round(time.time() - t0, 1),
             'note': '' if rc == 0 else '退出码 %d' % rc}
 
@@ -131,7 +137,9 @@ def build_board(with_mutation=False):
         rows.append(run_one(p))
     total_p = sum(r['passed'] for r in rows)
     total_f = sum(r['failed'] for r in rows)
+    total_s = sum(1 for r in rows if r.get('skipped'))
     return {'scripts': rows, 'total_passed': total_p, 'total_failed': total_f,
+            'total_skipped': total_s,
             'all_ok': all(r['ok'] for r in rows),
             'mutation': mutation_info() if with_mutation else {'available': False,
                                                                'note': '未跑（加 --with-mutation）'}}
@@ -144,10 +152,14 @@ def render_md(b):
     for r in b['scripts']:
         L.append('| `%s` | %d | %d | %d | %.1fs | %s |'
                  % (r['script'], r['passed'] + r['failed'], r['passed'], r['failed'],
-                    r['seconds'], '✅' if r['ok'] else '❌ ' + (r['note'] or '')))
+                    r['seconds'],
+                    '⏭ 跳过' if r.get('skipped')
+                    else ('✅' if r['ok'] else '❌ ' + (r['note'] or ''))))
     L.append('| **合计** | **%d** | **%d** | **%d** | | %s |'
              % (b['total_passed'] + b['total_failed'], b['total_passed'],
-                b['total_failed'], '✅' if b['all_ok'] else '❌'))
+                b['total_failed'],
+                ('⏭ 跳过 %d 项 · ' % b.get('total_skipped', 0) if b.get('total_skipped')
+                 else '') + ('✅' if b['all_ok'] else '❌')))
     L.append('')
     mu = b.get('mutation') or {}
     if mu.get('available'):

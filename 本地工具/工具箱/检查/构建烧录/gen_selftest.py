@@ -25,6 +25,10 @@ IncludePath 里，硬编码目录名（`RTE/_gpio______/`）换个 target 就失
     python ...\gen_selftest.py --board 板1 --stages 2,3,6
     python ...\gen_selftest.py --board 板2 --stages 2,3,4 --out D:\tmp
     python ...\gen_selftest.py --selftest
+
+`--selftest` 退出码：0=全过；1=有失败；**3=跳过**（本机没找到 Keil → armcc 编译校验
+不测、其余断言照跑）。工具箱 `--selftest` 与覆盖率看板都把 3 当"跳过"而不是失败，
+所以换台没装 Keil 的机器也能过这道闸门。
 """
 import argparse
 import datetime
@@ -443,6 +447,7 @@ def generate_for(board, stages, out_dir, root):
 
 def selftest():
     ok_all = True
+    skipped = False       # 本机缺 Keil → armcc 编译校验跳过；退出码 3 告诉调用方"跳过"而非"通过"
     checks = []
 
     def ck(name, cond, extra=''):
@@ -495,7 +500,8 @@ def selftest():
         # 真编译（有 Keil 才测；没有就明说跳过，不假装通过）
         roots = keil_roots()
         if not roots:
-            ck('（跳过）armcc 编译校验：本机没找到 Keil', True)
+            skipped = True
+            print('  [SKIP] armcc 编译校验：本机没找到 Keil（这几条断言未测，不计入通过数）')
         else:
             proj = os.path.join(ROOT, b1['dir'])
             uv = os.path.join(proj, b1['uvprojx'])
@@ -523,7 +529,9 @@ def selftest():
                                ('　' + extra) if (extra and not cond) else ''))
     print('阶段自检生成器自检：%d 通过 / %d 失败'
           % (sum(1 for _, c3, _ in checks if c3), sum(1 for _, c3, _ in checks if not c3)))
-    return ok_all
+    if skipped:
+        print('SKIP  本机没找到 Keil：armcc 编译校验跳过（其余断言已跑，退出码 3）')
+    return ok_all, skipped
 
 
 def main():
@@ -536,7 +544,9 @@ def main():
     a = ap.parse_args()
 
     if a.selftest:
-        sys.exit(0 if selftest() else 1)
+        ok, sk = selftest()
+        # 全过但有跳过 → 退出码 3（约定见文件头）；工具箱与覆盖率看板都认这个"跳过"
+        sys.exit(3 if (ok and sk) else (0 if ok else 1))
 
     boards = pick_board(_boards_from_cfg(ROOT), a.board)
     if not boards:
