@@ -25,6 +25,16 @@ r"""编译 → 烧录 → 板载自检（A2），附体积历史（A3）与状�
     python ...\build_flash.py --history
     python ...\build_flash.py --snapshot --board 板1
     python ...\build_flash.py --selftest        # 不需要硬件，验解析与判定
+
+A1 阶段验收（一条命令走完一个阶段）：
+    python ...\build_flash.py --stage-run 2 --board 板1 --com COM9
+    python ...\build_flash.py --stage-run 2 --board 板1 --plan    # 只看计划与现状，不动手
+    链：判定该阶段 → 生成阶段自检 → **接入检查** → 编译 → 烧录 → 串口收 STAGE<N>=PASS
+        → 回写进度文档 → 归档快照；**任一步失败即停**，并说清卡在哪一步。
+    接入两步（一次性；工具**不替你改代码/工程**，这也是"留出动手空间"）：
+        ① 把 board_selftest.c / .h 加进 Keil 工程（右键分组 → Add Existing Files）；
+        ② 在 main() 里串口初始化之后调一次 BOARD_SELFTEST_Run()。
+    没接就会停在第 3 步并打印这两步；接好后同一条命令即可重复跑。
 """
 import argparse
 import ctypes
@@ -666,6 +676,236 @@ def render_md(results):
 
 
 # ========================================================================
+# 阶段验收（A1）：判定 → 生成阶段自检 → 接入检查 → 编译 → 烧录 → 串口 → 回写 → 归档
+# ========================================================================
+
+PY = sys.executable or 'python'
+# 同仓库的两个伙伴脚本（相对仓库根）：判定与回写走 stage_status，生成走 gen_selftest
+STATUS_REL = os.path.join('本地工具', '工具箱', '检查', '阶段判定', 'stage_status.py')
+GEN_REL = os.path.join('本地工具', '工具箱', '检查', '构建烧录', 'gen_selftest.py')
+
+WIRING_HOWTO = (
+    '接入两步（一次性）：\n'
+    '  ① Keil 里把 board_selftest.c / board_selftest.h 加进工程（右键分组 → Add Existing Files）；\n'
+    '  ② 在 main() 里串口初始化之后调一次 BOARD_SELFTEST_Run();\n'
+    '  接好后再跑同一条 --stage-run 命令即可。')
+
+
+def run_sibling(root, rel, args, timeout=300):
+    """跑同仓库的伙伴脚本，返回 (rc, 合并输出)。找不到/超时都返回 rc=-1。"""
+    path = os.path.join(root, rel)
+    if not os.path.isfile(path):
+        return -1, '脚本不存在：%s' % path
+    try:
+        p = subprocess.run([PY, path] + args, capture_output=True, text=True,
+                           encoding='utf-8', errors='replace', timeout=timeout,
+                           cwd=os.path.dirname(path))
+    except subprocess.TimeoutExpired:
+        return -1, '超时（>%ds）：%s' % (timeout, rel)
+    except OSError as e:
+        return -1, '跑不起来：%s' % e
+    return p.returncode, (p.stdout or '') + (p.stderr or '')
+
+
+def stage_key(board_name):
+    """板级配置里的名字（'板1 检测端 (F407ZE)'）→ 阶段判据/生成器认的键（'板1'/'板2'/'Qt'）。"""
+    for k in ('板1', '板2', 'Qt'):
+        if (board_name or '').startswith(k):
+            return k
+    return ''
+
+
+def judge_stages(root, key):
+    """跑 stage_status --json，返回 ({阶段号: 判定项}, 原文)。失败返回 (None, 原文)。"""
+    rc, txt = run_sibling(root, STATUS_REL, ['--board', key, '--json'])
+    if rc != 0:
+        return None, txt
+    try:
+        d = json.loads(txt.strip().splitlines()[-1])
+    except Exception:
+        return None, txt
+    for b in d.get('boards', []):
+        if str(b.get('board', '')).startswith(key):
+            return {s['no']: s for s in b.get('stages', [])}, txt
+    return None, txt
+
+
+def wiring_state(root, board):
+    """生成物接没接进工程 →
+       (uvprojx 里有没有 board_selftest, main.c 里调没调 BOARD_SELFTEST_Run, 两个路径)。"""
+    uv = os.path.join(root, board.get('dir') or '', board.get('uvprojx') or '')
+    added = False
+    try:
+        with open(uv, encoding='utf-8', errors='ignore') as f:
+            added = 'board_selftest' in f.read()
+    except OSError:
+        pass
+    main_c = os.path.join(root, board.get('dir') or '', 'main.c')
+    called = False
+    try:
+        with open(main_c, encoding='utf-8', errors='ignore') as f:
+            called = 'BOARD_SELFTEST_Run' in f.read()
+    except OSError:
+        pass
+    return added, called, uv, main_c
+
+
+def parse_stage_marks(text):
+    """从串口文本里抽出所有 STAGE<n>=PASS/FAIL，返回 {阶段号: 是否过}。"""
+    out = {}
+    for m in re.finditer(r'STAGE(\d+)=(PASS|FAIL)', text or ''):
+        out[int(m.group(1))] = (m.group(2) == 'PASS')
+    return out
+
+
+def stage_serial_result(text, stage_no, err=''):
+    """按板子打印的 STAGE<N>=PASS / FAIL 判结果，返回 (是否通过, 一句说明)。
+
+    单独抽出来是为了能离线自检（不接板子也能验"PASS→过 / FAIL→点名 / 空→说没收到"）。
+    """
+    text = text or ''
+    mark, bad = 'STAGE%d=PASS' % stage_no, 'STAGE%d=FAIL' % stage_no
+    if err:
+        return False, err
+    if mark in text:
+        return True, '板子回了 %s' % mark
+    if bad in text:
+        return False, '板子回了 %s（这一阶段的自检没过）' % bad
+    return False, ('收到 %d 字节但没有 %s（板子没复位？波特率不对？自检没接进 main？）'
+                   % (len(text.strip()), mark))
+
+
+def do_stage_run(root, board, stage_no, com, seconds, quiet, plan, no_flash):
+    """A1：一条命令走完一个阶段；任一步失败即停并说清卡在哪。返回结果 dict。"""
+    name = board['name']
+    key = stage_key(name)
+    res = {'board': name, 'stage_key': key, 'stage': stage_no, 'ok': False,
+           'plan': False, 'steps': [], 'stopped_at': '', 'reason': ''}
+
+    def say(s):
+        if not quiet:
+            print(s)
+
+    def step(title, ok, note=''):
+        res['steps'].append({'step': title, 'ok': bool(ok), 'note': note})
+        say('%s %s%s' % ('✔' if ok else '✘', title, ('　' + note) if note else ''))
+        return bool(ok)
+
+    def stop(where, why):
+        res['stopped_at'], res['reason'] = where, why
+        step(where, False, why)
+        return res
+
+    # ① 判定（该阶段有没有、能不能机器判）
+    if not key:
+        return stop('判定', '这块板不在阶段判据里（stage_checks.json 只有 板1 / 板2 / Qt）——先把它加进判据')
+    stages, raw = judge_stages(root, key)
+    if stages is None:
+        last = raw.strip().splitlines()[-1] if raw.strip() else ''
+        return stop('判定', '阶段判定跑不起来：%s' % last)
+    cur = stages.get(stage_no)
+    if not cur:
+        return stop('判定', '判据里没有阶段 %d' % stage_no)
+    if cur.get('status') == 'manual':
+        return stop('判定', '该阶段是「需人工确认」：%s（机器判不了，没法自动验收）'
+                    % (cur.get('evidence') or ''))
+    res['stage_status'] = cur.get('status')
+    step('判定', True, '阶段 %d 现状 = %s（%s/%s 条判据过）'
+         % (stage_no, cur.get('status'), cur.get('passed'), cur.get('total')))
+
+    if plan:
+        res['plan'] = True
+        for t in ('生成阶段自检', '接入检查', '编译', '烧录',
+                  '串口收 STAGE%d=PASS' % stage_no, '回写进度文档', '归档快照'):
+            say('  · 计划：%s' % t)
+        return res
+
+    # ② 生成阶段自检（只有不接外设也能判的阶段才生成 —— 别的阶段本工具明确不做）
+    supported = (2, 3, 6, 7)
+    if stage_no not in supported:
+        return stop('生成阶段自检',
+                    '阶段 %d 没有可生成的板载自检（生成器只覆盖 2/3/6/7）——'
+                    '它只能靠静态判定，烧板子验不了' % stage_no)
+    # 生成集合 = 默认的 {2,3,6} ∪ {目标阶段} —— 这样验阶段 2 时生成物与默认那份一致，
+    # 不会因为"每次只生成一个阶段"把别的阶段的开关来回改（也就没 git 噪声）。
+    gen_set = sorted(set([2, 3, 6]) | {stage_no})
+    rc, out = run_sibling(root, GEN_REL, ['--board', key, '--stages',
+                                          ','.join(str(x) for x in gen_set)])
+    if rc != 0:
+        return stop('生成阶段自检', out.strip()[-300:])
+    step('生成阶段自检', True, 'board_selftest.c/.h 已写进工程目录（覆盖阶段 %s）'
+         % '/'.join(str(x) for x in gen_set))
+
+    # ③ 接入检查（这一步是手工的；没接就没法真跑，明说而不是假装跑过）
+    added, called, uv, main_c = wiring_state(root, board)
+    if not (added and called):
+        miss = []
+        if not added:
+            miss.append('board_selftest.c 还没加进 Keil 工程（%s）' % os.path.relpath(uv, root))
+        if not called:
+            miss.append('main.c 还没调 BOARD_SELFTEST_Run()（%s）' % os.path.relpath(main_c, root))
+        return stop('接入检查', '；'.join(miss) + '\n' + WIRING_HOWTO)
+    step('接入检查', True, '生成物已接进工程')
+
+    # ④ 编译
+    b = build_with_fallback(root, board, quiet=True)
+    res['build'] = b
+    if b.get('size'):
+        record_history(root, board, b)
+    if not b.get('ok'):
+        why = '编译失败（%s 错）：' % b.get('errors')
+        for d in (b.get('diags') or [])[:3]:
+            why += '\n    %s(%d): %s: %s' % (d['file'], d['line'], d['kind'], d['msg'])
+        if not b.get('diags'):
+            why += '\n' + '\n'.join((b.get('log') or '').strip().splitlines()[-5:])
+        return stop('编译', why)
+    s = b.get('size') or {}
+    step('编译', True, '%s 错 / %s 警%s' % (b.get('errors'), b.get('warnings'),
+         '　Flash=%dB RAM=%dB' % (s['flash'], s['ram']) if s else ''))
+
+    # ⑤ 烧录
+    if no_flash:
+        step('烧录', True, '（--no-flash：跳过烧录，只验到编译这一步）')
+    else:
+        cli = programmer_candidates()
+        if not cli:
+            return stop('烧录', '没找到 STM32_Programmer_CLI.exe（可用环境变量 STM32_PROGRAMMER_CLI 指定）')
+        fl = flash_one(root, board, cli[0])
+        res['flash'] = fl
+        if not fl.get('ok'):
+            return stop('烧录', fl.get('kind') or (fl.get('log') or '')[:200])
+        step('烧录', True, '已下载并复位')
+
+    # ⑥ 串口收 STAGE<N>=PASS
+    port = com or board.get('com') or ''
+    if not port:
+        return stop('串口自检', '没指定串口（--com COM9，或在板级配置里填 com）')
+    text, err = read_serial(port, board.get('serial_baud') or 115200, seconds)
+    ok, why = stage_serial_result(text, stage_no, err)
+    res['serial'] = {'port': port, 'ok': ok, 'error': '' if ok else why, 'text': text,
+                     'stages': parse_stage_marks(text)}
+    if not ok:
+        return stop('串口自检', why)
+    step('串口收 STAGE%d=PASS' % stage_no, True, why)
+
+    # ⑦ 回写进度文档（只有真跑过 PASS 才写 —— 免得"没验就算完成"）
+    rc, out = run_sibling(root, STATUS_REL, ['--board', key, '--apply'])
+    res['apply'] = {'rc': rc, 'out': out.strip()[-300:]}
+    lines = [x for x in out.strip().splitlines() if x.strip()]
+    step('回写进度文档', rc == 0, lines[-1] if lines else '')
+
+    # ⑧ 归档快照
+    d = make_snapshot(root, {'time': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                             'kind': 'stage_run', 'stage_run': res,
+                             'boards': [{'board': name, 'build': res.get('build'),
+                                         'flash': res.get('flash'), 'serial': res.get('serial')}]})
+    res['snapshot'] = d
+    step('归档快照', True, os.path.relpath(d, root))
+    res['ok'] = True
+    return res
+
+
+# ========================================================================
 # 主流程
 # ========================================================================
 
@@ -862,6 +1102,24 @@ Build Time Elapsed:  00:00:01
     ck('UV4 候选都真实存在', all(os.path.isfile(x) for x in c), str(c[:3]))
     ck('UV4 候选无重复', len(c) == len({os.path.normcase(x) for x in c}))
 
+    # A1：阶段验收的几处纯逻辑（不接硬件也能验）
+    ck('stage_key 认得出板名 → 判据键',
+       stage_key('板1 检测端 (F407ZE)') == '板1' and stage_key('板2 通信端 (F407ZG)') == '板2'
+       and stage_key('Qt 上位机') == 'Qt', stage_key('板1 检测端 (F407ZE)'))
+    ck('stage_key 对不在判据里的板返回空（OTA 会被拦下来）',
+       stage_key('OTA 工程 (F407ZE)') == '')
+    ck('串口判据：PASS → 过', stage_serial_result('boot\r\nSTAGE2=PASS\r\n', 2)[0])
+    ck('串口判据：FAIL → 点名 FAIL',
+       not stage_serial_result('STAGE2=FAIL\r\n', 2)[0]
+       and 'FAIL' in stage_serial_result('STAGE2=FAIL\r\n', 2)[1])
+    ck('串口判据：别的阶段 PASS 不能顶（STAGE3 不等于 STAGE2）',
+       not stage_serial_result('STAGE3=PASS\r\n', 2)[0])
+    ck('串口判据：一条没收到也说得出原因',
+       not stage_serial_result('', 2)[0] and '没有 STAGE2=PASS' in stage_serial_result('', 2)[1])
+    ck('串口里所有 STAGE 标记都能抽出来（一次验一个阶段，别的也记下来）',
+       parse_stage_marks('a\r\nSTAGE2=PASS\r\nSTAGE3=FAIL\r\nSTAGE6=PASS\r\n')
+       == {2: True, 3: False, 6: True}, str(parse_stage_marks('STAGE2=PASS\r\nSTAGE3=FAIL\r\n')))
+
     for name, cond, extra in checks:
         print('  [%s] %s%s' % ('PASS' if cond else 'FAIL', name,
                                ('　' + extra) if (extra and not cond) else ''))
@@ -879,6 +1137,10 @@ def main():
     ap.add_argument('--all', action='store_true', help='编译+烧录+串口')
     ap.add_argument('--history', action='store_true', help='体积趋势')
     ap.add_argument('--snapshot', action='store_true', help='把结果打包成状态快照')
+    ap.add_argument('--stage-run', type=int, metavar='N',
+                    help='A1 阶段验收：一条命令走完阶段 N（判定→生成自检→接入检查→编译→烧录→串口→回写→归档）')
+    ap.add_argument('--plan', action='store_true', help='配合 --stage-run：只看计划与现状，不动手')
+    ap.add_argument('--no-flash', action='store_true', help='配合 --stage-run：跳过烧录（只验到编译）')
     ap.add_argument('--board', default='all', help='板1 / 板2 / OTA / all')
     ap.add_argument('--com', default='', help='串口，如 COM3')
     ap.add_argument('--seconds', type=float, default=6.0, help='串口收多久')
@@ -916,6 +1178,19 @@ def main():
     if not boards:
         print('没有匹配的板：%s（可选：%s）' % (a.board, '、'.join(b['name'] for b in boards_all)))
         sys.exit(1)
+
+    if a.stage_run is not None:
+        if len(boards) != 1:
+            print('--stage-run 需要指定单块板（--board 板1 / 板2），当前匹配 %d 块' % len(boards))
+            sys.exit(1)
+        r = do_stage_run(root, boards[0], a.stage_run, a.com, a.seconds,
+                         a.quiet, a.plan, a.no_flash)
+        if a.json:
+            print(json.dumps(r, ensure_ascii=False))
+        elif not r.get('ok') and not r.get('plan'):
+            print('\n停在第 %d 步：%s' % (len(r.get('steps') or []),
+                                          r.get('stopped_at') or ''))
+        sys.exit(0 if (r.get('ok') or r.get('plan')) else 2)
 
     if a.history:
         rep = history_report(root, '' if a.board == 'all' else a.board)
