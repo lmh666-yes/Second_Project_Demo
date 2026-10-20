@@ -67,6 +67,7 @@ ALLOWLIST = {
     "TIM_OC2":            "正文里 TIM_OC2/3/4PreloadConfig 的简写（真实名是 TIM_OC2PreloadConfig 等）",
     "Asynch":             "RTC_AsynchPrediv 的后半截：正文公式 «(Asynch+1)x(Synch+1)=32768» 的简写",
     "Synch":              "RTC_SynchPrediv 的后半截：同上",
+    "Comm":               "从真实 API 名 ADC_CommonInit / ADC_CommonInitTypeDef 切出来的碎片（不是笔误）",
 
     # ---- E. 正文里拆开写的标识符后半截 / 普通英文词（不是笔误）----
     #      写成「xxx*」「A / B」这类并列写法时，正则会把后半截单独当词元收进来；
@@ -94,6 +95,7 @@ ALLOWLIST = {
     "SYS_TIM_Oc":     "正文“SYS_TIM_Oc*”的前缀，同上",
     "TIM2_CH3":       "引脚复用名（定时器 2 通道 3），不是库宏",
     "W25QXX_Log":     "正文“W25QXX_Log*”的前缀",
+    "W25QXX_":        "正文“W25QXX_*”这种前缀写法（表示一族函数）的碎片，同上",
     "WIP":            "SPI Flash 状态寄存器位名（Write In Progress，芯片还在忙）",
 }
 
