@@ -6,8 +6,10 @@
 #include "searchengine.h"
 #include "store.h"
 
+#include <QHash>
 #include <QMainWindow>
 #include <QScopedPointer>
+#include <QStringList>
 
 class QLineEdit;
 class QComboBox;
@@ -68,6 +70,8 @@ private slots:
     void onFavClicked();
     void onRecentClicked();
     void toggleCurrentFav();
+    /* D2：「刷新使用位置」——跑 code_index.py --usage 重建代码索引，再套进本页数据重画。 */
+    void refreshUsage();
 
 private:
     void buildUi();
@@ -108,9 +112,17 @@ private:
     QPushButton  *m_nextHint = nullptr;      /* 项目引导的「下一步：阶段 N」入口 */
     QPushButton  *m_btnJudge = nullptr;      /* A1：判定阶段并回写进度文档 */
     QPushButton  *m_btnRunStage = nullptr;   /* A3：跑这一步（触发 build_flash --stage-run N） */
+    QPushButton  *m_btnUsage = nullptr;      /* D2：刷新使用位置（code_index.py --usage） */
     QLabel       *m_count  = nullptr;
     QListWidget  *m_list   = nullptr;
     QTextBrowser *m_detail = nullptr;
+
+    /* D2：详情里"使用位置"链接的目标（元素 = 绝对路径|行号），每次重画清空重建；
+       m_boardDirs 是"板标签（板1/板2）→ 该板工程目录绝对路径"，供 CardHtml 拼绝对路径。 */
+    QStringList          m_srcTargets;
+    QHash<QString, QString> m_boardDirs;
+    /* 读板级配置填 m_boardDirs（板1/板2 的 dir → 绝对路径）；读不到就留空。 */
+    void refreshBoardDirs();
 };
 
 #endif // MAINWINDOW_H

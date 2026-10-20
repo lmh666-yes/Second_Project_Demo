@@ -35,6 +35,11 @@ bool    loaded();
 QString path();
 int     size();
 
+/* D2：重新套一遍本仓库代码索引（AppPaths::usagePath()），返回用到位置的条目数。
+   与 load() 的 tried 早退**无关**，可以单独调（按钮"刷新使用位置"跑完脚本后调它）。
+   索引文件不在 → 返回 0、原样不动。 */
+int     reloadUsage();
+
 /* 符号级补全：按关键词 / 前缀查函数条目（与速查页同一套引擎，资料查询板块）。
    只回"带原型（含括号）"的条目，最多 limit 条，按引擎排序。 */
 QVector<FuncHit> findFuncs(const QString &query, int limit = 8);

@@ -16,6 +16,7 @@
      3) 兜底：向上找含 data/dataset.json 的那一层（源码树里直接跑）
    找不到一律返回空，由页面显式报错（不要静默回落到空数据）。 */
 
+#include <QHash>
 #include <QString>
 
 namespace AppPaths {
@@ -24,8 +25,19 @@ namespace AppPaths {
 QString toolRoot();
 /* 数据文件：数据根/data/dataset.json */
 QString datasetPath();
+/* D2 代码索引：数据根/data/code_usage.json（code_index.py --usage 生成；
+   缺文件时手册页照旧用 dataset.json 自带的 u，不报错） */
+QString usagePath();
 /* 速查自己的配置（收藏 / 最近 / 板块）：数据根/_stm32lookup.ini */
 QString iniPath();
+
+/* D2：手册「本项目使用位置」要把索引里的文件名（basename）拼回绝对路径，需要"标签 → 目录"：
+       板1 / 板2        → 该板工程目录（board_envmonitor.json 的 dir）
+       板1·库 / 板2·库   → <该板工程目录>/FWLIB/src（驱动源码那一组）
+   口径与手册页的进度文档定位一致（仓库根 = 数据根的上三级）；读不到返回空表。
+   界面（MainWindow）与 Qt 的 `--selftest`（lookupcli）**共用这一份** ——
+   两处各拼一套路径，迟早会有一套悄悄错掉。 */
+QHash<QString, QString> boardDirs();
 
 } // namespace AppPaths
 

@@ -1,12 +1,17 @@
 #include "lookupcli.h"
 
 #include "apppaths.h"
+#include "cardhtml.h"
 #include "mainwindow.h"
 #include "searchengine.h"
 
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QStringConverter>
+#include <QStringList>
 #include <QTextStream>
 
 /* 从原 单片机手册独立程序（main.cpp）平移过来的命令行出口，逻辑一字未改，
@@ -86,6 +91,143 @@ int runLookupCli(const QStringList &args, MainWindow *w)
             chk(land.contains(QString::fromUtf8("常用模块"))
                     && land.contains(QString::fromUtf8("热门主题")),
                 QString::fromUtf8("落地页含「热门主题 / 常用模块」两个分组标题"));
+        }
+
+        /* D2：手册页内嵌代码索引（code_usage.json）端到端 —— 速查页读它的方式：
+              · 有真实使用位置的条目 → 卡片 HTML 里应含 src: 链接与 板1/板2 标记；
+              · 没出现的条目       → 该明说「没在你的代码里出现」。
+           索引文件不在就 SKIP（先跑 code_index.py --usage 才有）。 */
+        {
+            const QString up = AppPaths::usagePath();
+            if (!QFileInfo::exists(up)) {
+                out << QString::fromUtf8("SKIP 使用位置端到端（没有 %1；先跑 code_index.py --usage）\n")
+                        .arg(up);
+            } else {
+                QFile uf(up);
+                QJsonObject usage;
+                if (uf.open(QIODevice::ReadOnly))
+                    usage = QJsonDocument::fromJson(uf.readAll()).object()
+                                .value(QStringLiteral("usage")).toObject();
+
+                /* 挑一个"真在板1/板2 出现过、且数据里也有条目"的名字 */
+                QString hitName;
+                for (auto it = usage.constBegin(); it != usage.constEnd(); ++it) {
+                    if (!it.value().toArray().isEmpty() && d.indexOfName(it.key()) >= 0) {
+                        hitName = it.key();
+                        break;
+                    }
+                }
+                if (hitName.isEmpty()) {
+                    out << QString::fromUtf8("SKIP 使用位置端到端（索引里没有「既出现又有条目」的名字）\n");
+                } else {
+                    QStringList targets;
+                    CardHtml::Ctx ctx;
+                    ctx.srcTargets = &targets;
+                    /* 目录表**必须**一起给：不给就拼不出绝对路径，卡片里就不会有
+                       src: 链接 —— 量测里量不到"能点"，等于没测（第一次跑就踩了）。 */
+                    const QHash<QString, QString> dirs = AppPaths::boardDirs();
+                    ctx.boardDirs = &dirs;
+                    const QString html = CardHtml::build(d.at(d.indexOfName(hitName)), false, ctx);
+                    const bool ok = html.contains(QStringLiteral("src:"))
+                                    && (html.contains(QString::fromUtf8("板1"))
+                                        || html.contains(QString::fromUtf8("板2")));
+                    chk(ok, QString::fromUtf8("使用位置端到端：%1 的卡片含 src: 链接与 板1/板2 标记")
+                                .arg(hitName));
+                }
+
+                /* 再挑一个"没在代码里出现"的条目：应如实写「没在你的代码里出现」 */
+                QString missName;
+                for (const Card &c : d.cards())
+                    if (c.uReal && c.u.isEmpty() && !c.n.isEmpty()) {
+                        missName = c.n;
+                        break;
+                    }
+                if (missName.isEmpty()) {
+                    out << QString::fromUtf8("SKIP 使用位置端到端（索引里找不到「没出现」的条目）\n");
+                } else {
+                    CardHtml::Ctx ctx2;
+                    const QString html = CardHtml::build(d.at(d.indexOfName(missName)), false, ctx2);
+                    chk(html.contains(QString::fromUtf8("没在你的代码里出现")),
+                        QString::fromUtf8("使用位置端到端：%1 的卡片明说「没在你的代码里出现」")
+                            .arg(missName));
+                }
+            }
+        }
+
+        /* D3：倒排索引的两条硬断言 ——
+           ① **等价**：基线里每条查询，"索引版"与"朴素全扫版"的结果**逐条一致**
+              （缩候选只要漏一条这里就红 —— 比"基线绿了"更能证明索引没漏）；
+           ② **理由算得出来**：每条结果的分项相加必须等于它的总分（"为什么这条排第一"
+              是算出来的，不是事后编的）；分数非 0 的结果不许没有分项。
+           顺带打印一次量测：进 evalEntry 的条目数从多少缩到多少。 */
+        if (w->engine()) {
+            const QString bp2 = QFileInfo(AppPaths::datasetPath())
+                                    .absolutePath() + QStringLiteral("/search_baseline.txt");
+            QVector<QPair<QString, QString>> qs;      /* (板块, 查询) */
+            QFile bf2(bp2);
+            if (bf2.open(QIODevice::ReadOnly)) {
+                while (!bf2.atEnd()) {
+                    const QString line = QString::fromUtf8(bf2.readLine()).trimmed();
+                    if (line.isEmpty() || line.startsWith(QLatin1Char('#')))
+                        continue;
+                    const int rb  = line.indexOf(QLatin1Char(']'));
+                    const int bar = line.indexOf(QStringLiteral(" | "));
+                    if (rb < 0 || bar < rb)
+                        continue;
+                    qs << qMakePair(line.mid(1, rb - 1), line.mid(rb + 1, bar - rb - 1).trimmed());
+                }
+            }
+            int bad = 0, fullN = 0, scanN = 0;
+            for (const auto &sq : qs) {
+                const int isec = (sq.first == QStringLiteral("guide")) ? int(Card::Guide)
+                               : (sq.first == QStringLiteral("build")) ? int(Card::Build)
+                                                                       : int(Card::Ref);
+                const SearchEngine::Result ri = w->engine()->run(sq.second, isec, QString(), true);
+                const SearchEngine::Result rn = w->engine()->run(sq.second, isec, QString(), false);
+                fullN += rn.scanned;
+                scanN += ri.scanned;
+                if (ri.order != rn.order) {
+                    ++bad;
+                    out << QString::fromUtf8("FAIL 索引版与全扫版结果不一致：")
+                        << sq.second << QString::fromUtf8("（索引 %1 条 / 全扫 %2 条）\n")
+                                        .arg(ri.order.size()).arg(rn.order.size());
+                }
+            }
+            out << ((bad == 0) ? QString::fromUtf8("PASS ") : QString::fromUtf8("FAIL "))
+                << QString::fromUtf8("倒排索引等价：%1 条查询逐条一致（进 evalEntry 的条目 "
+                                     "%2 → %3）\n")
+                       .arg(qs.size()).arg(fullN).arg(scanN);
+            fail += bad;
+
+            int bad2 = 0, checked = 0;
+            if (!qs.isEmpty()) {
+                const int isec = (qs.first().first == QStringLiteral("guide")) ? int(Card::Guide)
+                               : (qs.first().first == QStringLiteral("build")) ? int(Card::Build)
+                                                                               : int(Card::Ref);
+                const QVector<SearchEngine::Explain> ex =
+                    w->engine()->explain(qs.first().second, isec, QString());
+                for (int i = 0; i < qMin(3, ex.size()); ++i) {
+                    double sum = 0;
+                    for (const SearchEngine::Term &t : ex.at(i).terms)
+                        sum += t.add;
+                    ++checked;
+                    if (ex.at(i).terms.isEmpty() && ex.at(i).score != 0) {
+                        ++bad2;
+                        out << QString::fromUtf8("FAIL 分数 %1 但没有分项：%2\n")
+                                   .arg(ex.at(i).score)
+                                   .arg(w->dataset().at(ex.at(i).index).n);
+                    } else if ((sum > ex.at(i).score ? sum - ex.at(i).score
+                                                     : ex.at(i).score - sum) > 1e-9) {
+                        ++bad2;
+                        out << QString::fromUtf8("FAIL 分项加起来 %1 ≠ 分数 %2：%3\n")
+                                   .arg(sum).arg(ex.at(i).score)
+                                   .arg(w->dataset().at(ex.at(i).index).n);
+                    }
+                }
+            }
+            out << ((bad2 == 0) ? QString::fromUtf8("PASS ") : QString::fromUtf8("FAIL "))
+                << QString::fromUtf8("打分理由可核：%1 条结果的分项和 == 总分\n").arg(checked);
+            fail += bad2;
         }
 
         out << QString::fromUtf8("\n失败项 ") << fail << "\n";
@@ -246,13 +388,19 @@ int runLookupCli(const QStringList &args, MainWindow *w)
             << (sec == int(Card::Guide) ? QStringLiteral("guide")
                : sec == int(Card::Build) ? QStringLiteral("build") : QStringLiteral("ref")) << "\n";
         const QVector<SearchEngine::Explain> rows = w->engine()->explain(q, sec, QString());
-        for (const SearchEngine::Explain &x : rows)
+        for (const SearchEngine::Explain &x : rows) {
             out << QStringLiteral("%1 | tier=%2 firstPT=%3 cov=%4 req=%5 score=%6 ord=%7 | %8/%9\n")
                        .arg(w->dataset().at(x.index).n)
                        .arg(x.tier).arg(x.firstPT)
                        .arg(x.cov, 0, 'f', 3).arg(x.covReq, 0, 'f', 3)
                        .arg(x.score, 0, 'f', 1).arg(x.ord)
                        .arg(x.t, x.src);
+            /* D3：分数是怎么来的（"为什么这条排第一"）—— 每条结果都给，不是只给首位。
+               没有分项就不打印（分数 0 的行本来也没什么可解释的）。 */
+            const QStringList rs = x.reasonTexts();
+            for (const QString &r : rs)
+                out << QStringLiteral("        · ") << r << QLatin1Char('\n');
+        }
         return 0;
     }
 

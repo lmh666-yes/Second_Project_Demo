@@ -1,6 +1,7 @@
 #include "dataset.h"
 
 #include <QFile>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonParseError>
 #include <QJsonValue>
@@ -109,6 +110,47 @@ bool Dataset::load(const QString &path)
     m_loaded = true;
     m_error.clear();
     return true;
+}
+
+int Dataset::applyUsage(const QString &path)
+{
+    if (path.isEmpty())
+        return 0;
+    QFile f(path);
+    /* 文件不在 / 打不开 → 原样不动：手册页照旧用 dataset.json 自带的 u（uReal 保持 false）。 */
+    if (!f.exists() || !f.open(QIODevice::ReadOnly))
+        return 0;
+    QJsonParseError pe {};
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &pe);
+    f.close();
+    if (doc.isNull() || !doc.isObject())
+        return 0;                       /* 索引文件坏了也原样不动，不静默清空 */
+
+    const QJsonObject usage =
+        doc.object().value(QStringLiteral("usage")).toObject();
+
+    int n = 0;
+    for (Card &c : m_cards) {
+        c.u.clear();
+        /* 索引文件在 → 每条都走"真实使用位置"渲染：这样没写进去的条目
+           才能如实显示"没在你的代码里出现"，而不是留 dataset.json 里网页版自带的假位置。 */
+        c.uReal = true;
+        if (c.n.isEmpty())
+            continue;
+        const QJsonArray arr = usage.value(c.n).toArray();
+        for (const QJsonValue &uv : arr) {
+            const QJsonObject uo = uv.toObject();
+            Card::Use us;
+            us.tag  = uo.value(QStringLiteral("tag")).toString();
+            us.file = uo.value(QStringLiteral("f")).toString();
+            us.line = uo.value(QStringLiteral("l")).toInt();
+            us.what = uo.value(QStringLiteral("p")).toString();
+            c.u << us;
+        }
+        if (!c.u.isEmpty())
+            ++n;
+    }
+    return n;
 }
 
 QVector<int> Dataset::indicesOfSection(int section) const

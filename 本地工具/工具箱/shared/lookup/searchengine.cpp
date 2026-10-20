@@ -407,48 +407,67 @@ SearchEngine::Ev SearchEngine::evalEntry(const Card &c) const
 }
 
 double SearchEngine::scoreOf(const Card &c, const QStringList &words, const Ev &e,
-                             const QString &queryLower, int section) const
+                             const QString &queryLower, int section,
+                             QVector<Term> *terms) const
 {
+    /* D3：每一项都**记下来**（人话 + 它对分数的贡献），零贡献的不记（记了只是噪音）。
+       累加顺序与原来逐条 `+=` 完全一致 —— 这样 `sum(terms) == 返回的分数` 才能当断言用，
+       "为什么这条排第一"才是算出来的、不是事后编的。 */
+    const auto R = [terms](const QString &text, double add) {
+        if (terms && add != 0)
+            terms->append(Term { text, add });
+        return add;
+    };
     const QString &nl = m_nameLow.at(c.i);
-    double s = e.sP + e.sE + e.cov * 30 + e.covReq * 20;
+    double s = 0;
+    s += R(QStringLiteral("词命中（名字全命中 70 / 前缀 40 / 正文 18，按词权重加权）"), e.sP);
+    s += R(QStringLiteral("概念展开词命中"), e.sE);
+    s += R(QStringLiteral("覆盖度 %1 × 30").arg(e.cov, 0, 'f', 2), e.cov * 30);
+    s += R(QStringLiteral("必中词覆盖度 %1 × 20").arg(e.covReq, 0, 'f', 2), e.covReq * 20);
     if (e.near)
-        s += 20;
+        s += R(QStringLiteral("查询词在正文里挨得近（40 字内）"), 20);
     if (words.size() > 1 && nl.contains(words.join(QString())))
-        s += 60;
+        s += R(QStringLiteral("名字连写命中（整串连着写）"), 60);
 
     /* 板块分离 */
     if (c.t == QStringLiteral("guide"))
-        s += (section == int(Card::Guide)) ? 400 : -5000;
+        s += R(section == int(Card::Guide) ? QStringLiteral("板块=引导教程：向导卡加分")
+                                           : QStringLiteral("板块≠引导教程：向导卡剔除"),
+               (section == int(Card::Guide)) ? 400 : -5000);
     else if (c.t == QStringLiteral("flow"))
-        s += (section == int(Card::Guide)) ? 60 : 10;
+        s += R(section == int(Card::Guide) ? QStringLiteral("板块=引导教程：流程卡加分")
+                                           : QStringLiteral("流程卡在资料区（弱加分）"),
+               (section == int(Card::Guide)) ? 60 : 10);
     else if (c.t == QStringLiteral("datasheet"))
-        s += 30;
+        s += R(QStringLiteral("数据手册卡"), 30);
     else if (c.src == QStringLiteral("core") && c.t != QStringLiteral("table"))
-        s += 4;
+        s += R(QStringLiteral("手写条目（不是自动收录）"), 4);
 
     if (c.src == QStringLiteral("core") && !c.a.isEmpty()
         && c.t != QStringLiteral("table") && c.t != QStringLiteral("datasheet"))
-        s += 3;
+        s += R(QStringLiteral("手写条目且带参数表"), 3);
 
     static const QRegularExpression typedefTail(QStringLiteral("typedef$"),
                                                QRegularExpression::CaseInsensitiveOption);
     static const QRegularExpression structAsk(
         QStringLiteral("结构体|成员|字段|typedef|定义|参数"));
     if (typedefTail.match(c.n).hasMatch() && !structAsk.match(queryLower).hasMatch())
-        s -= 14;
+        s += R(QStringLiteral("名字以 typedef 结尾且没问结构体（降权）"), -14);
 
     if (c.t == QStringLiteral("table") && m_t->bigTableRe.match(c.n).hasMatch()) {
         static const QRegularExpression seek(QStringLiteral("表|向量|宏|映射|分组|扇区|线"));
         bool tableSeeking = false;
         for (const QString &w : words)
             if (seek.match(w).hasMatch()) { tableSeeking = true; break; }
-        s -= tableSeeking ? 0 : 60;
+        s += R(tableSeeking ? QStringLiteral("大表且查询里有「表/向量/宏…」（不降权）")
+                            : QStringLiteral("大表但查询里没有「表/向量/宏…」（降权）"),
+               tableSeeking ? 0 : -60);
     }
 
     if (c.src == QStringLiteral("auto") && section == int(Card::Ref) && !words.isEmpty())
-        s -= 8;
+        s += R(QStringLiteral("自动收录条目（降权）"), -8);
     if (c.src == QStringLiteral("autostruct") && section == int(Card::Ref) && !words.isEmpty())
-        s -= 12;
+        s += R(QStringLiteral("自动收录的结构体（降权）"), -12);
 
     /* 概念干扰屏蔽 */
     if (!words.isEmpty()) {
@@ -464,7 +483,10 @@ double SearchEngine::scoreOf(const Card &c, const QStringList &words, const Ev &
             bool blocked = false;
             for (const QRegularExpression &re : bl)
                 if (re.match(c.n).hasMatch()) { blocked = true; break; }
-            if (blocked) { s -= 90; break; }
+            if (blocked) {
+                s += R(QStringLiteral("命中概念屏蔽名单（名字是干扰项）"), -90);
+                break;
+            }
         }
     }
 
@@ -474,35 +496,166 @@ double SearchEngine::scoreOf(const Card &c, const QStringList &words, const Ev &
         for (const QString &w : words)
             if (m_t->genericDown.contains(fixTypo(w))) { spec = true; break; }
         if (spec)
-            s -= 120;
+            s += R(QStringLiteral("泛化卡（一览表/映射表…）遇到具体概念（降权）"), -120);
     }
     return s;
 }
 
-/* ------------------------------------------------------------------ */
-/*  主入口                                                              */
-/* ------------------------------------------------------------------ */
-
-SearchEngine::Result SearchEngine::run(const QString &query, int section,
-                                       const QString &module) const
+QStringList SearchEngine::Explain::reasonTexts() const
 {
-    Result res;
-    res.words = tokenize(query);
-    res.expanded = expandWords(res.words);
+    QStringList out;
+    for (const Term &tm : terms) {
+        const QString n = QString::number(tm.add, 'g', 6);
+        out << tm.text + QStringLiteral("  ") + (tm.add >= 0 ? QStringLiteral("+") + n : n);
+    }
+    return out;
+}
 
+/* ------------------------------------------------------------------ */
+/*  D3：倒排索引（3 字窗口）与候选集收缩                                  */
+/* ------------------------------------------------------------------ */
+
+namespace {
+
+/* 3 个小写字母数字打包成一个 key（只用这种窗口才进索引） */
+inline quint64 gramKey(const QString &s, int i)
+{
+    return quint64(s.at(i).unicode())
+         | (quint64(s.at(i + 1).unicode()) << 16)
+         | (quint64(s.at(i + 2).unicode()) << 32);
+}
+inline bool isLowerAlnum(QChar c)
+{
+    const ushort u = c.unicode();
+    return (u >= 'a' && u <= 'z') || (u >= '0' && u <= '9');
+}
+/* 这个词能不能靠 3 字窗口缩候选：纯小写字母数字、且 ≥3 字。
+   短词（1~2 字，还有"中断"这种 2 字中文）命中面太宽，不进索引，改用逐条测。 */
+inline bool grammable(const QString &t)
+{
+    if (t.size() < 3)
+        return false;
+    for (const QChar c : t)
+        if (!isLowerAlnum(c))
+            return false;
+    return true;
+}
+
+/* 含 t 这个**子串**的条目（hay 或名字里都有索引）。
+   为什么子串口径就够：对 len≥3 的纯小写字母数字 token，hitTier 的三种命中
+   （名字全命中 / 名字前缀 / 名字含它 / 正文含它）**都是"某处出现 t 这个子串"**的子集，
+   所以交集结果只会大不会小 —— 候选集只要不漏，最终结果就一个字都不差（多出来的会因
+   cov=0 被 tight/loose 挡掉）。 */
+QVector<int> gramCandidates(const QHash<quint64, QVector<int>> &g, const QString &t)
+{
+    const int m = t.size() - 2;
+    QVector<const QVector<int> *> lists;
+    lists.reserve(m);
+    for (int p = 0; p < m; ++p) {
+        const auto it = g.constFind(gramKey(t, p));
+        if (it == g.constEnd())
+            return QVector<int>();          /* 少一个窗口 → 不可能含 t */
+        lists << &it.value();
+    }
+    std::sort(lists.begin(), lists.end(),
+              [](const QVector<int> *a, const QVector<int> *b) { return a->size() < b->size(); });
+    QVector<int> out = *lists.first();
+    for (int li = 1; li < lists.size(); ++li) {
+        const QVector<int> &cur = *lists.at(li);
+        QVector<int> keep;
+        keep.reserve(out.size());
+        for (int v : out)
+            if (std::binary_search(cur.begin(), cur.end(), v))
+                keep << v;
+        out = keep;
+        if (out.isEmpty())
+            break;
+    }
+    return out;
+}
+
+} // namespace
+
+void SearchEngine::buildIndex() const
+{
+    if (m_gramBuilt)
+        return;
+    m_gramBuilt = true;                     /* 先置位：置位后即使中途出错也不反复重建 */
+    if (!m_cards)
+        return;
+    const int n = m_cards->size();
+    QSet<quint64> seen;                     /* 同一张卡里同一窗口只收一次 → postings 严格升序 */
+    const auto addStr = [&seen, this](const QString &s, int i) {
+        seen.clear();
+        const int m = s.size() - 2;
+        for (int p = 0; p < m; ++p) {
+            if (!isLowerAlnum(s.at(p)) || !isLowerAlnum(s.at(p + 1)) || !isLowerAlnum(s.at(p + 2)))
+                continue;
+            const quint64 k = gramKey(s, p);
+            if (seen.contains(k))
+                continue;
+            seen.insert(k);
+            m_gram[k].append(i);
+        }
+    };
+    for (int i = 0; i < n; ++i) {
+        addStr(m_cards->at(i).hay, i);           /* hay 全小写（数据导出口径） */
+        if (i < m_nameLow.size())
+            addStr(m_nameLow.at(i), i);          /* 名字也要索引：tier2/3 靠名字命中 */
+    }
+}
+
+QVector<int> SearchEngine::narrow(const QVector<int> &base, const QStringList &toks) const
+{
+    buildIndex();
+    QSet<int> inBase;
+    inBase.reserve(base.size() * 2);
+    for (int i : base)
+        inBase.insert(i);
+    QVector<int> cand;
+    QSet<int> seen;
+    for (const QString &t : toks) {
+        if (t.isEmpty())
+            continue;
+        if (grammable(t)) {
+            const QVector<int> part = gramCandidates(m_gram, t);
+            for (int i : part)
+                if (inBase.contains(i) && !seen.contains(i)) {
+                    seen.insert(i);
+                    cand << i;
+                }
+        } else {
+            /* 缩不动的词：老实扫一遍本板块，但**只测这一个词** ——
+               比"每张卡都跑 evalEntry（含全部词 + 邻近词 + 正则）"便宜得多。 */
+            for (int i : base) {
+                if (seen.contains(i))
+                    continue;
+                if (hitTier(m_cards->at(i), QStringList { t }) != 0) {
+                    seen.insert(i);
+                    cand << i;
+                }
+            }
+        }
+    }
+    std::sort(cand.begin(), cand.end());    /* 升序 → 与旧路径"按 base 顺序遍历"逐条一致 */
+    return cand;
+}
+
+void SearchEngine::prepare(const QStringList &words) const
+{
     m_cur = Cur();
-    m_cur.g.reserve(res.words.size());
-    for (const QString &w : res.words)
+    m_cur.g.reserve(words.size());
+    for (const QString &w : words)
         m_cur.g.append(variantGroups(w));
-    for (const QString &w : res.words)
+    for (const QString &w : words)
         m_cur.w.append(weightOf(w));
-    m_cur.heads = res.words;
+    m_cur.heads = words;
 
-    for (const QString &w : res.words) {
+    for (const QString &w : words) {
         const QString f = fixTypo(w);
         m_cur.req.append(!m_t->action.contains(w) && !m_t->action.contains(f));
     }
-    if (!res.words.isEmpty()) {
+    if (!words.isEmpty()) {
         bool anyReq = false;
         for (bool b : m_cur.req)
             if (b) { anyReq = true; break; }
@@ -517,6 +670,37 @@ SearchEngine::Result SearchEngine::run(const QString &query, int section,
     }
     m_cur.tot = tot;
     m_cur.reqTot = reqTot;
+}
+
+QStringList SearchEngine::reasonsFor(const QString &query, int cardIndex, int section) const
+{
+    if (!m_cards || cardIndex < 0 || cardIndex >= m_cards->size())
+        return QStringList();
+    const QStringList words = tokenize(query);
+    if (words.isEmpty())
+        return QStringList();
+    prepare(words);
+    const Card &c = m_cards->at(cardIndex);
+    const Ev e = evalEntry(c);
+    QVector<Term> terms;
+    scoreOf(c, words, e, query.toLower(), section, &terms);
+    Explain x;
+    x.terms = terms;
+    return x.reasonTexts();
+}
+
+/* ------------------------------------------------------------------ */
+/*  主入口                                                              */
+/* ------------------------------------------------------------------ */
+
+SearchEngine::Result SearchEngine::run(const QString &query, int section,
+                                       const QString &module, bool useIndex) const
+{
+    Result res;
+    res.words = tokenize(query);
+    res.expanded = expandWords(res.words);
+
+    prepare(res.words);                     /* D3：从 run() 里抽出来，explain/reasonsFor 共用 */
 
     /* 板块归属（对照网页 inSec；项目引导板块不走这里，由界面直接列手册卡） */
     const auto inSec = [section](const Card &c) {
@@ -537,9 +721,27 @@ SearchEngine::Result SearchEngine::run(const QString &query, int section,
 
     QVector<int> arr;
     if (!res.words.isEmpty()) {
+        /* D3：先用倒排索引把候选集缩到"至少命中一个查询词"的条目 ——
+           原来是**每张卡都跑 evalEntry**（含全部词、变体、邻近词和短词正则），
+           条目一多就线性变慢。缩完只对候选跑 evalEntry；漏不漏由上面的论证 +
+           自检里的"索引版 vs 朴素版逐条对照"两头钉住。 */
+        QVector<int> cand;
+        if (useIndex) {
+            QStringList toks;
+            for (const QStringList &g : m_cur.g)
+                for (const QString &t : g)
+                    if (!t.isEmpty() && !toks.contains(t))
+                        toks << t;
+            cand = narrow(base, toks);
+            res.narrowed = true;
+        } else {
+            cand = base;                    /* 自检对照用：老路径 */
+        }
+        res.scanned = cand.size();
+
         QVector<int> tight, loose;
         QHash<int, Ev> ev;
-        for (int i : base) {
+        for (int i : cand) {
             const Ev e = evalEntry(m_cards->at(i));
             ev.insert(i, e);
             if (e.covReq >= 0.999)
@@ -555,7 +757,7 @@ SearchEngine::Result SearchEngine::run(const QString &query, int section,
             res.relaxed = true;
         }
         if (arr.isEmpty()) {
-            for (int i : base) {
+            for (int i : cand) {
                 bool any = false;
                 for (const QStringList &g : m_cur.g) {
                     for (const QString &t : g)
@@ -630,7 +832,7 @@ QVector<SearchEngine::Explain> SearchEngine::explain(const QString &query, int s
         x.firstPT = e.firstPT;
         x.cov     = e.cov;
         x.covReq  = e.covReq;
-        x.score   = scoreOf(c, r.words, e, ql, section);
+        x.score   = scoreOf(c, r.words, e, ql, section, &x.terms);   /* D3：顺手记下分数怎么来的 */
         x.ord     = c.ord;
         x.t       = c.t.isEmpty() ? QStringLiteral("(func)") : c.t;
         x.src     = c.src;

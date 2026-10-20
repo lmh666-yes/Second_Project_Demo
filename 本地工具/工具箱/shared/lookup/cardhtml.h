@@ -9,8 +9,10 @@
 
 #include "dataset.h"
 
+#include <QHash>
 #include <QSet>
 #include <QString>
+#include <QStringList>
 
 namespace CardHtml {
 
@@ -19,6 +21,15 @@ struct Ctx {
     int          index = -1;
     bool         isFav = false;
     QSet<QString> done;     /* 形如 "条目名#步骤序号" */
+
+    /* D2：真实使用位置（uReal==true）渲染时，每行是个可点链接。
+       这里收集链接目标（元素 = "绝对路径|行号"），href 里只带下标（纯 ASCII 最稳）；
+       点击由 MainWindow::onAnchor 的 `src:` 分支处理。
+
+       boardDirs 是"板标签 → 该板工程目录绝对路径"（板1/板2），链接目标要靠它把
+       索引里的文件名（basename）拼成绝对路径。不传就退化成不可点（仅展示）。 */
+    QStringList               *srcTargets = nullptr;
+    const QHash<QString, QString> *boardDirs = nullptr;
 };
 
 /* dark/light 只影响局部配色（页面底色由 QSS 给） */

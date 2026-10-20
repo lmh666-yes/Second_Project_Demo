@@ -1,6 +1,9 @@
 #include "cardhtml.h"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QStringList>
+#include <QHash>
 
 namespace {
 
@@ -261,7 +264,76 @@ QString CardHtml::build(const Card &c, bool dark, const Ctx &ctx)
     }
 
     /* ---- 本项目使用位置 ---- */
-    if (!c.u.isEmpty()) {
+    if (c.uReal) {
+        /* D2：来自本仓库**真实代码索引**（code_usage.json）。
+           有位置 → 每行是个可点链接，跳到那块板的那一行（href 只带下标，点击归 onAnchor）；
+           没有 → 如实写一句"没在你的代码里出现"，别让人误以为手册条目就是"你用了"。 */
+        h += h2(QStringLiteral("本项目使用位置（按你的代码索引）"), col);
+        if (c.u.isEmpty()) {
+            h += QStringLiteral("<p style='color:%1;'>%2</p>")
+                     .arg(col.dim, esc(QStringLiteral(
+                         "没在你的代码里出现 —— 这条只有手册条目，你的工程里没用它")));
+        } else {
+            /* ① 分组：`板1`/`板2`（你自己写的 .c）排在 `板1·库`/`板2·库`（驱动源码
+               FWLIB/src，不是你写的）之前 —— 混在一起看不出"这句到底是谁用的"。
+               ② 每组**封顶**：有的 SPL 条目在库里出现上百次，全列出来这一页没法看；
+               每组建最多 kPerTag 行，剩下的写「另有 N 处」。 */
+            const int kPerTag = 5;
+            QHash<QString, QVector<Card::Use>> byTag;
+            QStringList order;                       /* 按首次出现定序，之后按分组重排 */
+            for (const Card::Use &u : c.u) {
+                if (!byTag.contains(u.tag))
+                    order << u.tag;
+                byTag[u.tag] << u;
+            }
+            QStringList mine, lib;
+            for (const QString &t : order)
+                (t.contains(QChar(0x00B7)) ? lib : mine) << t;      /* '·' = 库那组 */
+            h += QStringLiteral("<p style='color:%1;font-size:12px;margin:0 0 4px 0;'>%2</p>")
+                     .arg(col.dim, esc(QStringLiteral(
+                         "板1/板2 = 你自己写的 .c；板1·库/板2·库 = 工程里的驱动源码(FWLIB/src)。"))
+                     );
+            QStringList rows;
+            int more = 0;
+            for (const QString &t : mine + lib) {
+                const QVector<Card::Use> us = byTag.value(t);
+                const bool isMine = !t.contains(QChar(0x00B7));
+                const QString tagColor = isMine ? QStringLiteral("#34d399") : col.dim;
+                for (int k = 0; k < us.size(); ++k) {
+                    if (k >= kPerTag) {
+                        more += us.size() - kPerTag;
+                        break;
+                    }
+                    const Card::Use &u = us.at(k);
+                    const QString shown = QStringLiteral("%1 %2:%3").arg(u.tag, u.file).arg(u.line);
+                    QString cell = esc(shown);
+                    QString abs;
+                    if (ctx.boardDirs && ctx.srcTargets)
+                        abs = ctx.boardDirs->value(t);              /* 板1 / 板1·库 → 目录 */
+                    if (!abs.isEmpty())
+                        abs = QDir(abs).filePath(u.file);           /* basename 拼成绝对路径 */
+                    /* 只在文件**真的在**时才做成链接：拼不出来或文件不见的，
+                       做成死的可点链接还不如老实显示文本（点了只会报"找不到源文件"）。 */
+                    if (ctx.srcTargets && QFileInfo::exists(abs)) {
+                        ctx.srcTargets->append(QStringLiteral("%1|%2").arg(abs).arg(u.line));
+                        const int i = ctx.srcTargets->size() - 1;
+                        cell = QStringLiteral("<a href='src:%1' style='color:%2;'>%3</a>")
+                                   .arg(i).arg(col.accent, esc(shown));
+                    }
+                    rows << QStringLiteral("<tr><td style='color:%1;'>%2</td>"
+                                           "<td style='color:%3;'>%4</td></tr>")
+                                .arg(tagColor, cell).arg(col.dim, esc(u.what));
+                }
+            }
+            h += QStringLiteral("<table width='100%' cellspacing='0' cellpadding='3'>%1</table>")
+                     .arg(rows.join(QString()));
+            if (more > 0)
+                h += QStringLiteral("<p style='color:%1;font-size:12px;'>%2</p>")
+                         .arg(col.dim, esc(QStringLiteral("另有 %1 处没列出来（同一处会重复出现，"
+                                                          "只在工程里查代码时用得上）").arg(more)));
+        }
+    } else if (!c.u.isEmpty()) {
+        /* 没有代码索引文件时的老渲染：沿用 dataset.json 里网页版自带的 u。 */
         h += h2(QStringLiteral("本项目使用位置"), col);
         QStringList rows;
         for (const Card::Use &u : c.u) {

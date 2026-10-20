@@ -23,11 +23,30 @@ C3  数据流追踪
     报了却没进帧的标「读了没用」，单位对不上的标「单位可疑」。
     追不动的地方（跨函数、走结构体）**明说追不动**，不瞎猜。
 
+D2  条目名 → 使用位置（手册页内嵌代码索引）
+    扫板1 + 板2，产出 `速查数据/data/code_usage.json`：
+    每个**手册条目名**对应它在哪块板的哪个文件第几行出现。速查页/手册页读它，
+    在条目里显示「你在 板1/main.c:123 用了它」（可点跳到那行）；
+    没用过的条目如实写「没在你的代码里出现」。
+
+    基准是**条目名**，不是 C1 那套 API 前缀：C1 的索引只认 `SYS_/GPIO_/LED_…` 前缀
+    （"工程自己写的辅助函数"），而手册条目绝大多数是 **SPL 函数**（`RCC_…` / `USART_Init` /
+    `GPIO_Init` …）—— 拿前缀去比，手册条目一个都命中不了（D2 第一版就是这么错的，实测
+    索引与条目名**零交集**，所有卡片都只能写"没出现"）。所以这里直接拿**数据集里所有条目名**
+    当词典去扫。
+
+    分两组 tag，免得把"你写的"和"库里的"混为一谈：
+      · `板1` / `板2`      = 你自己写的顶层 `.c`（工具生成的 `board_selftest.c` 不算）
+      · `板1·库` / `板2·库` = 工程里的驱动源码 `FWLIB/src/*.c`（不是你写的，但确实在用）
+    `p` 字段按"后面跟不跟 `(`"分「调用 / 出现」—— `ADC_InitTypeDef` 这种只是**类型出现**，
+    说成"调用"就是瞎写。
+
 用法：
     python 本地工具\工具箱\检查\代码索引\code_index.py --index
     python ...\code_index.py --where SYS_USART_Init
     python ...\code_index.py --signatures
     python ...\code_index.py --flow --svg 产物/数据流.svg
+    python ...\code_index.py --usage                 # D2：条目名 → 使用位置（板1+板2）
     python ...\code_index.py --selftest
 """
 import argparse
@@ -36,6 +55,7 @@ import json
 import os
 import re
 import sys
+import time
 
 try:
     sys.stdout.reconfigure(encoding='utf-8')
@@ -70,6 +90,18 @@ def cfg_file():
     return os.path.join(ROOT, CFG_REL)
 
 DS_REL = os.path.join('本地工具', '工具箱', '速查数据', 'data', 'dataset.json')
+# D2：条目名 → 使用位置（板1 + 板2 的真实代码索引），由 `--usage` 生成；
+# 速查页/手册页读它做「你在 板1/main.c:123 用了它」（AppPaths::usagePath()）。
+USAGE_REL = os.path.join('本地工具', '工具箱', '速查数据', 'data', 'code_usage.json')
+
+# D2：扫"你写的 .c"时，工具自己生成的这几个不算（与 C3 trace_flow 的 GENERATED 同一口径）
+USAGE_GENERATED = {'board_selftest.c'}
+# D2：工程里"驱动源码"那一组的子目录（不是你写的，但确实在用这些 SPL 函数）
+USAGE_LIB_SUBDIR = os.path.join('FWLIB', 'src')
+# D2：剥字符串字面量（`"GPIO_Init"` 这种出现在字符串里的名字不该算"用了它"）
+STR_RE = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'')
+# D2：标识符（整词）
+IDENT_RE = re.compile(r'(?<![A-Za-z0-9_])[A-Za-z_]\w+(?![A-Za-z0-9_])')
 
 
 def with_envelope(name, obj, ok=True):
@@ -283,6 +315,111 @@ def render_index(idx):
               '> 查签名请去 `FWLIB/inc/` 对应头文件；想让它也能当条目查，得在速查数据里补卡',
               '> （内容侧的事，工具不代写 —— 硬编一份"印象签名"只会更糟）。', '']
     return '\n'.join(L)
+
+
+# ========================================================================
+# D2：条目名 → 使用位置（手册页内嵌代码索引）
+# ========================================================================
+
+def usage_out_path():
+    """`--usage` 的默认输出：数据根（速查数据）/data/code_usage.json。"""
+    return os.path.join(ROOT, USAGE_REL)
+
+
+def board_tag(board):
+    """板级配置里的板 → 手册里用的短 tag（`板1` / `板2`；都不是就原样返回）。"""
+    n = board.get('name', '')
+    if '板1' in n:
+        return '板1'
+    if '板2' in n:
+        return '板2'
+    return n
+
+
+def usage_boards(boards=None):
+    """要扫的板：name 含「板1」/「板2」的两块（**跳过 OTA**），返回 [(board, tag)]。"""
+    boards = load_boards() if boards is None else boards
+    return [(b, board_tag(b)) for b in boards
+            if '板1' in b.get('name', '') or '板2' in b.get('name', '')]
+
+
+def scan_names(path, names):
+    """扫一个 .c：返回 [(名字, 行号, 是调用还是仅出现)]，只留**手册条目名**。
+
+    先剥注释再剥字符串：`/* SYS_USART_Init(...) */` 与 `"GPIO_Init"` 都不该算"用了它"。
+    `p` 分「调用 / 出现」：名字后面跟 `(` 才算调用 —— `ADC_InitTypeDef di;` 只是类型出现，
+    写成"调用"就是瞎说。
+    """
+    text = STR_RE.sub('', strip_comments(read_text(path)))
+    out, seen = [], set()
+    for m in IDENT_RE.finditer(text):
+        nm = m.group(0)
+        if nm not in names:
+            continue
+        ln = line_of(text, m.start())
+        if (nm, ln) in seen:
+            continue
+        seen.add((nm, ln))
+        call = bool(re.compile(r'\s*\(').match(text, m.end()))
+        out.append((nm, ln, '调用' if call else '出现'))
+    return out
+
+
+def usage_sources(board):
+    """一块板的两个来源组：[(tag, [文件...])]。
+
+    板1/板2 = 你写的顶层 .c（工具生成的 board_selftest.c 不算）；
+    板1·库/板2·库 = 工程里的驱动源码 FWLIB/src/*.c（不是你写的，但确实在用它）。
+    """
+    tag = board_tag(board)
+    proj = os.path.join(ROOT, board['dir'])
+    mine = [p for p in user_files(proj)
+            if os.path.basename(p) not in USAGE_GENERATED]
+    lib = sorted(glob.glob(os.path.join(proj, USAGE_LIB_SUBDIR, '*.c')))
+    return [(tag, mine), (tag + '·库', lib)]
+
+
+def usage_payload(boards=None, manuals=None):
+    """扫板1 + 板2，产出"手册条目名 → 使用位置"。
+
+    规范形状（写进 code_usage.json 的就是前四个键）：
+        {"generatedAt","boards","usage":{name:[{tag,f,l,p}]},"counts":{apis,calls}}
+    另外带 board / calls 两个键 —— `--usage --json` 要用它们满足 B2 契约表
+    （契约表给本脚本登记的就是 board / calls，缺了契约闸门会红）。
+
+    词典取 `manuals`（默认 = 数据集里所有条目名）。**必须按条目名扫**：见文件头 D2 那段
+    说明 —— 用 C1 的 API 前缀去比，手册条目命中数为 0（SPL 函数不在那套前缀里）。
+    """
+    names = manual_names() if manuals is None else set(manuals)
+    usage, calls, blist = {}, [], []
+    for b, _tag in usage_boards(boards):
+        blist.append(b.get('name', ''))
+        for tag, files in usage_sources(b):
+            for p in files:
+                for nm, ln, what in scan_names(p, names):
+                    calls.append({'api': nm, 'file': os.path.basename(p),
+                                  'line': ln, 'tag': tag})
+                    usage.setdefault(nm, []).append(
+                        {'tag': tag, 'f': os.path.basename(p), 'l': ln, 'p': what})
+    return {
+        'generatedAt': time.strftime('%Y-%m-%dT%H:%M:%S'),
+        'boards': blist,
+        'usage': usage,
+        'counts': {'apis': len(usage), 'calls': len(calls)},
+        'board': '板1+板2',
+        'calls': calls,
+    }
+
+
+def write_usage(payload, path):
+    """写文件：只落规范里的四个键（board / calls 是给 --json 契约用的，不进文件）。"""
+    obj = {k: payload[k] for k in ('generatedAt', 'boards', 'usage', 'counts')}
+    d = os.path.dirname(os.path.abspath(path))
+    if d:
+        os.makedirs(d, exist_ok=True)
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        json.dump(obj, f, ensure_ascii=False, separators=(',', ':'))
+    return len(obj.get('usage') or {})
 
 
 # ========================================================================
@@ -575,6 +712,54 @@ def selftest():
            any(a['api'] == 'SYS_USART_Init' and a['doc'] for a in idx['apis']))
         ck('C1：报告里明说手册没条目', '没有自己的条目' in render_index(idx))
 
+        # D2：--usage（板1 + 板2 → 条目名 → 使用位置）正例 + 反例
+        #     自检一律用临时目录 / 临时 --out，绝不覆盖真实的 code_usage.json。
+        #     词典必须显式传：tmp 里没有真 dataset.json，manual_names() 会返回空集
+        #     （也正是"D2 第一版拿前缀去比、命中 0"的现场——所以这里钉住按条目名扫）。
+        os.makedirs(os.path.join(tmp, 'note'))
+        with open(os.path.join(tmp, 'note', 'note.c'), 'w',
+                  encoding='utf-8', newline='\n') as f:
+            # 只在注释里出现、正文没有任何真调用 —— 不该被收进使用位置
+            f.write('/* 只在注释里出现：SYS_USART_Init(1, 115200); */\n'
+                    'const char *s = "SYS_USART_Init";\nint nothing;\n')
+        # 库那一组：good/FWLIB/src/lib.c 里出现了一个 SPL 条目名 → 应记成 板1·库
+        os.makedirs(os.path.join(tmp, 'good', 'FWLIB', 'src'))
+        with open(os.path.join(tmp, 'good', 'FWLIB', 'src', 'lib.c'), 'w',
+                  encoding='utf-8', newline='\n') as f:
+            f.write('void f(void) { GPIO_Init(0, 0); }\n')
+        payload = usage_payload([{'name': '板1 检测端', 'dir': 'good'},
+                                 {'name': '板2 通信端', 'dir': 'note'}],
+                                manuals={'SYS_USART_Init', 'GPIO_Init'})
+        exp_line = next((i + 1 for i, l in enumerate(FIXTURE_C.split('\n'))
+                         if 'SYS_USART_Init' in l), -1)
+        hits = payload['usage'].get('SYS_USART_Init', [])
+        ck('D2：--usage 正例——按**条目名**收下 板1/main.c 与真实调用行号',
+           any(h['tag'] == '板1' and h['f'] == 'main.c' and h['l'] == exp_line
+               and h['p'] == '调用' for h in hits),
+           hits)
+        ck('D2：--usage 反例（注释里的同名 + 字符串里的同名都不收录）',
+           not any(h['tag'] == '板2' for h in hits), hits)
+        ck('D2：--usage 分两组 tag —— 驱动源码记 板1·库（不是你写的）',
+           any(h['tag'] == '板1·库' and h['f'] == 'lib.c'
+               for h in payload['usage'].get('GPIO_Init', [])),
+           payload['usage'].get('GPIO_Init'))
+        ck('D2：--usage 只留条目名（非条目名的标识符不收）',
+           'nothing' not in payload['usage'] and 'f' not in payload['usage'],
+           sorted(payload['usage'])[:6])
+        ck('D2：--usage 信封保留 board / calls（B2 契约表登记的键）',
+           payload['board'] == '板1+板2'
+           and any(c['api'] == 'SYS_USART_Init' for c in payload['calls']),
+           payload['board'])
+        uout = os.path.join(tmp, 'code_usage.json')
+        write_usage(payload, uout)
+        with open(uout, encoding='utf-8') as f:
+            saved = json.load(f)
+        ck('D2：--usage 输出形状（generatedAt / boards / usage / counts）',
+           bool(saved.get('generatedAt')) and bool(saved.get('boards'))
+           and isinstance(saved.get('usage'), dict)
+           and saved.get('counts', {}).get('calls', 0) >= 1,
+           sorted(saved.keys()))
+
         # C2：正例 0 误报；错例两种都抓到
         g = check_signatures(good, protos)
         ck('C2：正例 0 误报', not g['issues'], g['issues'])
@@ -625,6 +810,8 @@ def main():
     ap.add_argument('--signatures', action='store_true', help='C2：调用签名校验')
     ap.add_argument('--flow', action='store_true', help='C3：数据流追踪')
     ap.add_argument('--svg', default='', help='C3：数据流图输出路径')
+    ap.add_argument('--usage', action='store_true', help='D2：条目名 → 使用位置（板1 + 板2）')
+    ap.add_argument('--out', default='', help='D2：--usage 的输出路径（默认 速查数据/data/code_usage.json）')
     ap.add_argument('--write', default='', help='把报告写到这个 md 文件')
     ap.add_argument('--json', action='store_true')
     ap.add_argument('--selftest', action='store_true')
@@ -632,6 +819,23 @@ def main():
 
     if a.selftest:
         sys.exit(0 if selftest() else 1)
+
+    if a.usage:
+        payload = usage_payload()
+        outp = a.out.strip() or usage_out_path()
+        write_usage(payload, outp)
+        if a.json:
+            print(json.dumps(with_envelope('代码索引', payload),
+                             ensure_ascii=False))
+        else:
+            print('使用位置：%d 个条目、%d 处调用（板：%s）'
+                  % (payload['counts']['apis'], payload['counts']['calls'],
+                     '、'.join(payload['boards']) or '无'))
+            print('写入：%s' % outp)
+        # 只有 --usage 单跑就到此为止；带了 --index（插件壳那页）继续往下出报告，
+        # 一次跑同时刷新报告与使用位置。
+        if not a.index:
+            sys.exit(0)
 
     boards = pick_board(load_boards(), a.board)
     if not boards:

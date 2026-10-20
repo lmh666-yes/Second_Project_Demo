@@ -42,6 +42,10 @@ struct Card {
 
     struct Use { QString tag, file, what; int line = 0; };
     QVector<Use> u;           /* 本项目使用位置 */
+    /* D2：u 是不是来自**本仓库真实代码索引**（code_usage.json）。
+       为 true 时手册页按"真实使用位置"渲染（有位置给可点链接、没有就明说没出现）；
+       为 false 时沿用 dataset.json 里网页版自带的 u（兼容没跑索引的情形）。 */
+    bool         uReal = false;
     QStringList  rel;         /* 相关与联动（条目名） */
 
     /* ---- 判定 ---- */
@@ -71,6 +75,12 @@ class Dataset {
 public:
     /* 装载；失败时 error() 给出原因 */
     bool load(const QString &path);
+
+    /* D2：把本仓库的代码索引（code_usage.json）套进每张卡 —— 用它替换 Card.u，
+       并把 uReal 置 true（文件在就说清"这些是真实索引"，空的条目好如实写"没出现"）。
+       文件不存在 / 打不开 / 解析失败 → **原样不动**（uReal 保持 false），不报错、不清空。
+       返回用到过位置的**条目数**。 */
+    int applyUsage(const QString &path);
 
     bool           isLoaded() const { return m_loaded; }
     QString        error()    const { return m_error; }

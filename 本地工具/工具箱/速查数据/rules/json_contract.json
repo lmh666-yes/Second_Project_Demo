@@ -37,7 +37,9 @@
     {"script": "检查/示例插件/check.py", "tool": "example_plugin", "args": ["--json"],
      "keys": ["files", "lines", "todo", "stub", "report"]},
     {"script": "检查/驾驶舱/cockpit_data.py", "tool": "驾驶舱", "args": ["--json"],
-     "keys": ["cards", "stage", "next_action"]}
+     "keys": ["cards", "stage", "next_action"]},
+    {"script": "检查/插件体检/plugin_audit.py", "tool": "插件体检", "args": ["--json"],
+     "keys": ["plugins", "problems"]}
   ],
   "excluded": [
     {"script": "检查/链路仿真/link_sim.py",

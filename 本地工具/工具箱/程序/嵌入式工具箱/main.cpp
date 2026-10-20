@@ -309,6 +309,10 @@ static int runCli(const QStringList &args)
             /* 生成器也挂进来：它的"骨架阶段提示"曾出现"两种风格不一致 / 无任务时阶段3缺号"，
                靠自检钉住输出结构，别靠人想起来去比对。 */
             {"工程模板生成", "程序/工程模板/project_scaffold.py"},
+            /* 插件体检：守"插件页 manifest 与上游脚本产物一致" —— manifest 里的 report
+               跟脚本真会写出的路径对不上时，「打开报告」按钮会永远点不亮（静默故障）；
+               有 --json 却漏登记契约表也会悄悄漂。这两条以前没人守，故新增本体检。 */
+            {"插件体检",     "检查/插件体检/plugin_audit.py"},
         };
         /* B3：这一轮要跑什么 = 上面的**显式表** + 下面**自动发现的插件壳**。
            为什么需要自动那一半：B1 只做到"新加一个检查器目录 → 进侧栏"，
@@ -1351,6 +1355,21 @@ int main(int argc, char *argv[])
              "return 'gbk' if os.path.basename(path).lower() == 'main.c' else 'utf-8'",
              "return 'utf-8'",
              "main.c 的编码口径（把 GBK 当成 UTF-8）"},
+            /* 2026-10-20（D 组）：新加的三处判定也要被变异覆盖 —— 否则"自检绿了"
+               并不说明它在测那条判定（H7 的老问题）。三处都挑**便宜**的：不跑 armcc，
+               只把关键那一行改坏。 */
+            {"检查/代码索引/code_index.py",
+             "text = STR_RE.sub('', strip_comments(read_text(path)))",
+             "text = read_text(path)",
+             "D2「使用位置」的注释/字符串剥离（剥不掉就会把注释里的名字当成'你真用了'）"},
+            {"检查/协议对照/host_compare.py",
+             "elif rv == sv:\n            note = ''\n            ok = True",
+             "elif True:\n            note = ''\n            ok = True",
+             "D4 三方对照的「逐字段比」（永远判一致 → 改坏的字段就点名不出来了）"},
+            {"检查/插件体检/plugin_audit.py",
+             "if norm(report) not in actual:",
+             "if False:",
+             "插件体检的「report 与脚本实际写出的路径一致性」（不放行就发现不了点不亮的报告按钮）"},
         };
         auto runSelftest = [&](const QString &script) -> int {
             QProcess p;

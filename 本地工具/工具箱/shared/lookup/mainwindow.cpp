@@ -2,6 +2,7 @@
 
 #include "apppaths.h"
 #include "cardhtml.h"
+#include "lookupdata.h"
 #include "searchengine.h"
 #include "theme.h"
 
@@ -9,6 +10,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -244,6 +246,15 @@ void MainWindow::buildUi()
     row2->addWidget(m_search, 1);
     row2->addWidget(new QLabel(QStringLiteral("模块"), this));
     row2->addWidget(m_module);
+    /* D2：详情里「你在 板1/main.c:123 用了它」的那份索引是 code_index.py --usage 现生成的，
+       代码改动后点这一下就地重建（重扫板1+板2 的用户 .c），不用回命令行。 */
+    m_btnUsage = new QPushButton(QStringLiteral("刷新使用位置"), this);
+    m_btnUsage->setToolTip(QStringLiteral(
+        "重扫板1 + 板2 的用户 .c，重建「使用位置」索引"
+        "（code_index.py --usage → 速查数据/data/code_usage.json），\n"
+        "然后按新索引重画当前条目。改了代码、想让手册里的「用了它」跟着更新时点这里。"));
+    connect(m_btnUsage, &QPushButton::clicked, this, &MainWindow::refreshUsage);
+    row2->addWidget(m_btnUsage);
     root->addLayout(row2);
 
     /* ---- 项目引导的「下一步」入口 ----
@@ -317,12 +328,24 @@ bool MainWindow::loadData(QString *err)
                                   .arg(CardHtml::esc(m_ds.error())));
         return false;
     }
+    /* D2：把本仓库的代码索引（code_usage.json）套进每张卡；文件不在就原样不动。 */
+    m_ds.applyUsage(AppPaths::usagePath());
+    refreshBoardDirs();
     if (!m_tables.load(m_ds.search()) && err)
         *err = QStringLiteral("搜索用表缺失（dataset.json 的 search 段为空）");
     m_engine.reset(new SearchEngine(&m_ds.cards(), &m_tables));
     rebuildModuleBox();
     refreshList();
     return true;
+}
+
+/* D2：从板级配置读「板1 / 板2 的工程目录」（含驱动源码那一组），建成"板标签 → 绝对路径"
+   给 CardHtml 用。**实现只有一份**：AppPaths::boardDirs()，界面与 Qt 的 --selftest 共用，
+   免得两边各拼一套路径、迟早有一套悄悄错掉。读不到就留空（使用位置仍会显示，
+   只是不做成可点链接 —— 拼不出路径的死链接比纯文本更糟）。 */
+void MainWindow::refreshBoardDirs()
+{
+    m_boardDirs = AppPaths::boardDirs();
 }
 
 void MainWindow::rebuildModuleBox()
@@ -404,14 +427,21 @@ void MainWindow::refreshList()
 
     m_list->blockSignals(true);
     m_list->clear();
+    const QString qText = m_search->text().trimmed();
     for (int i : m_shown) {
         const Card &c = m_ds.at(i);
         /* 项目引导里列的全是手册阶段卡，每行再挂一个「⟨手册⟩」就是行行重复的噪声；
            那个板块直接只显示卡名（其余板块类型是混的，标签才有信息量）。 */
-        if (m_section == int(Card::Build))
-            m_list->addItem(c.n);
-        else
-            m_list->addItem(QStringLiteral("%1  ⟨%2⟩").arg(c.n, typeTag(c)));
+        QListWidgetItem *row = (m_section == int(Card::Build))
+            ? new QListWidgetItem(c.n, m_list)
+            : new QListWidgetItem(QStringLiteral("%1  ⟨%2⟩").arg(c.n, typeTag(c)), m_list);
+        /* D3：每行悬停给出"它为什么排在这" —— 分项是真算的（scoreOf 把每一项都记下来），
+           不是事后编的。分数为 0 的行没有分项，就不挂提示（省得是一堆空话）。 */
+        if (m_engine && !qText.isEmpty()) {
+            const QStringList rs = m_engine->reasonsFor(qText, i, m_section);
+            if (!rs.isEmpty())
+                row->setToolTip(rs.join(QLatin1Char('\n')));
+        }
     }
     m_list->blockSignals(false);
 
@@ -599,6 +629,57 @@ void MainWindow::runNextStage()
                  QStringLiteral("--board"), tag});
 }
 
+/* D2：刷新使用位置 —— 跑 code_index.py --usage 重建代码索引，套回本页数据后重画。
+   脚本现扫板1 + 板2 的用户 .c，产出 速查数据/data/code_usage.json；跑完按新索引
+   重套 m_ds（本页渲染的就是它），当前条目就地刷新。失败弹框并把脚本输出摆出来。 */
+void MainWindow::refreshUsage()
+{
+    const QString tool = AppPaths::toolRoot();
+    if (tool.isEmpty())
+        return;
+    const QString script = QDir::cleanPath(
+        QDir(tool).filePath(QStringLiteral("../检查/代码索引/code_index.py")));
+    if (!QFileInfo::exists(script)) {
+        QMessageBox::warning(this, QStringLiteral("刷新使用位置"),
+                             QStringLiteral("找不到脚本：\n%1").arg(script));
+        return;
+    }
+
+    m_btnUsage->setEnabled(false);
+    m_btnUsage->setText(QStringLiteral("刷新中…"));
+    auto *proc = new QProcess(this);
+    proc->setWorkingDirectory(QFileInfo(script).absolutePath());
+    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this, proc](int code, QProcess::ExitStatus) {
+        const QString body = (QString::fromUtf8(proc->readAllStandardOutput())
+                              + QString::fromUtf8(proc->readAllStandardError())).trimmed();
+        m_btnUsage->setEnabled(true);
+        m_btnUsage->setText(QStringLiteral("刷新使用位置"));
+        if (code != 0) {
+            QMessageBox::warning(this, QStringLiteral("刷新使用位置失败"),
+                                 QStringLiteral("脚本没跑完（退出码 %1）。\n\n%2").arg(code).arg(body));
+            proc->deleteLater();
+            return;
+        }
+        /* 索引重建好了：本页数据重套一遍，非界面层（RTOS 生成器等）也同步一次，
+           再把当前条目重画 —— 使用位置那一段就换成新索引。 */
+        const int n = m_ds.applyUsage(AppPaths::usagePath());
+        LookupData::reloadUsage();
+        if (m_current >= 0)
+            showCard(m_current);
+        statusBar()->showMessage(QStringLiteral("使用位置已刷新（%1 条）").arg(n), 4000);
+        proc->deleteLater();
+    });
+    connect(proc, &QProcess::errorOccurred, this, [this, proc](QProcess::ProcessError) {
+        m_btnUsage->setEnabled(true);
+        m_btnUsage->setText(QStringLiteral("刷新使用位置"));
+        QMessageBox::warning(this, QStringLiteral("刷新使用位置"),
+                             QStringLiteral("启动失败：没找到 Python。"));
+        proc->deleteLater();
+    });
+    proc->start(QStringLiteral("python"), {script, QStringLiteral("--usage")});
+}
+
 /* 点「下一步」→ 在左侧列表里选中那张阶段卡（卡名形如「🏗 板1 · 阶段 3｜…」）。 */
 void MainWindow::jumpToNextStage()
 {
@@ -732,10 +813,14 @@ void MainWindow::showCard(int cardIndex)
     const bool dark = (Theme::mode() == Theme::Dark);
     const Card &card = m_ds.at(cardIndex);
 
+    /* D2：使用位置的链接目标每次重画清空重建（href 里的下标对应这里第几条）。 */
+    m_srcTargets.clear();
     CardHtml::Ctx ctx;
     ctx.index = cardIndex;
     ctx.isFav = m_store.isFavorite(card.n);
     ctx.done  = m_store.doneSteps();
+    ctx.srcTargets = &m_srcTargets;
+    ctx.boardDirs  = &m_boardDirs;
 
     /* 命中原因：网页版会在条目旁标出「名称 / 正文」命中，这里放在详情顶部 */
     QString head;
@@ -745,6 +830,15 @@ void MainWindow::showCard(int cardIndex)
             head = QStringLiteral("<p style='color:%1;font-size:12px;margin:0 0 6px 0;'>%2</p>")
                        .arg(dark ? QStringLiteral("#8b93a3") : QStringLiteral("#5b667a"),
                             CardHtml::esc(QString::fromUtf8("命中：") + hits.join(QString::fromUtf8("　"))));
+        /* D3：「为什么它排在这」—— 分项（人话 + 贡献的分数）列在命中词下面。
+           分项是 scoreOf 里逐项记下来的，自检核过"分项和 == 总分"。 */
+        const QStringList rs = m_engine->reasonsFor(m_search->text(), cardIndex, m_section);
+        if (!rs.isEmpty())
+            head += QStringLiteral("<p style='color:%1;font-size:12px;line-height:1.6;"
+                                   "margin:0 0 8px 0;'>%2</p>")
+                        .arg(dark ? QStringLiteral("#77808f") : QStringLiteral("#6b7484"),
+                             CardHtml::esc(QString::fromUtf8("打分：")
+                                           + rs.join(QString::fromUtf8("；"))));
     }
     m_detail->setHtml(head + CardHtml::build(card, dark, ctx));
     m_detail->verticalScrollBar()->setValue(0);
@@ -788,6 +882,24 @@ void MainWindow::onAnchor(const QUrl &url)
             else
                 statusBar()->showMessage(QStringLiteral("该模块当前没有条目"), 2000);
         }
+    } else if (s.startsWith(QStringLiteral("src:"))) {
+        /* D2：点使用位置里的「板1 main.c:123」→ 打开那块板的那一行。
+           口径与工程体检总览页一致：找不到源文件就提示，找到就用系统默认编辑器打开、
+           行号写状态栏（QDesktopServices 不带行号定位）。 */
+        const int i = s.mid(4).toInt();
+        if (i < 0 || i >= m_srcTargets.size())
+            return;
+        const QStringList parts = m_srcTargets.at(i).split(QLatin1Char('|'));
+        const QString srcPath = parts.value(0);
+        if (srcPath.isEmpty() || !QFileInfo::exists(srcPath)) {
+            statusBar()->showMessage(QStringLiteral("找不到源文件：%1")
+                                         .arg(srcPath.isEmpty() ? QStringLiteral("（路径未解析）")
+                                                                : srcPath), 4000);
+            return;
+        }
+        QDesktopServices::openUrl(QUrl::fromLocalFile(srcPath));
+        statusBar()->showMessage(QStringLiteral("已打开 %1（第 %2 行）")
+                                     .arg(QFileInfo(srcPath).fileName()).arg(parts.value(1)), 4000);
     } else if (s.startsWith(QStringLiteral("path:"))) {
         /* 落地页三条路径卡：0 切「引导教程」，1/2 直接塞搜索词 */
         const int i = s.mid(5).toInt();

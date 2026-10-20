@@ -2,7 +2,11 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 namespace {
 
@@ -64,6 +68,51 @@ QString AppPaths::datasetPath()
     /* 兜底：开发期直接在源码树里跑（build/release → 上三级） */
     return QDir(QCoreApplication::applicationDirPath())
         .filePath(QStringLiteral("../../../data/dataset.json"));
+}
+
+QString AppPaths::usagePath()
+{
+    const QString r = toolRoot();
+    if (!r.isEmpty())
+        return QDir(r).filePath(QStringLiteral("data/code_usage.json"));
+    /* 兜底：开发期直接在源码树里跑（与 datasetPath 同一口径） */
+    return QDir(QCoreApplication::applicationDirPath())
+        .filePath(QStringLiteral("../../../data/code_usage.json"));
+}
+
+QHash<QString, QString> AppPaths::boardDirs()
+{
+    QHash<QString, QString> out;
+    const QString r = toolRoot();
+    if (r.isEmpty())
+        return out;
+    QFile f(QDir(r).filePath(QStringLiteral("rules/board_envmonitor.json")));
+    if (!f.open(QIODevice::ReadOnly))
+        return out;
+    /* 仓库根 = 数据根的上三级（速查数据 → 工具箱 → 本地工具 → 仓库根），
+       与手册页定位进度文档的算法同源。 */
+    const QString repo = QDir::cleanPath(QDir(r).filePath(QStringLiteral("../../..")));
+    const QJsonArray boards = QJsonDocument::fromJson(f.readAll()).object()
+                                  .value(QStringLiteral("boards")).toArray();
+    for (const QJsonValue &v : boards) {
+        const QJsonObject b = v.toObject();
+        const QString name = b.value(QStringLiteral("name")).toString();
+        const QString dir  = b.value(QStringLiteral("dir")).toString();
+        QString tag;
+        if (name.contains(QStringLiteral("板1")))
+            tag = QStringLiteral("板1");
+        else if (name.contains(QStringLiteral("板2")))
+            tag = QStringLiteral("板2");
+        if (tag.isEmpty() || dir.isEmpty())
+            continue;
+        const QString proj = QDir(repo).filePath(dir);
+        out.insert(tag, proj);
+        /* 驱动源码那一组（`板1·库`）在 <工程>/FWLIB/src：使用位置里这两组的文件
+           都只记 basename，所以两组各配一个目录，拼绝对路径时才不会点空。 */
+        out.insert(tag + QString::fromUtf8("·库"),
+                   QDir(proj).filePath(QStringLiteral("FWLIB/src")));
+    }
+    return out;
 }
 
 QString AppPaths::iniPath()

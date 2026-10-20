@@ -75,6 +75,8 @@ bool LookupData::load(QString *err)
             *err = s.err;
         return false;
     }
+    /* D2：把本仓库的代码索引套进每张卡（文件不在就原样不动，不影响装载成败）。 */
+    s.ds.applyUsage(AppPaths::usagePath());
     s.tables.load(s.ds.search());
     s.engine.reset(new SearchEngine(&s.ds.cards(), &s.tables));
     s.ok = true;
@@ -84,6 +86,15 @@ bool LookupData::load(QString *err)
 bool    LookupData::loaded() { return st().ok; }
 QString LookupData::path()   { return st().ok ? AppPaths::datasetPath() : QString(); }
 int     LookupData::size()   { return st().ok ? st().ds.size() : 0; }
+
+int LookupData::reloadUsage()
+{
+    State &s = st();
+    /* 数据集还没装过就先装一遍；装过就直接套索引 —— 不受 load() 的 tried 早退影响。 */
+    if (!s.tried)
+        load(nullptr);
+    return s.ds.applyUsage(AppPaths::usagePath());
+}
 
 QVector<LookupData::FuncHit> LookupData::findFuncs(const QString &query, int limit)
 {
