@@ -32,6 +32,7 @@
 #include <functional>
 
 #include "apppaths.h"
+#include "cockpitpage.h"
 #include "dashboardcanvas.h"
 #include "docbuilder.h"
 #include "lookupcli.h"
@@ -56,6 +57,22 @@ static QString findRepoRoot()
             break;
     }
     return QString();
+}
+
+/* C2：脚本输出的最后一行 JSON（各脚本的统一约定：人读的文本在前、机器读的 JSON 收尾）。 */
+static QJsonObject lastJsonLineObject(const QString &text)
+{
+    const QStringList lines = text.split(QLatin1Char('\n'));
+    for (int i = lines.size() - 1; i >= 0; --i) {
+        const QString s = lines.at(i).trimmed();
+        if (s.isEmpty())
+            continue;
+        QJsonParseError err{};
+        const QJsonDocument d = QJsonDocument::fromJson(s.toUtf8(), &err);
+        if (err.error == QJsonParseError::NoError && d.isObject())
+            return d.object();
+    }
+    return {};
 }
 
 /* H1：认出侧栏 —— 带分组头（不可选行）且可选行数正好等于**页面表页数**的那一个列表。
@@ -282,6 +299,9 @@ static int runCli(const QStringList &args)
             /* C1：一键验收 —— 它自己就是跑这一步的"外层"，所以只挂它**离线的那条**自检
                （验步骤表 / 判据解析 / 「改坏一处只红那一处」合成用例），不递归跑整条链。 */
             {"一键验收",     "检查/一键验收/verify_all.py"},
+            /* C2：驾驶舱取数 —— 「项目驾驶舱」页四张卡的数字就是它给的，
+               它的自检会跟四个兄弟脚本现场对账（卡上的数字不许是写死的）。 */
+            {"驾驶舱取数",   "检查/驾驶舱/cockpit_data.py"},
             /* 生成器也挂进来：它的"骨架阶段提示"曾出现"两种风格不一致 / 无任务时阶段3缺号"，
                靠自检钉住输出结构，别靠人想起来去比对。 */
             {"工程模板生成", "程序/工程模板/project_scaffold.py"},
@@ -704,6 +724,132 @@ int main(int argc, char *argv[])
                 return 2;
         }
         return page.grab().save(path) ? 0 : 1;
+    }
+
+    /* C2 驾驶舱探针：把「项目驾驶舱」页上显示的现场值，与**当场再跑一遍**取数脚本拿到的 JSON
+       逐条对账 —— 这就是 C2 验收里那句"数字与实际一致（不写死）"的机器判据；
+       再断言动作按钮的可点性（没有能机器判的阶段时**必须不给点**，不能给一个必然失败的按钮）。 */
+    if (args.contains(QStringLiteral("--cockpit-probe"))) {
+        const QString tdir = ToolboxWindow::toolsDirPath();
+        /* 体检结论接总览页 —— 探针路径也一样：自己造一个总览页灌进去，与主窗口里同一条路。 */
+        OverviewPage ov(tdir);
+        ov.resize(1180, 960);
+        ov.show();
+        QMetaObject::invokeMethod(&ov, "refresh", Qt::DirectConnection);
+
+        CockpitPage cp(tdir);
+        cp.setOverview(&ov);
+        cp.resize(1000, 780);
+        cp.show();
+        QMetaObject::invokeMethod(&cp, "refresh", Qt::DirectConnection);
+
+        /* 两边取数都是异步的（驾驶舱 1 个进程 + 总览页 7 个）：跑事件循环等回来，最多 60s。
+           判据用"卡已渲染 + 体检结论是真结论"，不是靠 sleep 猜。 */
+        QElapsedTimer et;
+        et.start();
+        while (et.elapsed() < 60000) {
+            QApplication::processEvents(QEventLoop::AllEvents, 50);
+            if (cp.ready() && !ov.toolData().isEmpty())
+                break;
+        }
+        QApplication::processEvents();
+
+        /* 现场值：自己再跑一次取数脚本，供逐条对账（不是读页面、也不是读文档）。 */
+        QJsonObject want;
+        {
+            const QString script =
+                QDir(tdir).filePath(QStringLiteral("检查/驾驶舱/cockpit_data.py"));
+            const QStringList py = PyFind::detect();
+            if (!py.isEmpty() && QFile::exists(script)) {
+                QProcess p;
+                p.setWorkingDirectory(QFileInfo(script).absolutePath());
+                QStringList a = py.mid(1);
+                a << script << QStringLiteral("--json");
+                p.start(py.value(0), a);
+                if (p.waitForFinished(90000))
+                    want = lastJsonLineObject(QString::fromUtf8(p.readAllStandardOutput()));
+            }
+        }
+
+        const QStringList lines = cp.cardLines();
+        const QStringList titles = cp.cardTitles();
+        const QStringList values = cp.cardValues();
+        const QStringList subs = cp.cardSubs();
+        const QStringList labels = cp.actionLabels();
+        QTextStream out(stdout);
+        out << QString::fromUtf8("\n── 项目驾驶舱一屏（现场值）──\n");
+        for (const QString &l : lines)
+            out << QStringLiteral("  ") << l << "\n";
+        out << QString::fromUtf8("下一步点哪：") << cp.nextAction() << "\n";
+        out << QString::fromUtf8("动作按钮：") << labels.join(QStringLiteral(" / ")) << "\n";
+        out << QString::fromUtf8("跑阶段验收：")
+            << (cp.stageRunEnabled() ? cp.stageRunArgv().join(QLatin1Char(' '))
+                                     : QStringLiteral("（不可点 —— 没有能机器判的阶段）")) << "\n";
+        out << QString::fromUtf8("体检结论：") << cp.healthLine()
+            << QStringLiteral("｜") << cp.healthFindings() << "\n";
+        out.flush();
+
+        bool ok = true;
+        /* ① 五张卡齐，标题 / 值 / 小字三列都对得上号，且"值"非空（空着的一屏等于没做） */
+        if (lines.size() != 5 || titles.size() != 5 || values.size() != 5 || subs.size() != 5)
+            ok = false;
+        for (const QString &v : values)
+            if (v.trimmed().isEmpty())
+                ok = false;
+        /* ② 四张现场卡与当场跑出来的 JSON **逐条一致**（写死的卡片过不了这一关）。
+           按"标题 / 值 / 小字"三列分开比 —— 值与小字里本身带"｜"，按分隔符切会误判。 */
+        for (const QJsonValue &cv : want.value(QStringLiteral("cards")).toArray()) {
+            const QJsonObject c = cv.toObject();
+            const QString title = c.value(QStringLiteral("title")).toString();
+            if (title.isEmpty())
+                continue;                     /* 体检结论那张由 Qt 侧填（不在 JSON 里） */
+            const int i = titles.indexOf(title);
+            if (i < 0 || values.at(i) != c.value(QStringLiteral("value")).toString()
+                || subs.at(i) != c.value(QStringLiteral("sub")).toString()) {
+                ok = false;
+                out << QString::fromUtf8("  ✗ 卡片对不上现场值：") << title
+                    << QStringLiteral("（页面「") << (i >= 0 ? values.at(i) : QStringLiteral("缺这张卡"))
+                    << QStringLiteral("」/ 现场「") << c.value(QStringLiteral("value")).toString()
+                    << QStringLiteral("」）\n");
+            }
+        }
+        /* ③「下一步点哪」就是取数脚本给的那一句（页面不许自己另编一句） */
+        const QString nxtWant = want.value(QStringLiteral("next_action")).toString();
+        if (nxtWant.isEmpty() || cp.nextAction() != nxtWant)
+            ok = false;
+        /* ④ 动作按钮 ≥ 4、每个都有文字 */
+        if (labels.size() < 4)
+            ok = false;
+        for (const QString &b : labels)
+            if (b.trimmed().isEmpty())
+                ok = false;
+        /* ⑤「跑阶段验收」：可点性跟现场数据一致；可点时命令里的阶段号/板名也得来自现场数据 */
+        const QJsonObject st = want.value(QStringLiteral("stage")).toObject();
+        const bool runnable = st.value(QStringLiteral("runnable")).toBool();
+        if (cp.stageRunEnabled() != runnable) {
+            ok = false;
+            out << QString::fromUtf8("  ✗ 可点性与现场数据不一致（页面 ") << (cp.stageRunEnabled() ? "可点" : "不可点")
+                << QString::fromUtf8(" / 现场 ") << (runnable ? "可点" : "不可点") << "）\n";
+        }
+        if (runnable) {
+            const QString argv = cp.stageRunArgv().join(QLatin1Char(' '));
+            const QString bs = st.value(QStringLiteral("next_board")).toString();
+            const QString ns = QString::number(st.value(QStringLiteral("next_stage")).toInt());
+            if (argv.isEmpty() || !argv.contains(QStringLiteral("--stage-run"))
+                || !argv.contains(ns) || !argv.contains(bs)) {
+                ok = false;
+                out << QString::fromUtf8("  ✗ 「跑阶段验收」的命令没带上现场的板/阶段：") << argv << "\n";
+            }
+        }
+        /* ⑥ 体检结论是真结论（不是"尚未取数 / 没接上"） */
+        if (!cp.healthLine().startsWith(QStringLiteral("本轮体检"))) {
+            ok = false;
+            out << QString::fromUtf8("  ✗ 体检结论不是真结论：") << cp.healthLine() << "\n";
+        }
+        out << QString::fromUtf8("C2 判定：") << (ok ? QStringLiteral("通过") : QStringLiteral("不通过"))
+            << QString::fromUtf8("（卡片数与现场 JSON 对账 / 按钮可点性 / 下一步那句）\n");
+        out.flush();
+        return ok ? 0 : 2;
     }
 
     /* C1 全局搜索（Ctrl+K）探针：直接调 paletteHits，断言三类候选都搜得到、乱词搜不到。

@@ -6,7 +6,8 @@ r"""一键验收（C1）—— 一条命令跑完"这轮改动能不能收工"�
 漏跑一环不会报错，只会**悄悄少验一层**；跑完了也说不清"到底是哪一步红"。
 
 **做法**：把它们收成一张**步骤表**，一条命令按档跑完，逐步行 + 出结论：
-  - **快档**（默认）= 构建 + 工具箱自检 + 冒烟/截图 + 5 探针 + UI 量测 + 性能量测 + 变异自测；
+  - **快档**（默认）= 构建 + 工具箱自检 + 冒烟/截图 + 6 探针（palette / welcome / clean / finding /
+    thresholds / **cockpit**）+ UI 量测 + 性能量测 + 变异自测；
   - **全档**（`--full`）= 快档 + 速查重建链（`rebuild.bat` 8 环）+ 三端同步检查 + Keil 双板复编。
 
 每一步**独立判定**，所以"故意改坏一处"只会红那一步、其余仍绿，结论里**点名**是哪一步；
@@ -95,6 +96,8 @@ def build_steps():
         _s('probe-clean', '探针 · 清理口径 --clean-probe', [EXE, '--clean-probe'], timeout=300),
         _s('probe-finding', '探针 · 命中项 --finding-probe', [EXE, '--finding-probe'], timeout=300),
         _s('probe-thresholds', '探针 · 阈值口径 --thresholds-probe', [EXE, '--thresholds-probe'],
+           timeout=300),
+        _s('probe-cockpit', '探针 · 驾驶舱 --cockpit-probe', [EXE, '--cockpit-probe'],
            timeout=300),
         _s('ui-audit', 'UI 规范量测 --ui-audit', [EXE, '--ui-audit'], timeout=300),
         _s('perf', '性能量测 --perf-probe', [EXE, '--perf-probe'], timeout=300, ev='perf'),

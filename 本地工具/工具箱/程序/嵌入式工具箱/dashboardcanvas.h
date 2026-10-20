@@ -58,6 +58,14 @@ public:
     QString conclusionText() const { return m_conclusionText; }
     int conclusionCount() const { return m_conclusionCount; }
 
+    /* C2：一句话结论 + 「最该先看的几件」的**纯函数**版本（不依赖绘制）。
+       为什么要它：隐藏页不绘画 —— 用户没进过「工程体检总览」时，paintEvent 里算出来的
+       那份结论压根不存在，驾驶舱页就得"空着"或"另写一套判定"。抽出来两边共用一份口径。
+       head：结论文案（可为空指针）；返回：按严重度排好、最多取前 3 项展示的问题清单。 */
+    struct Finding { QString key; QString name; QString why; int level; };  /* 0=严重 1=注意 */
+    static QVector<Finding> findingsFor(const QVariantMap &tools,
+                                        const QStringList &failedKeys, QString *head);
+
     /* H12：红黄线阈值抽成一份口径（速查数据/rules/dashboard_thresholds.json）。
        这四个 static 供 --thresholds-probe 断言"配置真的在起作用"，不参与界面绘制。 */
     static int redMinFor(const QString &kind);      /* kind: pin / enc / lora / protocol */

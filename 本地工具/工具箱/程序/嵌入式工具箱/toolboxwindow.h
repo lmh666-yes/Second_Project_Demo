@@ -17,6 +17,7 @@ class QWidget;
 class KickStartWindow;
 class MainWindow;
 class OverviewPage;
+class CockpitPage;
 class ScaffoldPage;
 class WorkbenchWindow;
 
@@ -93,6 +94,7 @@ private:
     QWidget *buildBuildFlashPage();     /* 编译烧录：编译→烧录→板载自检 + 体积趋势 + 状态快照 */
     QWidget *buildPluginPage(const QString &script);   /* D2：插件页（ToolRunPage 包一层） */
     QWidget *buildFullCheckPage();
+    QWidget *buildCockpitPage();        /* C2：项目驾驶舱（一屏脉搏 + 直接触发动作） */
     QWidget *buildOverviewPage();
     QWidget *buildSettingsPage();       /* 设置：集中放个性化选项（默认不变） */
 
@@ -118,6 +120,7 @@ private:
     KickStartWindow *m_kickstart = nullptr;   /* 供 RTOS 生成页导入任务表 */
     MainWindow      *m_lookup    = nullptr;   /* 单片机手册（懒加载） */
     OverviewPage    *m_overview  = nullptr;   /* C1：全局搜索列「检查项」要从它取小节标题 */
+    CockpitPage     *m_cockpit   = nullptr;   /* C2：项目驾驶舱（「体检结论」接总览页的数据） */
     int m_workbenchPage = -1;                 /* 协议工作台在堆栈里的页号 */
     int m_lookupPage    = -1;                 /* 速查页在堆栈里的页号 */
     bool m_lookupLoaded = false;

@@ -64,6 +64,14 @@ public:
     QString sectionKeywordOf(const QString &key) const;
     bool reportHasText(const QString &text) const;
 
+    /* C2：驾驶舱页要的那两样 —— 本轮各工具取到的结构化数据、以及本轮没取到的键。
+       「体检结论」卡用它 + DashboardCanvas::findingsFor() 算（同一条口径，不另跑一套检查器）。 */
+    QVariantMap toolData() const { return m_tools; }
+    QStringList failedKeys() const { return m_failed; }
+
+    /* C2：_体检历史 里现有多少轮快照（驾驶舱页用来写"快照几轮"）。 */
+    int snapshotRounds() const;
+
 protected:
     void showEvent(QShowEvent *e) override;
 
@@ -73,6 +81,10 @@ signals:
 
     /* C1：请求主窗口把「单片机手册」跳到某个条目（报告里点了条目名）。 */
     void requestDoc(const QString &term);
+
+    /* C2：一轮取数收尾（全到齐或超时收尾都算）—— 驾驶舱页据此把「体检结论」卡更新出来。
+       以前只能靠绘画把结论算出来（隐藏页不绘画就永远读不到），现在取数一完就有人知道。 */
+    void dataRefreshed();
 
 private slots:
     void refresh();

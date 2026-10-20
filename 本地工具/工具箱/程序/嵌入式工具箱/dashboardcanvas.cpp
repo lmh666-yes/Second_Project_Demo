@@ -468,17 +468,19 @@ int DashboardCanvas::drawHealth(QPainter &p, int x, int y, int w, const Palette 
     return y + ch + 14;
 }
 
-/* B3：面板顶部一句话结论 + 最该先看的 3 件事（每一项可点，直达报告里对应那一节）。
-   B3 的目的：不用先看懂 7 张卡片与一堆数字，也知道"现在什么状态、先动哪一个"。
-   判定口径与健康度卡片一致（引脚调试口=严重、数量类按 H12 那份阈值、缓存按可扛时长）。 */
-int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Palette &pal)
+/* C2：结论 + 「最该先看的几件」抽成**纯函数**（不碰画笔）—— 驾驶舱页与总览页共用这一份口径。
+   为什么要抽：这段判定原来只在 drawConclusion 里算，而**隐藏页不绘画** —— 用户没进过
+   「工程体检总览」时那份结论压根没算出来，驾驶舱页就只能是"空着"或"另写一套判定"。
+   判定口径仍是 B3/H12 那一套：引脚调试口=严重、数量类按阈值表、缓存按可扛时长。 */
+QVector<DashboardCanvas::Finding> DashboardCanvas::findingsFor(const QVariantMap &tools,
+                                                               const QStringList &failedKeys,
+                                                               QString *head)
 {
-    struct Item { QString key; QString name; QString why; int level; };   /* level: 0=严重 1=注意 */
-    QVector<Item> bad;
+    QVector<Finding> bad;                     /* level: 0=严重 1=注意 */
     const Thresholds &TH = thresholds();       /* H12：与健康卡片同一份口径 */
 
     {
-        const QVariantMap m = m_tools.value(QStringLiteral("pin")).toMap();
+        const QVariantMap m = tools.value(QStringLiteral("pin")).toMap();
         int conflicts = 0, dbg = 0;
         for (const QVariant &b : m.value(QStringLiteral("boards")).toList()) {
             conflicts += b.toMap().value(QStringLiteral("conflicts")).toMap().size();
@@ -495,7 +497,7 @@ int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Pale
                         conflicts >= TH.pinRed ? 0 : 1});
     }
     {
-        const QVariantMap m = m_tools.value(QStringLiteral("rtos")).toMap();
+        const QVariantMap m = tools.value(QStringLiteral("rtos")).toMap();
         int sev = 0, wr = 0;
         for (const QVariant &b : m.value(QStringLiteral("boards")).toList()) {
             sev += b.toMap().value(QStringLiteral("severe")).toInt();
@@ -509,14 +511,14 @@ int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Pale
                         QStringLiteral("%1 处注意").arg(wr), 1});
     }
     {
-        const QVariantMap m = m_tools.value(QStringLiteral("enc")).toMap();
+        const QVariantMap m = tools.value(QStringLiteral("enc")).toMap();
         const int v = m.value(QStringLiteral("violations")).toInt();
         if (v)
             bad.append({QStringLiteral("enc"), QStringLiteral("编码守卫"),
                         QStringLiteral("%1 个文件违规").arg(v), v >= TH.encRed ? 0 : 1});
     }
     {
-        const QVariantMap m = m_tools.value(QStringLiteral("lora")).toMap();
+        const QVariantMap m = tools.value(QStringLiteral("lora")).toMap();
         int n = m.value(QStringLiteral("cross")).toList().size();
         for (const QVariant &b : m.value(QStringLiteral("boards")).toList())
             n += b.toMap().value(QStringLiteral("issues")).toList().size();
@@ -525,7 +527,7 @@ int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Pale
                         QStringLiteral("%1 处问题").arg(n), n >= TH.loraRed ? 0 : 1});
     }
     {
-        const QVariantMap m = m_tools.value(QStringLiteral("protocol")).toMap();
+        const QVariantMap m = tools.value(QStringLiteral("protocol")).toMap();
         int n = 0;
         for (const QVariant &b : m.value(QStringLiteral("boards")).toList())
             n += b.toMap().value(QStringLiteral("issues")).toInt();
@@ -535,7 +537,7 @@ int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Pale
                         QStringLiteral("%1 处问题").arg(n), n >= TH.protoRed ? 0 : 1});
     }
     {
-        const QVariantMap m = m_tools.value(QStringLiteral("cache")).toMap();
+        const QVariantMap m = tools.value(QStringLiteral("cache")).toMap();
         const int sv = m.value(QStringLiteral("severe")).toInt();
         const double hold = m.value(QStringLiteral("hold_seconds")).toDouble();
         const QString holdText = m.value(QStringLiteral("hold_text")).toString();
@@ -553,30 +555,51 @@ int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Pale
     }
 
     int sev = 0, wr = 0;
-    for (const Item &it : bad) {
+    for (const Finding &it : bad) {
         if (it.level == 0)
             ++sev;
         else
             ++wr;
     }
     std::stable_sort(bad.begin(), bad.end(),
-                     [](const Item &a, const Item &b) { return a.level < b.level; });
+                     [](const Finding &a, const Finding &b) { return a.level < b.level; });
+
+    QString line;
+    if (sev == 0 && wr == 0)
+        line = tools.isEmpty() ? QStringLiteral("尚未取数 —— 点「刷新」跑一轮体检")
+                               : QStringLiteral("本轮体检：全部正常，可以放心往下写");
+    else
+        line = QStringLiteral("本轮体检：%1 处严重、%2 处注意").arg(sev).arg(wr);
+    if (!failedKeys.isEmpty())
+        line += QStringLiteral("（另有 %1 个检查器没取到数）").arg(failedKeys.size());
+    if (head)
+        *head = line;
+    return bad;
+}
+
+/* B3：面板顶部一句话结论 + 最该先看的 3 件事（每一项可点，直达报告里对应那一节）。
+   B3 的目的：不用先看懂 7 张卡片与一堆数字，也知道"现在什么状态、先动哪一个"。
+   判定口径与健康度卡片一致（引脚调试口=严重、数量类按 H12 那份阈值、缓存按可扛时长）——
+   实际算的是 findingsFor()，驾驶舱页读的也是它。 */
+int DashboardCanvas::drawConclusion(QPainter &p, int x, int y, int w, const Palette &pal)
+{
+    QString head;
+    const QVector<Finding> bad = findingsFor(m_tools, m_failedKeys, &head);
+    int sev = 0, wr = 0;
+    for (const Finding &it : bad) {
+        if (it.level == 0)
+            ++sev;
+        else
+            ++wr;
+    }
+    /* 缓存给自检读（--shot-overview 断言"结论不能空、有问题必须写严重/注意"） */
+    m_conclusionText = head;
+    m_conclusionCount = bad.size();
 
     QFont f = p.font();
     f.setPointSize(10);
     f.setBold(true);
     p.setFont(f);
-    QString head;
-    if (sev == 0 && wr == 0)
-        head = m_tools.isEmpty() ? QStringLiteral("尚未取数 —— 点「刷新」跑一轮体检")
-                                 : QStringLiteral("本轮体检：全部正常，可以放心往下写");
-    else
-        head = QStringLiteral("本轮体检：%1 处严重、%2 处注意").arg(sev).arg(wr);
-    if (!m_failedKeys.isEmpty())
-        head += QStringLiteral("（另有 %1 个检查器没取到数）").arg(m_failedKeys.size());
-    /* 缓存给自检读（--shot-overview 断言"结论不能空、有问题必须写严重/注意"） */
-    m_conclusionText = head;
-    m_conclusionCount = bad.size();
     p.setPen(sev ? pal.err : (wr ? pal.warn : pal.ok));
     p.drawText(QRect(x, y, w, 20), Qt::AlignLeft | Qt::AlignVCenter,
                p.fontMetrics().elidedText(head, Qt::ElideRight, w));

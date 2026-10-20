@@ -2,6 +2,7 @@
 
 #include "kickstartwindow.h"
 #include "mainwindow.h"
+#include "cockpitpage.h"
 #include "overviewpage.h"
 #include "rtosgenpage.h"
 #include "buildflashpage.h"
@@ -199,6 +200,7 @@ const QList<ToolboxWindow::PageDef> &ToolboxWindow::pageDefs()
             {QStringLiteral("检查"), QStringLiteral("断网缓存"), &ToolboxWindow::buildCachePage},
             {QStringLiteral("检查"), QStringLiteral("工程模板"), &ToolboxWindow::buildScaffoldPage},
             {QStringLiteral("检查"), QStringLiteral("编译烧录"), &ToolboxWindow::buildBuildFlashPage},
+            {QStringLiteral("汇总"), QStringLiteral("项目驾驶舱"), &ToolboxWindow::buildCockpitPage},
             {QStringLiteral("汇总"), QStringLiteral("工程体检总览"), &ToolboxWindow::buildOverviewPage},
             {QStringLiteral("汇总"), QStringLiteral("全量检查"), &ToolboxWindow::buildFullCheckPage},
             {QStringLiteral("设置"), QStringLiteral("设置"), &ToolboxWindow::buildSettingsPage},
@@ -333,6 +335,11 @@ ToolboxWindow::ToolboxWindow(QWidget *parent, bool suppressFirstRun)
     root->addWidget(side);
     root->addWidget(m_pages, 1);
     setCentralWidget(central);
+
+    /* C2：驾驶舱的「体检结论」接总览页的数据 —— 逐页建完、两个页都就位后才接得上
+       （页面表里驾驶舱在总览页前面，建驾驶舱时 m_overview 还是空的）。 */
+    if (m_cockpit && m_overview)
+        m_cockpit->setOverview(m_overview);
 
     /* 记住协议工作台在堆栈里的页号，跨工具联动要切到它 */
     m_workbenchPage = m_pages->indexOf(m_workbench);
@@ -1062,6 +1069,17 @@ QWidget *ToolboxWindow::buildOtaPage()
     p->setReportPath(QFileInfo(script).absolutePath());   /* 没报告，按钮用来开脚本所在目录 */
     p->setReportLabel(QStringLiteral("打开 OTA 目录"));
     m_warnTargets.append(p);
+    return p;
+}
+
+QWidget *ToolboxWindow::buildCockpitPage()
+{
+    /* C2：项目驾驶舱 —— 一屏摆「现在到哪、还差什么、下一步点哪」，并且按钮真能触发。
+       四张现场卡走 检查/驾驶舱/cockpit_data.py（一次取数）；「体检结论」接下面的总览页
+       （用同一份 DashboardCanvas 判定口径，不另跑一套检查器）。 */
+    CockpitPage *p = new CockpitPage(m_toolsDir, this);
+    m_cockpit = p;
+    connect(p, &CockpitPage::requestPage, this, &ToolboxWindow::jumpToPage);
     return p;
 }
 

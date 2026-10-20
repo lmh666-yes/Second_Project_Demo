@@ -14,6 +14,7 @@ SOURCES += \
     buildflashpage.cpp \
     rtosgen.cpp \
     rtosgenpage.cpp \
+    cockpitpage.cpp \
     overviewpage.cpp \
     dashboardcanvas.cpp \
     ../../shared/common/settings.cpp \
@@ -40,6 +41,7 @@ HEADERS += \
     buildflashpage.h \
     rtosgen.h \
     rtosgenpage.h \
+    cockpitpage.h \
     overviewpage.h \
     dashboardcanvas.h \
     ../../shared/common/settings.h \

@@ -560,9 +560,18 @@ void OverviewPage::finishFetch()
     m_status->setText(st);
 
     loadTextReports();
+
+    /* C2：告诉外面"这一轮取完了" —— 驾驶舱页据此更新它的「体检结论」卡。
+       （原来只能等画布 paintEvent 把结论算出来，可隐藏页根本不绘画。） */
+    emit dataRefreshed();
 }
 
 /* ---------- 体检快照：归档（D2） + 与上次对比（A3） ---------- */
+
+int OverviewPage::snapshotRounds() const
+{
+    return listSnapshots().size();      /* C2：驾驶舱页写"快照几轮"用 */
+}
 
 QString OverviewPage::snapshotDir() const
 {
