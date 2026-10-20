@@ -220,7 +220,7 @@ const STD_BUILD_GUIDE = [
     m: "板1 项目引导",
     _b: "板1",
     d: "把 while(1) 单循环拆成多个任务：采样、处理、通信、下行接收、监控，数据用队列在任务间传递。",
-    g: "板1 的工程形态是 FreeRTOS 抢占式调度：tick 1ms、优先级 0~7（数字大=优先级高）、堆 30KB 用 heap_4、只支持动态分配。参考划分（与参考实现一致，旧 main.c 已备份在 D:\GitHub_Project\_参考实现备份）：Sensor(pri3,512 字) 周期采样 → s_q_sensor → Process(pri3,512) 换算与判阈 → s_q_frame → Comm(pri4,512) 组帧经 LoRa 发出；LoraRx(pri3,512) 收下行指令；Monitor(pri5,256) 管看门狗与栈水位。",
+    g: "板1 的工程形态是 FreeRTOS 抢占式调度：tick 1ms、优先级 0~7（数字大=优先级高）、堆 30KB 用 heap_4、只支持动态分配。参考划分（与参考实现一致，旧 main.c 已备份在 D:\GitHub_Project\_参考实现备份）：Sensor(pri3,512 字) 周期采样 → s_q_sensor → Process(pri3,512) 换算与判阈 → s_q_frame → Comm(pri4,512) 组帧经 LoRa 发出；LoraRx(pri3,512) 收下行指令；Monitor(pri5,256) 管看门狗与栈水位。【阶段 3 动手前必做】先调一次 SYS_NVIC_Init()：它只干一件事 —— NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4)，即 4 位全抢占（本库默认就该是这个分组）。必须在使能任何中断、起 FreeRTOS 之前调；不调就沿用复位默认分组（PriorityGroup_0，2 位抢占），FreeRTOS 的 configASSERT 会抓，但库不会替你调。本库 FreeRTOSConfig.h 的注释里也标了这件事（并给出写完整 main.c 后的位置：板1 第 989 行 / 板2 第 1581 行）。注意：阶段判定的判据里没有这一条，机器不会替你抓，得自己记得。",
     k: "FreeRTOS 任务 队列 xQueueCreate xTaskCreate 优先级 栈大小 堆 30KB vTaskDelay pdMS_TO_TICKS 任务划分 抢占 板1",
     f: [
       [

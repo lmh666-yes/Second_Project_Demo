@@ -204,7 +204,7 @@ const STD_BUILD_B2 = [
     m: "板2 项目引导",
     _b: "板2",
     d: "把 while(1) 单循环拆成 5 个任务：LoRa 收、转发、收命令、补传、监控，数据用队列在任务间传递。",
-    g: "板2 的任务形态（照本工程 main.c 的划分）：vTaskLoraRx(pri3,512) 收 LoRa 并校验 → 队列 → vTaskForward(pri4,512) 原样转发 USART2 并写缓存；vTaskCmdRx(pri3,512) 收上位机命令；vTaskReplay(pri3,256) 按 50ms 节拍补传；vTaskMonitor(pri5,256) 管看门狗、心跳与栈水位。堆与优先级全部以板2 自己的 FreeRTOSConfig.h 为准，不要抄板1 的数字。",
+    g: "板2 的任务形态（照本工程 main.c 的划分）：vTaskLoraRx(pri3,512) 收 LoRa 并校验 → 队列 → vTaskForward(pri4,512) 原样转发 USART2 并写缓存；vTaskCmdRx(pri3,512) 收上位机命令；vTaskReplay(pri3,256) 按 50ms 节拍补传；vTaskMonitor(pri5,256) 管看门狗、心跳与栈水位。堆与优先级全部以板2 自己的 FreeRTOSConfig.h 为准，不要抄板1 的数字。【阶段 3 动手前必做】先调一次 SYS_NVIC_Init()：它只干一件事 —— NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4)，即 4 位全抢占（本库默认就该是这个分组）。必须在使能任何中断、起 FreeRTOS 之前调；不调就沿用复位默认分组（PriorityGroup_0，2 位抢占），FreeRTOS 的 configASSERT 会抓，但库不会替你调。本库 FreeRTOSConfig.h 的注释里也标了这件事（并给出写完整 main.c 后的位置：板1 第 989 行 / 板2 第 1581 行）。注意：阶段判定的判据里没有这一条，机器不会替你抓，得自己记得。",
     k: "板2 FreeRTOS 任务 队列 xQueueCreate xTaskCreate 优先级 栈大小 堆 vTaskDelay pdMS_TO_TICKS vTaskLoraRx vTaskForward vTaskCmdRx vTaskReplay vTaskMonitor 互斥量 看门狗 心跳",
     f: [
       [
