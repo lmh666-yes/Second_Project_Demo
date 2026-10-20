@@ -40,6 +40,11 @@ def _fallback_paths():
 
 def _paths(root, fallback):
     out = []
+    # TOOLBOX_BOARDCFG 排最前：用来做「加一个假工程，看检查器认不认」的验收（D3），
+    # 也方便临时换一份配置试跑 —— 不必动仓库里的真配置。
+    env = os.environ.get('TOOLBOX_BOARDCFG', '').strip()
+    if env:
+        out.append(env)
     if root:
         out.append(os.path.join(root, REL))
     if fallback:

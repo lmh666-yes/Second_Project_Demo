@@ -71,9 +71,9 @@ const STD_BUILD_QT = [
       [
         "自检习惯：改完先跑 --selftest，跑通再插串口",
         "串口上出问题时你分不清是「解析写错」还是「线接错」；自检把这两类问题彻底分开。",
-        "命令行进到 exe 所在目录（例如 build_verify\\release\\），依次跑三个开关：--selftest（帧解析 + 统计，18 个用例）、--rangecheck（物理量边界，5 个用例）、--cmdselftest（下发命令字节，22 个用例）。三份报告都写在当前工作目录，退出码 0 = 全通过。",
-        "cd /d D:\\GitHub_Project\\EnvMonitor\\QT_project\\SerialMonitor\\build_verify\\release\r\nSerialMonitor.exe --selftest\r\necho %ERRORLEVEL%",
-        "目录里出现 自检报告.txt，最后一行是「通过 18 / 18    帧解析正确率 = 100.0%」，echo 打印 0。",
+        "先在 Qt Creator 里构建一次（Ctrl+B），产物落在你选的构建目录（Qt Creator 默认 build\\Desktop_Qt_6_11_2_MinGW_64_bit-Debug\\）。命令行进到该目录，依次跑三个开关：--selftest（帧解析 + 统计，18 个用例）、--rangecheck（物理量边界，5 个用例）、--cmdselftest（下发命令字节，22 个用例）。三份报告都写在当前工作目录，退出码 0 = 全通过。",
+        "cd /d <你的构建目录>\\build\\Desktop_Qt_6_11_2_MinGW_64_bit-Debug\r\nSerialMonitor.exe --selftest\r\necho %ERRORLEVEL%",
+        "目录里出现 自检报告.txt，末尾是「通过 N / 18」。注意：frameparser.cpp 的协议层现在还是 TODO(阶段2) 的桩（FrameProto::* 返回空），所以**现在跑必然是大量 FAIL**——这是预期的，不是环境坏了；阶段 2 把解析器写完，才应看到「通过 18 / 18」。",
         "程序是 -subsystem,windows 编译的，双击看不到任何输出——结果只在 txt 文件与退出码里，必须用 cmd 跑并 echo %ERRORLEVEL%。",
         "--selftest --rangecheck --cmdselftest 自检报告.txt"
       ],

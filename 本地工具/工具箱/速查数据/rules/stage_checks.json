@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "note": "阶段自动判定条件（A1）。只写可机器判的；判不了的用 manual + why 明说，不假装能判。换板/换工程只改这一份（files 与 checks）。",
+  "boards": {
+    "板1": {
+      "doc": "EnvMonitor/Project_1_检测端/板1进度文档.md",
+      "files": [
+        "EnvMonitor/Project_1_检测端/Project/main.c"
+      ],
+      "stages": {
+        "0": { "manual": "分工与阶段地图：你自己能说清就算过，机器判不了" },
+        "1": {
+          "checks": [
+            { "type": "file_exists", "path": "EnvMonitor/Project_1_检测端/Project/main.c" },
+            { "type": "pattern", "pattern": "int\\s+main\\s*\\(", "what": "main() 函数体" }
+          ]
+        },
+        "2": {
+          "checks": [
+            { "type": "api", "names": ["SYS_CLK_ToHighSpeed", "SYS_TICK_Init", "SYS_USART_Init", "LED_Init"] }
+          ]
+        },
+        "3": {
+          "checks": [
+            { "type": "api_count", "name": "xTaskCreate", "min": 5, "what": "5 个任务" },
+            { "type": "api", "names": ["xQueueCreate"], "what": "至少一个队列" }
+          ]
+        },
+        "4": {
+          "checks": [
+            { "type": "api_any", "names": ["SYS_DHT11_Read", "SYS_BMP280_Read", "SYS_BH1750_ReadLux", "SYS_CCS811_Read", "SYS_ADC_ReadAvg"], "min": 4, "what": "6 路传感器至少接上 4 路" }
+          ]
+        },
+        "5": { "manual": "换算与阈值：判据是「数值对不对」，得看串口打印或实测，机器判不了" },
+        "6": {
+          "checks": [
+            { "type": "api", "names": ["SYS_FRAME_BuildEnv"] }
+          ]
+        },
+        "7": {
+          "checks": [
+            { "type": "api", "names": ["LORA_E22_Init", "LORA_E22_Send"] }
+          ]
+        },
+        "8": {
+          "checks": [
+            { "type": "api_any", "names": ["SYS_OLED_Init", "SYS_OLED_ShowString", "SYS_OLED_ShowNum", "SYS_OLED_ShowFloat"], "min": 2, "what": "OLED 初始化 + 至少一种显示" }
+          ]
+        },
+        "9": { "manual": "联调验收：要与板2 / 上位机实跑 30 分钟，机器判不了" }
+      }
+    },
+    "板2": {
+      "doc": "EnvMonitor/Project_2_数据通信端/板2进度文档.md",
+      "files": [
+        "EnvMonitor/Project_2_数据通信端/Project/main.c"
+      ],
+      "stages": {
+        "0": { "manual": "分工与阶段地图：你自己能说清就算过，机器判不了" },
+        "1": {
+          "checks": [
+            { "type": "file_exists", "path": "EnvMonitor/Project_2_数据通信端/Project/main.c" },
+            { "type": "pattern", "pattern": "int\\s+main\\s*\\(", "what": "main() 函数体" }
+          ]
+        },
+        "2": {
+          "checks": [
+            { "type": "api", "names": ["SYS_CLK_ToHighSpeed", "SYS_TICK_Init", "SYS_USART_Init", "LED_Init"] }
+          ]
+        },
+        "3": {
+          "checks": [
+            { "type": "api_count", "name": "xTaskCreate", "min": 4, "what": "4 个任务（收/转发/命令/补传）" },
+            { "type": "api_any", "names": ["xQueueCreate", "xSemaphoreCreateBinary"], "min": 1, "what": "至少一个队列或信号量" }
+          ]
+        },
+        "4": {
+          "checks": [
+            { "type": "api", "names": ["LORA_E22_Recv"], "what": "收帧" },
+            { "type": "api_any", "names": ["SYS_FRAME_Poll", "SYS_FRAME_Feed"], "min": 1, "what": "解帧（Poll 或 Feed）" }
+          ]
+        },
+        "5": {
+          "checks": [
+            { "type": "api", "names": ["ESP8266_Init", "ESP8266_ConnectTCP"] }
+          ]
+        },
+        "6": {
+          "checks": [
+            { "type": "api", "names": ["W25QXX_LogWrite", "W25QXX_LogRead"], "what": "缓存写入 + 读回（补传）" }
+          ]
+        },
+        "7": {
+          "checks": [
+            { "type": "api_any", "names": ["LCD_ShowString", "LCD_ShowFixed", "LCD_ShowNum"], "min": 1, "what": "屏上真的显示内容" }
+          ]
+        },
+        "8": { "manual": "联调验收：要与板1 / 上位机实跑，机器判不了" },
+        "9": { "manual": "双通道并行：云与上位机同时跑、一路断不拖垮另一路，得实测" }
+      }
+    },
+    "Qt": {
+      "doc": "EnvMonitor/QT_project/QT上位机进度文档.md",
+      "files": [
+        "EnvMonitor/QT_project/SerialMonitor/mainwindow.cpp",
+        "EnvMonitor/QT_project/SerialMonitor/frameparser.cpp",
+        "EnvMonitor/QT_project/SerialMonitor/datamodel.cpp",
+        "EnvMonitor/QT_project/SerialMonitor/devctl.cpp",
+        "EnvMonitor/QT_project/SerialMonitor/alarmmanager.cpp"
+      ],
+      "stages": {
+        "0": { "manual": "职责边界与自检习惯：你自己能说清就算过，机器判不了" },
+        "1": {
+          "checks": [
+            { "type": "api", "names": ["QSerialPort", "setBaudRate"], "what": "串口打开与参数设置" }
+          ]
+        },
+        "2": {
+          "checks": [
+            { "type": "api", "names": ["FrameProto::buildEnv", "FrameProto::verify"], "what": "组帧/校验真的实现了" },
+            { "type": "no_todo", "tag": "TODO(阶段2)", "what": "协议层不再有 TODO(阶段2) 桩" }
+          ]
+        },
+        "3": { "manual": "界面与曲线：好不好看得你自己看，机器判不了" },
+        "4": { "manual": "告警与阈值：判据是「越限时该报的报了、回差没抖」，得实测" },
+        "5": { "manual": "记录与导出：判据是「CSV 能打开且内容对」，得人看" },
+        "6": {
+          "checks": [
+            { "type": "api", "names": ["DevCtl::startReplay", "FrameProto::CMD_REPLAY"], "what": "下发与补传命令" }
+          ]
+        },
+        "7": { "manual": "自检与联调：要真插串口跑一遍，机器判不了" }
+      }
+    }
+  }
+}

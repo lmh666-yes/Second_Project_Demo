@@ -62,8 +62,15 @@ public:
 private:
     /* 页面表的载体：分组名 + 侧栏项名 + 该页的构造函数。构造函数在下面 pageDefs() 里
        一次列全，构造窗口时按它逐页建、逐组插分组头。 */
-    struct PageDef { const char *group; const char *name; QWidget *(ToolboxWindow::*build)(); };
+    /* plugin 非空 = 这一页由「检查器插件」提供（D2）：脚本自己带 --manifest，
+       界面这边只负责给它一个 ToolRunPage，加检查器不用改 C++。 */
+    struct PageDef { QString group; QString name;
+                     QWidget *(ToolboxWindow::*build)();
+                     QString plugin; };
     static const QList<PageDef> &pageDefs();
+    /* D2：扫「检查/<名字>/check.py」并读 --manifest，返回要追加的页。
+       插件坏了 / 没 python / 没 manifest 一律静默跳过（不能拖垮整个工具箱）。 */
+    static QList<PageDef> discoverPlugins(const QString &toolsDir);
     QWidget *buildKickstartPage();
     QWidget *buildRtosGenPage();
     QWidget *buildWorkbenchPage();
@@ -77,6 +84,8 @@ private:
     QWidget *buildOtaPage();            /* OTA 台架：包 OTA/tools/ota_send.py 串口直连模式 */
     QWidget *buildCachePage();          /* 断网缓存：W25QXX 环形日志容量与补传节奏核算 */
     QWidget *buildScaffoldPage();       /* 工程模板：一键生成 STM32 工程骨架 */
+    QWidget *buildBuildFlashPage();     /* 编译烧录：编译→烧录→板载自检 + 体积趋势 + 状态快照 */
+    QWidget *buildPluginPage(const QString &script);   /* D2：插件页（ToolRunPage 包一层） */
     QWidget *buildFullCheckPage();
     QWidget *buildOverviewPage();
     QWidget *buildSettingsPage();       /* 设置：集中放个性化选项（默认不变） */

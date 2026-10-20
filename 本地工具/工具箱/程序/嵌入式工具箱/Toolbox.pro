@@ -11,6 +11,7 @@ SOURCES += \
     toolboxwindow.cpp \
     toolrunpage.cpp \
     scaffoldpage.cpp \
+    buildflashpage.cpp \
     rtosgen.cpp \
     rtosgenpage.cpp \
     overviewpage.cpp \
@@ -36,6 +37,7 @@ HEADERS += \
     toolboxwindow.h \
     toolrunpage.h \
     scaffoldpage.h \
+    buildflashpage.h \
     rtosgen.h \
     rtosgenpage.h \
     overviewpage.h \

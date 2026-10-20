@@ -332,6 +332,46 @@ static int runCli(const QStringList &args)
         if (!c1Ok)
             ++fail;
 
+        /* 项目引导「下一步：阶段 N」入口 —— 读的是该工程进度文档的「阶段总表」。
+           错例：选中板1 必须指出一个阶段（"下一步"或"全部完成"），且该阶段卡在列表里真能点中；
+           反例：选「全部工程」时不知道说的是哪块板，必须不显示（不能瞎指一个阶段）。 */
+        const QString hintAll = lw.nextStageHintFor(QStringLiteral("全部工程"));
+        const QString hintB1  = lw.nextStageHintFor(QStringLiteral("板1"));
+        /* 横幅里写的阶段号，左侧列表里得真有一张对应的卡（否则"点这里直达"是空话） */
+        QString hintStage;
+        {
+            const int p = hintB1.indexOf(QStringLiteral("阶段 "));
+            if (p >= 0) {
+                const int q = hintB1.indexOf(QStringLiteral("｜"), p);
+                if (q > p)
+                    hintStage = hintB1.mid(p, q - p + 1);      /* 例："阶段 0｜" */
+            }
+        }
+        bool targetOk = false;
+        if (!hintStage.isEmpty()) {
+            for (int i : lw.shown()) {
+                const Card &c = lw.dataset().at(i);
+                if (c.b == QStringLiteral("板1") && c.n.contains(hintStage)) {
+                    targetOk = true;
+                    break;
+                }
+            }
+        }
+        const bool hintOk = hintB1.contains(QStringLiteral("阶段"))
+                         && (hintB1.contains(QStringLiteral("下一步"))
+                             || hintB1.contains(QStringLiteral("全部完成")))
+                         && targetOk
+                         && hintAll.isEmpty();
+        out << QString::fromUtf8("项目引导「下一步」入口：")
+            << (hintOk ? QString::fromUtf8("PASS") : QString::fromUtf8("FAIL"))
+            << QString::fromUtf8("（板1 → %1；点得中 %2；全部工程 → %3）\n")
+                   .arg(hintB1.isEmpty() ? QString::fromUtf8("不显示(错)") : hintB1,
+                        targetOk ? QString::fromUtf8("是") : QString::fromUtf8("否(错)"),
+                        hintAll.isEmpty() ? QString::fromUtf8("不显示")
+                                          : QString::fromUtf8("显示了(错)"));
+        if (!hintOk)
+            ++fail;
+
         /* H13：手册数据与网页版同源。Qt 版（内嵌页）读的是网页版那条链导出的
            dataset.json —— 断言它导出时写下的 meta.sourceHtml 正是网页版 HTML，
            且 meta.total 与 all 实际条数一致。这样"Qt 版看到的就是网页版同一份数据"

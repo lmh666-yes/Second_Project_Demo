@@ -208,11 +208,16 @@ def main():
     else:
         bak = DSET + ".syncbak"
         shutil.copyfile(DSET, bak)
-        # H2：重跑 export 会顺手刷新数据版本戳的时间 —— 先备好，末尾还原，本脚本仍"只读"。
+        # H2/H14：重跑 export 会顺手刷新 dataset.json 与数据版本戳（内容与时间都会变）。
+        # 先把**时间戳**也记下来，末尾连同内容一起还原 —— 否则本脚本自己就把这两份产物
+        # "变新"了，下一次跑第 0 节（H14）就会误判"改完后没重跑整链"，自己判自己失败。
+        dset_times = (os.path.getatime(DSET), os.path.getmtime(DSET))
         sbak = STAMP + ".syncbak"
         had_stamp = exists(STAMP)
+        stamp_times = None
         if had_stamp:
             shutil.copyfile(STAMP, sbak)
+            stamp_times = (os.path.getatime(STAMP), os.path.getmtime(STAMP))
         try:
             r = subprocess.run(["node", EXPORT], capture_output=True, text=True,
                                encoding="utf-8", cwd=HERE)
@@ -234,9 +239,11 @@ def main():
         finally:
             shutil.copyfile(bak, DSET)     # 还原：本脚本只读不写
             os.remove(bak)
+            os.utime(DSET, dset_times)     # 连 mtime 一起还原（否则第 0 节会自己判自己）
             if had_stamp:
                 shutil.copyfile(sbak, STAMP)
                 os.remove(sbak)
+                os.utime(STAMP, stamp_times)
 
     print()
     print("=== 小结 ===")

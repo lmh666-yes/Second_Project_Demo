@@ -9,15 +9,24 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QComboBox>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QHBoxLayout>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
+#include <QMessageBox>
+#include <QProcess>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QShortcut>
+#include <QShowEvent>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTextBrowser>
@@ -64,6 +73,78 @@ const char *kHotTopics[] = { "串口 DMA + 空闲中断", "定时器 PWM", "数�
 
 const int kHotModuleN = int(sizeof(kHotModules) / sizeof(kHotModules[0]));
 const int kHotTopicN  = int(sizeof(kHotTopics)  / sizeof(kHotTopics[0]));
+
+/* ---------- 项目引导「下一步」：读进度文档的阶段总表 ---------- */
+
+struct StageRow { int no; QString name; bool done; };
+
+/* 某个工程的进度文档绝对路径。
+   路径来自板级配置 `速查数据/rules/board_envmonitor.json` 的 extra.progress_docs，
+   与 dataset 的 proj 同序（板1 / 板2 / Qt，由 project_scaffold.py 保证）；
+   配置里是相对仓库根的路径，仓库根 = 数据根的上三级。 */
+QString progressDocForProject(const QString &tag)
+{
+    const QString tool = AppPaths::toolRoot();
+    if (tool.isEmpty())
+        return QString();
+    QFile f(QDir(tool).filePath(QStringLiteral("rules/board_envmonitor.json")));
+    if (!f.open(QIODevice::ReadOnly))
+        return QString();
+    const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+    const QJsonArray docs = o.value(QStringLiteral("extra")).toObject()
+                                .value(QStringLiteral("progress_docs")).toArray();
+    int idx = -1;
+    if (tag == QStringLiteral("板1"))      idx = 0;
+    else if (tag == QStringLiteral("板2")) idx = 1;
+    else if (tag == QStringLiteral("Qt"))  idx = 2;
+    if (idx < 0 || idx >= docs.size())
+        return QString();
+    const QString repo = QDir::cleanPath(QDir(tool).filePath(QStringLiteral("../../..")));
+    return QDir(repo).filePath(docs.at(idx).toString());
+}
+
+/* 解析进度文档「1. 阶段总表」那 5 列：| 阶段 | 阶段名 | 状态 | 证据 | 日期 |。
+   只认第一列是整数的行；状态列出现 ☑ / ✅ / "完成" 即视为做完。
+   表一结束（遇到非 | 开头且已收到行）就停，不会把后面的明细表当总表。 */
+QVector<StageRow> parseStageTable(const QString &path)
+{
+    QVector<StageRow> out;
+    if (path.isEmpty())
+        return out;
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly))
+        return out;
+    const QStringList lines = QString::fromUtf8(f.readAll()).split(QLatin1Char('\n'));
+    bool inTable = false;
+    for (const QString &raw : lines) {
+        const QString line = raw.trimmed();
+        if (!inTable) {
+            if (line.startsWith(QStringLiteral("| 阶段")) || line.startsWith(QStringLiteral("| 步骤")))
+                inTable = true;
+            continue;
+        }
+        if (!line.startsWith(QLatin1Char('|'))) {
+            if (!out.isEmpty())
+                break;                      /* 总表结束 */
+            continue;
+        }
+        if (line.contains(QStringLiteral("---")))
+            continue;                       /* 分隔行 */
+        const QStringList cells = line.split(QLatin1Char('|'));
+        if (cells.size() < 4)
+            continue;
+        bool ok = false;
+        const int no = cells.at(1).trimmed().toInt(&ok);
+        if (!ok)
+            continue;
+        const QString name = cells.at(2).trimmed();
+        const QString st   = cells.at(3);
+        const bool done = st.contains(QStringLiteral("☑")) || st.contains(QStringLiteral("✅"))
+                       || st.contains(QStringLiteral("完成"));
+        out.append(StageRow{no, name, done});
+    }
+    return out;
+}
 
 } // namespace
 
@@ -164,6 +245,33 @@ void MainWindow::buildUi()
     row2->addWidget(new QLabel(QStringLiteral("模块"), this));
     row2->addWidget(m_module);
     root->addLayout(row2);
+
+    /* ---- 项目引导的「下一步」入口 ----
+       只在「项目引导 + 选中某个具体工程」时出现（见 updateNextStageHint）：
+       读该工程进度文档的阶段总表，指出第一个还没勾的阶段，点一下直达那张卡。
+       做成扁平按钮而不是 QLabel —— 它要能点。右边配一个「判定阶段」：
+       跑一遍 stage_status.py 按代码现状判，并回写总表（A1）。 */
+    {
+        auto *hintRow = new QHBoxLayout();
+        m_nextHint = new QPushButton(this);
+        m_nextHint->setFlat(true);
+        m_nextHint->setCursor(Qt::PointingHandCursor);
+        m_nextHint->setStyleSheet(QStringLiteral(
+            "QPushButton { text-align: left; padding: 6px 10px;"
+            " border: 1px solid palette(mid); border-radius: 4px; }"
+            "QPushButton:hover { background: palette(alternate-base); }"));
+        m_nextHint->hide();
+        connect(m_nextHint, &QPushButton::clicked, this, &MainWindow::jumpToNextStage);
+        hintRow->addWidget(m_nextHint, 1);
+
+        m_btnJudge = new QPushButton(QStringLiteral("判定阶段"), this);
+        m_btnJudge->setToolTip(QStringLiteral(
+            "按代码现状判定各阶段（关键 API 有没有真调用），并回写进度文档的阶段总表"));
+        m_btnJudge->hide();
+        connect(m_btnJudge, &QPushButton::clicked, this, &MainWindow::runStageJudge);
+        hintRow->addWidget(m_btnJudge);
+        root->addLayout(hintRow);
+    }
 
     /* ---- 主体：列表 + 详情 ---- */
     QSplitter *sp = new QSplitter(Qt::Horizontal, this);
@@ -296,6 +404,9 @@ void MainWindow::refreshList()
     }
     m_list->blockSignals(false);
 
+    /* 「下一步：阶段 N」入口 —— 列表一换就重算（板块 / 工程筛选都走这里） */
+    updateNextStageHint();
+
     /* 落地页只在「资料查询 · 全部模块 · 没搜索」时出现，与网页/手机一致：
        一搜索或一选模块，列表就是正常结果，落地页立刻消失。
        这时右侧显示落地页而不是第一条卡；列表**不选中**任何行（选中会触发
@@ -318,6 +429,133 @@ void MainWindow::refreshList()
         m_detail->setHtml(QStringLiteral("<p style='color:#8b93a3;'>没有匹配的条目。</p>"));
         m_current = -1;
     }
+}
+
+/* 「下一步：阶段 N」—— 从进度文档的阶段总表读"做到哪了"。
+   只在项目引导、且选了一个**具体工程**时显示：
+     · 全部工程  → 不知道你说的是哪块板，不猜，隐藏；
+     · 文档读不到 / 还没有总表 → 隐藏（宁可不显示，也不给一句假的"下一步"）。 */
+void MainWindow::updateNextStageHint()
+{
+    if (!m_nextHint)
+        return;
+    m_nextHint->setText(QString());   /* 文字也清掉：nextStageHintFor() 靠"有没有字"判断显示没显示 */
+    m_nextHint->hide();
+    if (m_btnJudge)
+        m_btnJudge->hide();
+    m_nextHint->setProperty("stageNo", -1);
+    if (m_section != int(Card::Build))
+        return;
+    const QString tag = (m_module->currentIndex() > 0) ? m_module->currentText() : QString();
+    if (tag.isEmpty())
+        return;
+    const QVector<StageRow> rows = parseStageTable(progressDocForProject(tag));
+    if (rows.isEmpty())
+        return;
+
+    int next = -1;
+    for (int i = 0; i < rows.size(); ++i) {
+        if (!rows.at(i).done) {
+            next = i;
+            break;
+        }
+    }
+    if (next < 0) {
+        m_nextHint->setText(QStringLiteral("✅ %1：%2 个阶段全部完成（要重看某一段，直接在左边点）")
+                                .arg(tag).arg(rows.size()));
+    } else {
+        const StageRow &r = rows.at(next);
+        m_nextHint->setText(QStringLiteral("▶ 下一步：%1 · 阶段 %2｜%3　（点这里直达）")
+                                .arg(tag).arg(r.no).arg(r.name));
+        m_nextHint->setProperty("stageNo", r.no);
+    }
+    m_nextHint->show();
+    if (m_btnJudge)
+        m_btnJudge->show();
+}
+
+/* A1：按代码现状判阶段，并把结果回写进度文档（脚本自己只改「状态/证据」两列，
+   判不了的阶段整行不碰）。跑完刷新横幅 —— 判完就知道下一步该干哪一段。 */
+void MainWindow::runStageJudge()
+{
+    const QString tag = m_module->currentText();
+    if (tag.isEmpty())
+        return;
+    const QString tool = AppPaths::toolRoot();
+    if (tool.isEmpty())
+        return;
+    const QString script = QDir::cleanPath(
+        QDir(tool).filePath(QStringLiteral("../检查/阶段判定/stage_status.py")));
+    if (!QFileInfo::exists(script)) {
+        QMessageBox::warning(this, QStringLiteral("判定阶段"),
+                             QStringLiteral("找不到脚本：\n%1").arg(script));
+        return;
+    }
+
+    m_btnJudge->setEnabled(false);
+    m_btnJudge->setText(QStringLiteral("判定中…"));
+    auto *proc = new QProcess(this);
+    proc->setWorkingDirectory(QFileInfo(script).absolutePath());
+    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+            this, [this, proc](int code, QProcess::ExitStatus) {
+        const QString err = QString::fromUtf8(proc->readAllStandardError()).trimmed();
+        m_btnJudge->setEnabled(true);
+        m_btnJudge->setText(QStringLiteral("判定阶段"));
+        updateNextStageHint();          /* 判完横幅跟着走 */
+        if (code != 0) {
+            QMessageBox::warning(this, QStringLiteral("判定阶段失败"),
+                                 err.isEmpty() ? QStringLiteral("退出码 %1").arg(code) : err);
+        }
+        proc->deleteLater();
+    });
+    connect(proc, &QProcess::errorOccurred, this, [this, proc](QProcess::ProcessError) {
+        m_btnJudge->setEnabled(true);
+        m_btnJudge->setText(QStringLiteral("判定阶段"));
+        QMessageBox::warning(this, QStringLiteral("判定阶段"),
+                             QStringLiteral("启动失败：没找到 Python。"));
+        proc->deleteLater();
+    });
+    proc->start(QStringLiteral("python"),
+                {script, QStringLiteral("--apply"), QStringLiteral("--board"), tag});
+}
+
+/* 点「下一步」→ 在左侧列表里选中那张阶段卡（卡名形如「🏗 板1 · 阶段 3｜…」）。 */
+void MainWindow::jumpToNextStage()
+{
+    if (!m_nextHint)
+        return;
+    const int no = m_nextHint->property("stageNo").toInt();
+    if (no < 0)
+        return;
+    const QString tag = m_module->currentText();
+    const QString needle = QStringLiteral("阶段 %1｜").arg(no);
+    const int n = qMin(m_list->count(), m_shown.size());
+    for (int r = 0; r < n; ++r) {
+        const Card &c = m_ds.at(m_shown.at(r));
+        if (c.b == tag && c.n.contains(needle)) {
+            m_list->setCurrentRow(r);
+            m_list->scrollToItem(m_list->item(r));
+            return;
+        }
+    }
+}
+
+/* 自检入口：切到项目引导 + 选中该工程，把横幅文字取回来（空 = 没显示）。
+   不走 isVisible()：命令行自检不 show 窗口，isVisible() 恒为 false，测不出东西。 */
+QString MainWindow::nextStageHintFor(const QString &projectTag)
+{
+    onSectionClicked(int(Card::Build));
+    const int idx = m_module->findText(projectTag);
+    if (idx >= 0)
+        m_module->setCurrentIndex(idx);      /* 触发 onModuleChanged → refreshList */
+    return m_nextHint ? m_nextHint->text() : QString();
+}
+
+void MainWindow::showEvent(QShowEvent *e)
+{
+    QMainWindow::showEvent(e);
+    /* 切回本页时重算「下一步」：你可能刚在编辑器里把某个阶段勾上了 */
+    updateNextStageHint();
 }
 
 /* 落地页 HTML（「从这里开始」）。Qt 富文本不支持 flex/grid，

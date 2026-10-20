@@ -516,7 +516,7 @@ def generate_register_main_c(out_dir, board, periph_names, tasks):
 
     lines.append('int main(void)')
     lines.append('{')
-    lines.append('    /* ---------- 阶段 1：时钟 ----------')
+    lines.append('    /* ---------- 第 1 步：时钟 ----------')
     lines.append('     * 必须最先：外设都靠它。SystemInit() 已由启动文件调用（HSE 8MHz → PLL 168MHz），')
     lines.append('     * 这里只开各外设的时钟。 */')
     lines.append('')
@@ -544,7 +544,7 @@ def generate_register_main_c(out_dir, board, periph_names, tasks):
         lines.append('')
 
     # 初始化调用
-    lines.append('    /* ---------- 阶段 2：基础外设 ----------')
+    lines.append('    /* ---------- 第 2 步：基础外设 ----------')
     lines.append('     * 放在时钟之后、任务/主循环之前：外设没初始化就进任务，第一次用它就空。 */')
     for block in init_blocks:
         for line in block.split('\n'):
@@ -554,14 +554,14 @@ def generate_register_main_c(out_dir, board, periph_names, tasks):
 
     # FreeRTOS 任务
     if has_freertos:
-        lines.append('    /* ---------- 阶段 3：FreeRTOS 任务 ----------')
+        lines.append('    /* ---------- 第 3 步：FreeRTOS 任务 ----------')
         lines.append('     * 建完任务就交给调度器，main 到此不再往下执行。 */')
         for tc in task_creates:
             lines.append(tc)
         lines.append('    vTaskStartScheduler();')
         lines.append('')
     else:
-        lines.append('    /* ---------- 阶段 3：主循环 ----------')
+        lines.append('    /* ---------- 第 3 步：主循环 ----------')
         lines.append('     * 没有任务时，自己的逻辑写在这个 for(;;) 里。 */')
 
     lines.append('    for (;;)')
@@ -648,7 +648,7 @@ def generate_driver_main_c(out_dir, board, periph_names, tasks, fwlib_dir):
 
     lines.append('int main(void)')
     lines.append('{')
-    lines.append('    /* ---------- 阶段 1：时钟 ----------')
+    lines.append('    /* ---------- 第 1 步：时钟 ----------')
     lines.append('     * 必须最先：后面的外设都靠它。HighSpeed = HSE 8MHz → PLL 168MHz。 */')
     lines.append('    SYS_CLK_ToHighSpeed();')
     if has_freertos:
@@ -656,7 +656,7 @@ def generate_driver_main_c(out_dir, board, periph_names, tasks, fwlib_dir):
     else:
         lines.append('    SYS_TICK_Init();')
     lines.append('')
-    lines.append('    /* ---------- 阶段 2：基础外设 ----------')
+    lines.append('    /* ---------- 第 2 步：基础外设 ----------')
     lines.append('     * 放在时钟之后、任务/主循环之前：外设没初始化就进任务，第一次用它就空。 */')
     if has_usart:
         lines.append('    SYS_USART_Init(DBG, DBG_BAUD);')
@@ -672,14 +672,14 @@ def generate_driver_main_c(out_dir, board, periph_names, tasks, fwlib_dir):
     lines.append('')
 
     if has_freertos:
-        lines.append('    /* ---------- 阶段 3：FreeRTOS 任务 ----------')
+        lines.append('    /* ---------- 第 3 步：FreeRTOS 任务 ----------')
         lines.append('     * 建完任务就交给调度器，main 到此不再往下执行。 */')
         for tc in task_creates:
             lines.append(tc)
         lines.append('    vTaskStartScheduler();')
         lines.append('')
     else:
-        lines.append('    /* ---------- 阶段 3：主循环 ----------')
+        lines.append('    /* ---------- 第 3 步：主循环 ----------')
         lines.append('     * 没有任务时，自己的逻辑写在这个 for(;;) 里。 */')
 
     lines.append('    for (;;)')
@@ -953,11 +953,51 @@ def stage_of(card):
     return (m.group(1), m.group(2).strip())
 
 
-def _doc_head(title, subtitle, n_stage):
+# C2：每个外设的**具体**验收判据 —— 原来是"能看见现象（LED 可控 / 串口打印 / 按键响应 / 波形 …）"
+# 一句话套所有外设，等于没判据：照着它没法判断"到底过没过"。这里按外设给可观测、可复现的一条。
+_ACCEPT = {
+    'clock':   '打印 `SYS_CLK_GetFreq()` 得 168000000（HSE 8MHz → PLL 168MHz）',
+    'tick':    '延时 1000ms 实测 1000±10ms（逻辑分析仪量 LED 翻转周期）',
+    'usart':   '串口助手 115200 8N1 收到你自己打印的一行字；故意改错波特率应变乱码',
+    'gpio':    '按键按下时 `IDR` 对应位变化；输出脚能把 LED 拉亮/拉灭',
+    'led':     'LED 按 500ms 亮灭，节奏均匀（不忽快忽慢）',
+    'key':     '按下/松开各打印一行，单次按下只触发一次（不抖）',
+    'beep':    '能响也能停；响的时候 3.3V 不明显跌落',
+    'delay':   '`delay_ms(1000)` 实测 1000±10ms',
+    'nvic':    '在 ISR 里调 `xxxFromISR` 且 `configASSERT` 不触发',
+    'exti':    '按一次键进一次中断（计数 +1），松手不重复进',
+    'tim':     'PWM 占空比设 50%，示波器量到的频率与占空比都对',
+    'adc':     '已知电压（如 3.3V 分压）读回原始值误差在 ±2% 内',
+    'dma':     '一次搬运 N 字节后传输完成标志置位，数据逐字节正确',
+    'i2c':     '扫描到器件地址（OLED 0x3C），读 ID 寄存器返回预期值',
+    'spi':     '读 Flash 的 JEDEC ID（如 EF 40 18）正确',
+    'rtc':     '断电重启后时间仍在走（读回的日期时间合理）',
+    'wdg':     '正常喂狗能一直跑；停喂后约在超时时间复位一次',
+    'flash':   '写一段再读回逐字节一致；擦除后读回全 0xFF',
+    'pwr':     '进低功耗后电流明显下降，且能被指定唤醒源唤醒',
+    'rs485':   '收发方向脚在发送前后正确翻转，对端收到整帧',
+    'frame':   '组一帧后 `SYS_FRAME_Verify` 返回 0；改一个字节后返回 4（CRC 错）',
+    'modbus':  '对已知向量算出的 CRC 与手册一致（如 `01 03 00 00 00 01` → `84 0A`）',
+    'lora':    '`LORA_E22_Init()` 返回 0；AT 能通；对端能收到一帧',
+    'oled':    '屏幕点亮并显示一行字；I2C 能扫到 0x3C',
+    'dht11':   '读回的温湿度在合理范围，连续两次读数不跳变',
+    'bmp280':  '气压接近当地气象值（±5hPa），温度接近室温',
+    'bh1750':  '遮住/照亮传感器，读数有明显变化',
+    'ccs811':  '读回 eCO2/TVOC，且不报错误码',
+    'mpu6050': '静止时加速度约 (0, 0, 1g)；晃动时数值跟着变',
+    'eth':     '能 ping 通，或 DHCP 拿到地址',
+}
+
+
+def _doc_head(title, subtitle, n_stage, source=None):
+    """source 不给时按 C1 的口径写（阶段来自「项目引导」）；C2 的骨架文档是**另一套**编号，
+    必须显式传自己的说明，免得写出"3 个阶段来自项目引导（那里是 10 个）"这种自相矛盾。"""
+    if source is None:
+        source = ('> 阶段与验收判据的**顺序**来自「🧭 项目引导」（本工程 %d 个阶段），'
+                  '改了那边可以重新生成本骨架（已有内容不会被覆盖，除非加 `--force`）。' % n_stage)
     return ['# %s · 进度文档' % title, '',
             '> %s' % subtitle,
-            '> 阶段与验收判据的**顺序**来自「🧭 项目引导」（本工程 %d 个阶段），'
-            '改了那边可以重新生成本骨架（已有内容不会被覆盖，除非加 `--force`）。' % n_stage,
+            source,
             '']
 
 
@@ -973,7 +1013,7 @@ def render_progress_skeleton(proj, cards):
                     '状态与证据要你自己填。', len(cards))
     out.append('## 1. 阶段总表（每完成一个阶段就来勾一次）')
     out.append('')
-    out.append('| 阶段 | 阶段名 | 状态 | 证据（怎么证明做完了） | 日期 |')
+    out.append('| 步骤 | 步骤名 | 状态 | 证据（怎么证明做完了） | 日期 |')
     out.append('|---|---|---|---|---|')
     for c in cards:
         st, cname = stage_of(c)
@@ -1013,41 +1053,52 @@ def render_progress_skeleton(proj, cards):
 
 
 def render_scaffold_progress_doc(out_dir, board, periph_names, tasks, style):
-    """C2：给"刚生成的工程骨架"铺一份进度文档 —— 阶段就是骨架自己的阶段安排。
+    """C2：给"刚生成的工程骨架"铺一份进度文档 —— 步骤就是骨架自己的施工顺序。
 
-    骨架的阶段（与 main.c 里的注释编号一致）：
-      阶段 1 时钟与滴答 → 阶段 2 基础外设（逐个 init）→ 阶段 3 FreeRTOS 任务 / 主循环。
+    骨架的步骤（与 main.c 里的注释编号一致）：
+      第 1 步 时钟与滴答 → 第 2 步 基础外设（逐个 init）→ 第 3 步 FreeRTOS 任务 / 主循环。
+
+    **为什么叫「步」不叫「阶段」**：「阶段」是「🧭 项目引导」里 EnvMonitor 的推进单位
+    （阶段 0~9，与阶段卡一一对应）；骨架只有 3 段施工顺序，叫「阶段 1/2/3」会让人拿 3 去
+    对 10。改叫「步」之后两套编号各归各，不必再解释。
     """
     title = os.path.basename(os.path.abspath(out_dir)) or '新建工程'
-    out = _doc_head(title,
-                    '这是生成工程骨架时顺手铺下的进度文档 —— 起手助手里填的**阶段安排**'
-                    '（外设 / 任务）已经落到下面，你只管填状态与证据。', 3)
-    out.append('| 阶段 | 阶段名 | 状态 | 证据（怎么证明做完了） | 日期 |')
+    out = _doc_head(
+        title,
+        '这是生成工程骨架时顺手铺下的进度文档 —— 起手助手里填的**外设 / 任务**'
+        '已经落到下面，你只管填状态与证据。', 3,
+        source=('> 下面 3 个「**步骤**」是**这份骨架自己的施工顺序**（时钟 → 外设 → 任务/主循环）。'
+                '它与「🧭 项目引导」里 EnvMonitor 的阶段 0~9 **不是同一套编号**：'
+                '阶段 = 项目引导的推进单位（每张阶段卡一段），步 = 本骨架的落地顺序，别对着数。'
+                '重新生成骨架不会覆盖你已写的内容（除非加 `--force`）。'))
+    out.append('| 步骤 | 步骤名 | 状态 | 证据（怎么证明做完了） | 日期 |')
     out.append('|---|---|---|---|---|')
     out.append('| 1 | 时钟与滴答 | ☐ 未开始 | | |')
     out.append('| 2 | 基础外设逐个 init | ☐ 未开始 | | |')
     out.append('| 3 | %s | ☐ 未开始 | | |'
                % ('FreeRTOS 任务跑起来' if tasks else '主循环（裸机）'))
     out.append('')
-    out.append('## 阶段 1｜时钟与滴答')
+    out.append('## 第 1 步｜时钟与滴答')
     out.append('')
     out.append('| 里程碑（每个动作） | 验收判据（怎么算过） | 完成 |')
     out.append('|---|---|---|')
-    out.append('| HSE → PLL → 168MHz | Keil 编译 **0 Error 0 Warning**，下载后能跑 | ☐ |')
-    out.append('| 滴答起来（SysTick 或 FreeRTOS tick） | 串口能打印一行，或 LED 闪烁周期与预期一致 | ☐ |')
+    out.append('| HSE → PLL → 168MHz | 打印 `SYS_CLK_GetFreq()` 得 168000000；'
+               'Keil 编译 **0 Error 0 Warning** | ☐ |')
+    out.append('| 滴答起来（SysTick 或 FreeRTOS tick） | 延时 1000ms 实测在 1000±10ms'
+               '（逻辑分析仪量 LED 翻转周期，或串口打时间戳） | ☐ |')
     out.append('')
-    out.append('## 阶段 2｜基础外设逐个 init')
+    out.append('## 第 2 步｜基础外设逐个 init')
     out.append('')
     out.append('| 里程碑（每个动作） | 验收判据（怎么算过） | 完成 |')
     out.append('|---|---|---|')
     if periph_names:
         for name in periph_names:
-            out.append('| `%s` 初始化 | 能看见现象（LED 可控 / 串口打印 / 按键响应 / 波形 …），'
-                       '按你板上的实际接线核一遍 | ☐ |' % _cell(name))
+            out.append('| `%s` 初始化 | %s | ☐ |'
+                       % (_cell(name), _ACCEPT.get(name, '能看见现象，并按你板上的实际接线核一遍')))
     else:
         out.append('| （本次没选外设） | — | ☐ |')
     out.append('')
-    out.append('## 阶段 3｜%s' % ('FreeRTOS 任务框架' if tasks else '主循环'))
+    out.append('## 第 3 步｜%s' % ('FreeRTOS 任务框架' if tasks else '主循环'))
     out.append('')
     out.append('| 里程碑（每个动作） | 验收判据（怎么算过） | 完成 |')
     out.append('|---|---|---|')
@@ -1055,13 +1106,14 @@ def render_scaffold_progress_doc(out_dir, board, periph_names, tasks, style):
         for t in tasks:
             parts = t.split(':')
             out.append('| 任务 `%s`（优先级 %s，栈 %s 字） | 任务里打印心跳、'
-                       '`uxTaskGetStackHighWaterMark` 有余量 | ☐ |'
+                       '`uxTaskGetStackHighWaterMark` 有余量（>50 字） | ☐ |'
                        % (_cell(parts[0]), _cell(parts[1] if len(parts) > 1 else '?'),
                           _cell(parts[2] if len(parts) > 2 else '?')))
         out.append('| `vTaskStartScheduler()` 之后 main 不再往下走 | 各任务都按周期跑起来，'
-                   '没有任务卡死或饿死 | ☐ |')
+                   '没有任务卡死或饿死；连续跑 10 分钟不死机 | ☐ |')
     else:
-        out.append('| 主循环里各步骤按序执行 | 每步有可观测输出，不靠"应该没问题" | ☐ |')
+        out.append('| 主循环里各步骤按序执行 | 每步都有可观测输出（打印/引脚/屏幕），'
+                   '不靠"应该没问题" | ☐ |')
     out.append('')
     out.append('## 待填表（随手记：今天做了什么、卡在哪）')
     out.append('')
@@ -1130,7 +1182,7 @@ def selftest():
 
     为什么要它：这两条曾经是"看着对、其实不齐"的地方 ——
       ① 驱动库风格的三个阶段有编号，寄存器风格一个编号都没有（同一个工具两种风格不一样）；
-      ② 没给任务时"阶段 3"整条消失，编号从 2 直接跳到 for(;;)。
+      ② 没给任务时"第 3 步"整条消失，编号从 2 直接跳到 for(;;)。
     有任务 / 没任务两条路径都要断言，否则只会剩下一条能过。
     """
     import contextlib
@@ -1159,22 +1211,22 @@ def selftest():
         with_task = gen(style, ['Led:2:128'])
         no_task = gen(style, [])
 
-        # 错例：给了任务 → 阶段 1/2/3 齐全且顺序正确，阶段 3 是"FreeRTOS 任务"
-        s1 = with_task.find('阶段 1：时钟')
-        s2 = with_task.find('阶段 2：基础外设')
-        s3 = with_task.find('阶段 3：FreeRTOS 任务')
+        # 错例：给了任务 → 第 1/2/3 步齐全且顺序正确，阶段 3 是"FreeRTOS 任务"
+        s1 = with_task.find('第 1 步：时钟')
+        s2 = with_task.find('第 2 步：基础外设')
+        s3 = with_task.find('第 3 步：FreeRTOS 任务')
         expect(0 <= s1 < s2 < s3,
-               '%s·有任务：阶段 1→2→3 顺序正确（位置 %d/%d/%d）' % (name, s1, s2, s3))
+               '%s·有任务：第 1→2→3 步顺序正确（位置 %d/%d/%d）' % (name, s1, s2, s3))
         expect('vTaskStartScheduler();' in with_task, '%s·有任务：有调度器启动' % name)
 
         # 反例：没给任务 → 阶段 3 必须是"主循环"，且不许出现 FreeRTOS 任务那一段
-        b1 = no_task.find('阶段 1：时钟')
-        b2 = no_task.find('阶段 2：基础外设')
-        b3 = no_task.find('阶段 3：主循环')
+        b1 = no_task.find('第 1 步：时钟')
+        b2 = no_task.find('第 2 步：基础外设')
+        b3 = no_task.find('第 3 步：主循环')
         expect(0 <= b1 < b2 < b3,
-               '%s·无任务：阶段 1→2→3（主循环）顺序正确（位置 %d/%d/%d）' % (name, b1, b2, b3))
-        expect('阶段 3：FreeRTOS 任务' not in no_task,
-               '%s·无任务：不该出现"阶段 3：FreeRTOS 任务"（反例）' % name)
+               '%s·无任务：第 1→2→3 步（主循环）顺序正确（位置 %d/%d/%d）' % (name, b1, b2, b3))
+        expect('第 3 步：FreeRTOS 任务' not in no_task,
+               '%s·无任务：不该出现"第 3 步：FreeRTOS 任务"（反例）' % name)
         expect('vTaskStartScheduler();' not in no_task,
                '%s·无任务：不该出现调度器启动（反例）' % name)
 
@@ -1192,13 +1244,21 @@ def selftest():
     doc = os.path.join(d, 'doc_case进度文档.md')
     body = open(doc, encoding='utf-8').read() if os.path.exists(doc) else ''
     expect(os.path.exists(doc), 'C2 生成骨架时铺出了进度文档（%s）' % os.path.basename(doc))
-    for k in ('## 阶段 1｜时钟与滴答', '## 阶段 2｜基础外设逐个 init',
-              '## 阶段 3｜FreeRTOS 任务框架', '## 待填表'):
+    for k in ('## 第 1 步｜时钟与滴答', '## 第 2 步｜基础外设逐个 init',
+              '## 第 3 步｜FreeRTOS 任务框架', '## 待填表'):
         expect(k in body, 'C2 进度文档含"%s"' % k)
     expect('`usart` 初始化' in body and '`led` 初始化' in body,
            'C2 起手助手选的外设落进了进度文档（usart / led）')
     expect('任务 `Led`（优先级 2，栈 128 字）' in body,
            'C2 起手助手填的任务落进了进度文档（名字/优先级/栈都在）')
+    # 阶段编号是**两套**：骨架自己的 3 段 ≠ 项目引导的 10 段。文档头不许再说"顺序来自项目引导"，
+    # 否则用户会拿 3 段去对 10 段（这条是复核时发现的文案自相矛盾）。
+    expect('步骤' in body and '阶段 0~9' in body and '不是同一套编号' in body,
+           'C2 文档头写清"步骤（骨架 3 步）≠ 阶段（项目引导 0~9）"，不谎称顺序来自项目引导')
+    expect('能看见现象（LED 可控' not in body,
+           'C2 不再用"能看见现象（LED 可控/串口打印/…）"这句万能判据')
+    expect(_ACCEPT.get('usart', '') in body and _ACCEPT.get('led', '') in body,
+           'C2 每个外设给的是自己的具体验收判据（usart / led 各自一条）')
 
     d2 = os.path.join(tmp, 'doc_bare')
     with contextlib.redirect_stdout(io.StringIO()):
@@ -1227,7 +1287,7 @@ def selftest():
             skel = render_progress_skeleton(proj, cards)
             expect(skel.count('### 阶段 ') == len(cards),
                    'C1 %s：骨架里阶段明细数 = 项目引导阶段卡数（%d）' % (proj.get('tag'), len(cards)))
-            expect('| 阶段 | 阶段名 | 状态 | 证据（怎么证明做完了） | 日期 |' in skel
+            expect('| 步骤 | 步骤名 | 状态 | 证据（怎么证明做完了） | 日期 |' in skel
                    and '待填表' in skel and '验收判据（怎么算过）' in skel
                    and '本阶段完成判定' in skel,
                    'C1 %s：骨架含总表 / 里程碑 / 验收判据 / 待填表' % proj.get('tag'))

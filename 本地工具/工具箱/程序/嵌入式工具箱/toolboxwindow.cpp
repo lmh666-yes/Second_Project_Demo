@@ -4,6 +4,7 @@
 #include "mainwindow.h"
 #include "overviewpage.h"
 #include "rtosgenpage.h"
+#include "buildflashpage.h"
 #include "scaffoldpage.h"
 #include "settings.h"
 #include "theme.h"
@@ -18,7 +19,13 @@
 #include <QComboBox>
 #include <QDesktopServices>
 #include <QDialog>
+#include "pyfind.h"
+
 #include <QDir>
+#include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QProcess>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -68,26 +75,82 @@ static QString py(const QString &dir, const QString &rel)
 
 /* H1：页面表 —— 全工具箱**唯一**一份"有哪些页、在哪一组"的口径。
    加/删页面只改这里：侧栏、页面堆栈、--selftest、--ui-audit/--perf-probe 都跟着走。 */
+/* D2 的插件约定（见 检查/示例插件/check.py）：
+     check.py --manifest  → {"name":"...","group":"检查","desc":"...","report":"产物/x.md"}
+   读 manifest 走子进程，不猜、不硬编：脚本自己说了算。 */
+static QJsonObject readPluginManifest(const QString &script)
+{
+    const QStringList py = PyFind::detect();
+    if (py.isEmpty() || script.isEmpty())
+        return {};
+    QProcess proc;
+    proc.setWorkingDirectory(QFileInfo(script).absolutePath());
+    QStringList args = py.mid(1);
+    args << script << QStringLiteral("--manifest");
+    proc.start(py.value(0), args);
+    if (!proc.waitForFinished(8000))
+        return {};
+    return QJsonDocument::fromJson(proc.readAllStandardOutput()).object();
+}
+
+QList<ToolboxWindow::PageDef> ToolboxWindow::discoverPlugins(const QString &toolsDir)
+{
+    QList<PageDef> out;
+    if (toolsDir.isEmpty())
+        return out;
+    const QDir root(QDir(toolsDir).filePath(QStringLiteral("检查")));
+    for (const QFileInfo &fi : root.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+        const QString script = QDir(fi.absoluteFilePath()).filePath(QStringLiteral("check.py"));
+        if (!QFileInfo::exists(script))
+            continue;
+        const QJsonObject m = readPluginManifest(script);
+        const QString name = m.value(QStringLiteral("name")).toString().trimmed();
+        if (name.isEmpty())
+            continue;                       /* 没 manifest = 不是插件，跳过 */
+        const QString group = m.value(QStringLiteral("group")).toString().trimmed();
+        out.append(PageDef{group.isEmpty() ? QStringLiteral("检查") : group,
+                           name, nullptr, script});
+    }
+    return out;
+}
+
 const QList<ToolboxWindow::PageDef> &ToolboxWindow::pageDefs()
 {
-    static const QList<PageDef> defs = {
-        {"查资料", "单片机手册",     &ToolboxWindow::buildLookupPage},
-        {"设计",   "项目起手助手",   &ToolboxWindow::buildKickstartPage},
-        {"设计",   "RTOS 骨架生成",  &ToolboxWindow::buildRtosGenPage},
-        {"设计",   "协议工作台",     &ToolboxWindow::buildWorkbenchPage},
-        {"检查",   "进度扫描",       &ToolboxWindow::buildProgressPage},
-        {"检查",   "引脚规划",       &ToolboxWindow::buildPinPage},
-        {"检查",   "RTOS 检查",      &ToolboxWindow::buildRtosPage},
-        {"检查",   "编码守卫",       &ToolboxWindow::buildEncodingPage},
-        {"检查",   "链路仿真",       &ToolboxWindow::buildLinkPage},
-        {"检查",   "LoRa 检查",      &ToolboxWindow::buildLoraPage},
-        {"检查",   "OTA 台架",       &ToolboxWindow::buildOtaPage},
-        {"检查",   "断网缓存",       &ToolboxWindow::buildCachePage},
-        {"检查",   "工程模板",       &ToolboxWindow::buildScaffoldPage},
-        {"汇总",   "工程体检总览",   &ToolboxWindow::buildOverviewPage},
-        {"汇总",   "全量检查",       &ToolboxWindow::buildFullCheckPage},
-        {"设置",   "设置",           &ToolboxWindow::buildSettingsPage},
-    };
+    static const QList<PageDef> defs = []() {
+        QList<PageDef> v = {
+            {QStringLiteral("查资料"), QStringLiteral("单片机手册"), &ToolboxWindow::buildLookupPage},
+            {QStringLiteral("设计"), QStringLiteral("项目起手助手"), &ToolboxWindow::buildKickstartPage},
+            {QStringLiteral("设计"), QStringLiteral("RTOS 骨架生成"), &ToolboxWindow::buildRtosGenPage},
+            {QStringLiteral("设计"), QStringLiteral("协议工作台"), &ToolboxWindow::buildWorkbenchPage},
+            {QStringLiteral("检查"), QStringLiteral("进度扫描"), &ToolboxWindow::buildProgressPage},
+            {QStringLiteral("检查"), QStringLiteral("引脚规划"), &ToolboxWindow::buildPinPage},
+            {QStringLiteral("检查"), QStringLiteral("RTOS 检查"), &ToolboxWindow::buildRtosPage},
+            {QStringLiteral("检查"), QStringLiteral("编码守卫"), &ToolboxWindow::buildEncodingPage},
+            {QStringLiteral("检查"), QStringLiteral("链路仿真"), &ToolboxWindow::buildLinkPage},
+            {QStringLiteral("检查"), QStringLiteral("LoRa 检查"), &ToolboxWindow::buildLoraPage},
+            {QStringLiteral("检查"), QStringLiteral("OTA 台架"), &ToolboxWindow::buildOtaPage},
+            {QStringLiteral("检查"), QStringLiteral("断网缓存"), &ToolboxWindow::buildCachePage},
+            {QStringLiteral("检查"), QStringLiteral("工程模板"), &ToolboxWindow::buildScaffoldPage},
+            {QStringLiteral("检查"), QStringLiteral("编译烧录"), &ToolboxWindow::buildBuildFlashPage},
+            {QStringLiteral("汇总"), QStringLiteral("工程体检总览"), &ToolboxWindow::buildOverviewPage},
+            {QStringLiteral("汇总"), QStringLiteral("全量检查"), &ToolboxWindow::buildFullCheckPage},
+            {QStringLiteral("设置"), QStringLiteral("设置"), &ToolboxWindow::buildSettingsPage},
+        };
+        for (const PageDef &p : discoverPlugins(ToolboxWindow::toolsDirPath())) {
+            /* 插到**同名分组的末尾**，而不是整表末尾 ——
+               直接 append 会在侧栏造出第二个「检查」分组（第一次就跑出来了：
+               18 页 / 6 组，末尾多出一组）。分组不存在才追加到表尾。 */
+            int at = -1;
+            for (int i = 0; i < v.size(); ++i)
+                if (v.at(i).group == p.group)
+                    at = i + 1;
+            if (at < 0)
+                v.append(p);
+            else
+                v.insert(at, p);
+        }
+        return v;
+    }();
     return defs;
 }
 
@@ -95,8 +158,8 @@ QStringList ToolboxWindow::pageGroupNames()
 {
     QStringList gs;
     for (const PageDef &d : pageDefs())
-        if (gs.isEmpty() || gs.last() != QString::fromUtf8(d.group))
-            gs << QString::fromUtf8(d.group);
+        if (gs.isEmpty() || gs.last() != d.group)
+            gs << d.group;
     return gs;
 }
 
@@ -105,7 +168,7 @@ QList<int> ToolboxWindow::pageGroupCounts()
     QList<int> cs;
     QString cur;
     for (const PageDef &d : pageDefs()) {
-        const QString g = QString::fromUtf8(d.group);
+        const QString g = d.group;
         if (cs.isEmpty() || g != cur) {
             cs << 0;
             cur = g;
@@ -119,7 +182,7 @@ QStringList ToolboxWindow::pageNames()
 {
     QStringList ns;
     for (const PageDef &d : pageDefs())
-        ns << QString::fromUtf8(d.name);
+        ns << d.name;
     return ns;
 }
 
@@ -188,13 +251,14 @@ ToolboxWindow::ToolboxWindow(QWidget *parent, bool suppressFirstRun)
         const QList<PageDef> &defs = pageDefs();
         QString curGroup;
         for (const PageDef &d : defs) {
-            const QString g = QString::fromUtf8(d.group);
+            const QString g = d.group;
             if (g != curGroup) {
                 addHeader(g);
                 curGroup = g;
             }
-            m_list->addItem(QString::fromUtf8(d.name));
-            m_pages->addWidget((this->*(d.build))());
+            m_list->addItem(d.name);
+            m_pages->addWidget(d.plugin.isEmpty() ? (this->*(d.build))()
+                                                 : buildPluginPage(d.plugin));
         }
     }
 
@@ -764,6 +828,16 @@ QWidget *ToolboxWindow::buildLinkPage()
                   [scen, cnt]() {
                       return QStringList{QStringLiteral("--scenario"), scen->currentText(),
                                          QStringLiteral("--count"), QString::number(cnt->value())};
+                  }},
+                 /* B1/B2：全链路时序仿真 —— 六个剧本全跑一遍并断言，
+                    同时出 SVG 时序图（板1→空中→板2→上位机→云 五条泳道）。
+                    放在第二步：第一步出字节流给人看，第二步验链路行为对不对。 */
+                 {QStringLiteral("全链路时序"),
+                  py(m_toolsDir, QStringLiteral("检查/链路仿真/chain_sim.py")),
+                  [this]() {
+                      return QStringList{
+                          QStringLiteral("--all"), QStringLiteral("--svg"),
+                          py(m_toolsDir, QStringLiteral("检查/链路仿真/产物/链路时序.svg"))};
                   }}});
     /* 这一页只出 hex/log，没有 md 报告；按钮文字改成"打开产物目录"，
        路径也要指向真正的产物目录（原来指的是它的上一级 = 标签与行为不符）。 */
@@ -1002,6 +1076,32 @@ QWidget *ToolboxWindow::buildCachePage()
 QWidget *ToolboxWindow::buildScaffoldPage()
 {
     ScaffoldPage *p = new ScaffoldPage(m_toolsDir, this);
+    m_warnTargets.append(p);
+    return p;
+}
+
+/* D2：插件页 = 一个 ToolRunPage 包住 check.py。标题/说明/报告路径都从 manifest 来，
+   所以加检查器只写一个 py 文件 + 一个 --manifest，**不用改这里**。 */
+QWidget *ToolboxWindow::buildPluginPage(const QString &script)
+{
+    const QJsonObject m = readPluginManifest(script);
+    const QString name = m.value(QStringLiteral("name")).toString().trimmed();
+    QString desc = m.value(QStringLiteral("desc")).toString();
+    if (desc.isEmpty())
+        desc = QStringLiteral("检查器插件（无 manifest 说明）");
+    desc += QStringLiteral("\n\n插件脚本：") + script;
+
+    ToolRunPage *p = new ToolRunPage(name, desc, this);
+    p->setSteps({{name, script, []() { return QStringList(); }}});
+    const QString rep = m.value(QStringLiteral("report")).toString();
+    if (!rep.isEmpty())
+        p->setReportPath(QDir(QFileInfo(script).absolutePath()).filePath(rep));
+    return p;
+}
+
+QWidget *ToolboxWindow::buildBuildFlashPage()
+{
+    BuildFlashPage *p = new BuildFlashPage(m_toolsDir, this);
     m_warnTargets.append(p);
     return p;
 }
