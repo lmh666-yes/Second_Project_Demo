@@ -165,6 +165,10 @@ QString CardHtml::esc(const QString &s)
     t.replace(QLatin1Char('&'), QStringLiteral("&amp;"));
     t.replace(QLatin1Char('<'), QStringLiteral("&lt;"));
     t.replace(QLatin1Char('>'), QStringLiteral("&gt;"));
+    /* 先丢掉 CR：卡片里的代码段有从别处粘来的 CRLF（实测 Qt 卡 48 步、板2 3 步），
+       这里只把 '\n' 换成 <br>，代码块（pre）里残留的 '\r' 会变成多余的换行/方块。
+       数据侧已统一成 LF，这一行是兜底，防止以后再粘进 CRLF。 */
+    t.replace(QLatin1Char('\r'), QString());
     t.replace(QLatin1Char('\n'), QStringLiteral("<br>"));
     return t;
 }

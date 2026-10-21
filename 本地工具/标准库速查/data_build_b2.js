@@ -669,7 +669,7 @@ const STD_BUILD_B2 = [
         "断网到底能扛多久：2048 条约 34 分钟，不是文档里写的 16 小时",
         "容量口径错了，验收标准就是假的：按「16 小时」去测，测到一半一定对不上账。",
         "自己算一遍并打印出来：用 W25QXX_LogStat 拿容量与当前条数，按板1 的实际帧率换算成时间；把这个数写进你自己的进度文档，并观察写满之后 W25QXX_LogLost 的增长（绕圈覆盖，不是卡死）。",
-        "uint16_t count, cap, head;\nW25QXX_LogStat(&count, &cap, &head);\nSYS_USART_Printf(SYS_USART_1, \"log %u/%u head=%u lost=%u\r\n\",\n                (unsigned)count, (unsigned)cap, (unsigned)head,\n                (unsigned)W25QXX_LogLost());\n/* 可扛时长 = cap x 帧周期秒数：2048 x 1 秒 约 34 分钟 */",
+        "uint16_t count, cap, head;\nW25QXX_LogStat(&count, &cap, &head);\nSYS_USART_Printf(SYS_USART_1, \"log %u/%u head=%u lost=%u\n\",\n                (unsigned)count, (unsigned)cap, (unsigned)head,\n                (unsigned)W25QXX_LogLost());\n/* 可扛时长 = cap x 帧周期秒数：2048 x 1 秒 约 34 分钟 */",
         "拔网 10 分钟，条数约 600（板1 2 秒 1 帧）；写满 cap 之后 count 停住、LogLost 开始涨，重新联网补传能读到的仍是最近 cap 条。",
         "1) 缓存写满后绕圈覆盖，补传上去的是一段「没有开头」的数据，对账必须按 cap 封顶算，不能按断网总时长算；2) LogLost 增长是正常的绕圈现象，不是故障；3) 缓存写入与擦除期间整机调度会被挂起（FWLIB 侧由 AI 改成不挂调度器的写法），在这之前别在写缓存的任务里做实时性要求高的事。",
         "W25QXX_LogStat / W25QXX_LogLost / W25QXX_LogRead / SYS_FRAME_HISTORY_LEN"
@@ -678,7 +678,7 @@ const STD_BUILD_B2 = [
         "死链判定与重连：60 秒心跳、120 秒无字节判死",
         "TCP 已经断了、本地还以为在线，是上云最常见的「假在线」；不判死就只会一直发失败。",
         "在 vTaskCloud 里维护三个状态：1) 在线：正常发布；2) 可疑：MQTT_IsAlive 为假，或 120 秒没有收到任何字节 → 先用 ESP8266_TestAT 确认模块还在；3) 重连：模块在就 ESP8266_ConnectTCP 后 MQTT_ConnectSimple，成功回在线，失败按 10 到 30 秒退避重试。",
-        "if ((MQTT_IsConnected() == 0U) || (MQTT_IsAlive() == 0U)) {\n    if (ESP8266_TestAT() == 0U) {\n        if (ESP8266_ConnectTCP(ST_MQTT_HOST, MQTT_DEFAULT_PORT) == 0U) {\n            uint8_t r = MQTT_ConnectSimple(ST_MQTT_HOST, ST_MQTT_CLIENT);\n            SYS_USART_Printf(SYS_USART_1, \"reconnect=%u connack=%u\r\n\",\n                (unsigned)r, (unsigned)MQTT_GetConnackCode());\n        }\n    }\n}",
+        "if ((MQTT_IsConnected() == 0U) || (MQTT_IsAlive() == 0U)) {\n    if (ESP8266_TestAT() == 0U) {\n        if (ESP8266_ConnectTCP(ST_MQTT_HOST, MQTT_DEFAULT_PORT) == 0U) {\n            uint8_t r = MQTT_ConnectSimple(ST_MQTT_HOST, ST_MQTT_CLIENT);\n            SYS_USART_Printf(SYS_USART_1, \"reconnect=%u connack=%u\n\",\n                (unsigned)r, (unsigned)MQTT_GetConnackCode());\n        }\n    }\n}",
         "拔网 3 分钟后插回：USART1 上依次出现「判死 → AT 通过 → 重连 → connack=0」四行，期间缓存条数一直在涨；connack 不是 0 时用 MQTT_ErrStr 打出原因（4 多为用户名密码或 client id 被拒）。",
         "1) 判死阈值不要小于 keepalive（60 秒），否则网络一抖动就反复重连，重连期间反而发不出数据；2) 重连要退避，不要连续猛打（每次 AT 最长 900 ms 忙等）；3) 模块自己掉线（AT 也没反应）时不能只重连 MQTT，要 ESP8266_Reset 之后重新 JoinAP 拿 IP。",
         "MQTT_IsAlive / MQTT_IsConnected / MQTT_ConnectSimple / MQTT_GetConnackCode / ESP8266_ConnectTCP / ESP8266_TestAT"
@@ -687,7 +687,7 @@ const STD_BUILD_B2 = [
         "双通道上板验收：四个场景一次跑齐",
         "双通道的价值就在「同时」，两条路各测一遍不算通过；四个场景都留了证据，这一段才算做完。",
         "一次跑四个场景：1) 正常：上位机与云端 30 秒内各自都收到，数值一致；2) 断网：缓存按帧率增长，插回后补传对账（条数、时间戳、CRC、去重）；3) 拔 LoRa：上云还在发，但发的是缓存里的旧帧（说明两条路独立，不是从 LoRa 现取的）；4) 复位：缓存不丢、序号规则正确、复位后不重复发布同一帧。",
-        "SYS_USART_Printf(SYS_USART_1, \"lora_ok=%u fwd=%u cache=%u cloud=%u online=%u\r\n\",\n    (unsigned)s_rx_ok, (unsigned)s_fwd_ok, (unsigned)s_cache_ok,\n    (unsigned)s_cloud_ok, (unsigned)MQTT_IsConnected());",
+        "SYS_USART_Printf(SYS_USART_1, \"lora_ok=%u fwd=%u cache=%u cloud=%u online=%u\n\",\n    (unsigned)s_rx_ok, (unsigned)s_fwd_ok, (unsigned)s_cache_ok,\n    (unsigned)s_cloud_ok, (unsigned)MQTT_IsConnected());",
         "四个场景各留一条证据（上位机截图、云端收到的报文、串口打印、你自己的进度文档一行）；场景 3 里 lora_ok 停止增长而 cloud 继续增长。",
         "1) 场景 3 很容易被误读成「数据还是新的」，验收记录里必须写明「数据来自缓存」；2) 场景 4 要确认重启后序号规则生效，否则订阅端会把重启后的第一批判成重复；3) 场景 2 的补传期间必须停止写缓存，否则条数算不准。",
         "MQTT_PublishFloat / MQTT_IsConnected / W25QXX_LogRead / SYS_FRAME_CMD_REPLAY / SYS_FRAME_CMD_HISTORY"
