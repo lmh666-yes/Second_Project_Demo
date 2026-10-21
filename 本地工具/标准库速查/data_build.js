@@ -51,7 +51,7 @@ const STD_BUILD_GUIDE = [
     m: "板1 项目引导",
     _b: "板1",
     d: "动手前先搞清楚：哪些必须你写、哪些已经给你、板1 一共几个阶段、每一步怎么算过。",
-    g: "【从哪来 · 到哪去】\n上一阶段交给你的：无（这是起点，还没有代码）\n本阶段产出：一张路线图：分工、阶段顺序、每步怎么算过。\n下一阶段怎么用：阶段 1 用它在工程里建出 main.c 骨架；后面所有代码都在这份 main.c 上叠加，不会另起炉灶。\n\n板1 的最终形态：main.c 里跑 FreeRTOS，6 路传感器采上来 → 处理后组帧 → 经 LoRa 发给板2。你要自己设计的是 main.c 与任务划分（谁采、谁处理、谁发、谁管缓存与显示）。FWLIB 里的 SYS_* 驱动已写好，直接用、不要改。OLED 的界面由 AI 完成。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。\n本卡各步落点：\n· 本卡是认路卡，本身不写代码；先把上面 ①~⑤ 五个分区记熟，后面每张卡都用这套代号。",
+    g: "【从哪来 · 到哪去】\n上一阶段交给你的：无（这是起点，还没有代码）\n本阶段产出：一张路线图：分工、阶段顺序、每步怎么算过。\n下一阶段怎么用：阶段 1 用它在工程里建出 main.c 骨架；后面所有代码都在这份 main.c 上叠加，不会另起炉灶。\n\n板1 的最终形态：main.c 里跑 FreeRTOS，6 路传感器采上来 → 处理后组帧 → 经 LoRa 发给板2。你要自己设计的是 main.c 与任务划分（谁采、谁处理、谁发、谁管缓存与显示）。FWLIB 里的 SYS_* 驱动已写好，直接用、不要改。OLED 的界面由 AI 完成。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。",
     k: "板1 分工 阶段地图 路线 验收习惯 项目引导 main.c FreeRTOS 任务划分",
     f: [
       [
@@ -99,13 +99,13 @@ const STD_BUILD_GUIDE = [
     m: "板1 项目引导",
     _b: "板1",
     d: "把工程打开、认准目录、写出第一个能编译能下载的 main.c，并把串口打印通道打通。",
-    g: "【从哪来 · 到哪去】\n上一阶段交给你的：路线图（无代码）。\n本阶段产出：能点灯、能打印的 main.c：① 引用区 + ⑤ main 初始化段。\n下一阶段怎么用：阶段 2 往 ⑤ 的初始化段里按「时钟 → 滴答 → 外设」顺序加代码，骨架不动。\n\n本阶段的产物：① 你能说清工程里每个目录是干什么的；② 你自己的 main.c 能编译（0 Error 0 Warning）、能下载、LED 会按你的意思闪；③ 串口 115200 能打印出你自己写的字。做完这三样，后面所有调试都有眼睛了。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。\n本卡各步落点：\n· 第1步 打开工程并认准目录 → 无代码：只确认 uvprojx 与 main.c 的路径。\n· 第2步 最小可编译 main.c → 整份文件按 ①~⑤ 建五个横幅；初始化一律写在 ⑤ main 开头，别写到 main 之后。\n· 第4步 打通串口打印 → #include 进 ①；SYS_USART_Init 与打印语句进 ⑤ main 的初始化段（时钟之后、外设之前）。",
+    g: "【从哪来 · 到哪去】\n上一阶段交给你的：路线图（无代码）。\n本阶段产出：能点灯、能打印的 main.c：① 引用区 + ⑤ main 初始化段。\n下一阶段怎么用：阶段 2 往 ⑤ 的初始化段里按「时钟 → 滴答 → 外设」顺序加代码，骨架不动。\n\n本阶段的产物：① 你能说清工程里每个目录是干什么的；② 你自己的 main.c 能编译（0 Error 0 Warning）、能下载、LED 会按你的意思闪；③ 串口 115200 能打印出你自己写的字。做完这三样，后面所有调试都有眼睛了。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。",
     k: "板1 工程骨架 Keil 打开 目录 main.c 最小工程 LED 串口打印 115200 0 Error 0 Warning",
     f: [
       [
         "打开工程并认准目录",
         "改错目录 = 编译过不了或下载了旧代码，是新手最常见的坑。",
-        "用 Keil 打开 D:\\GitHub_Project\\EnvMonitor\\Project_1_检测端\\Project\\标准模板.uvprojx；在左侧工程树里认出四类分组：main.c（你自己的代码）、FWLIB\\src（驱动实现，只读不改）、Startup（启动文件与中断向量）、FreeRTOS（内核）。注意：main.c 就在 Project 根目录下，不在 User\\ 里。",
+        "用 Keil 打开 D:\\GitHub_Project\\EnvMonitor\\Project_1_检测端\\Project\\标准模板.uvprojx；在左侧工程树里认出四类分组：main.c（你自己的代码）、FWLIB\\src（驱动实现，只读不改）、Startup（启动文件与中断向量）、FreeRTOS（内核）。注意：main.c 就在 Project 根目录下，不在 User\\ 里。\n\n→ 放在：无代码：只确认 uvprojx 与 main.c 的路径。",
         "工程路径：D:\\GitHub_Project\\EnvMonitor\\Project_1_检测端\\Project\\标准模板.uvprojx\n待你写的文件：D:\\GitHub_Project\\EnvMonitor\\Project_1_检测端\\Project\\main.c",
         "Keil 打开后能展开分组看到 FWLIB\\src\\sys_usart.c、sys_frame.c 等；双击 main.c 能定位到 Project\\main.c。",
         "工程文件是 标准模板.uvprojx，另有一个 标准模板.uvoptx 保存的是显示设置（比如断点、打开的窗口），两者别搞混；不要用 keilkilll.bat 清理后就以为代码没了——它只删中间产物。",
@@ -114,8 +114,8 @@ const STD_BUILD_GUIDE = [
       [
         "写出最小可编译的 main.c（先只点灯）",
         "先要一个“能跑的基线”，后面每加一块功能都能对比出是谁搞坏的。",
-        "把 main.c 清空重写：包含必要头文件，初始化时钟与滴答，然后一个死循环里翻转 LED。先不要加传感器、不要加 FreeRTOS——基线越干净越好。",
-        "#include \"stm32f4xx.h\"\n#include \"sys_clock.h\"\n#include \"sys_tick.h\"\n#include \"led.h\"\n\nint main(void)\n{\n    SYS_CLK_ToHighSpeed();     /* 168MHz：HCLK 168 / PCLK1 42 / PCLK2 84 */\n    SYS_TICK_Init();           /* 1ms 滴答，SYS_TICK_Delay_ms 才有意义 */\n    LED_Init();                /* LED0=PF9 LED1=PF10 LED2=PE13 LED3=PE14，低电平点亮 */\n\n    while (1) {\n        LED_Toggle(0);\n        SYS_TICK_Delay_ms(500);\n    }\n}",
+        "把 main.c 清空重写：包含必要头文件，初始化时钟与滴答，然后一个死循环里翻转 LED。先不要加传感器、不要加 FreeRTOS——基线越干净越好。\n\n→ 放在：整份文件按 ①~⑤ 建五个横幅；初始化一律写在 ⑤ main 开头，别写到 main 之后。",
+        "/* 放在：整份文件按 ①~⑤ 建五个横幅 */\n#include \"stm32f4xx.h\"\n#include \"sys_clock.h\"\n#include \"sys_tick.h\"\n#include \"led.h\"\n\nint main(void)\n{\n    SYS_CLK_ToHighSpeed();     /* 168MHz：HCLK 168 / PCLK1 42 / PCLK2 84 */\n    SYS_TICK_Init();           /* 1ms 滴答，SYS_TICK_Delay_ms 才有意义 */\n    LED_Init();                /* LED0=PF9 LED1=PF10 LED2=PE13 LED3=PE14，低电平点亮 */\n\n    while (1) {\n        LED_Toggle(0);\n        SYS_TICK_Delay_ms(500);\n    }\n}",
         "编译 0 Error 0 Warning；下载后板1 的 LED0 每 0.5 秒亮灭一次。",
         "SYS_TICK_Init() 之前不要调用 SYS_TICK_Delay_ms()，否则滴答没起来会直接卡住；LED 是低电平点亮（LED_ACTIVE_LOW = 1），看到“反了”不是接线错。",
         "SYS_CLK_ToHighSpeed / SYS_TICK_Init / LED_Init"
@@ -132,8 +132,8 @@ const STD_BUILD_GUIDE = [
       [
         "打通串口打印（115200）",
         "没有打印，你只能靠猜；有了打印，每一步都能自证。",
-        "初始化 USART1（PA9/PA10，115200），用 SYS_USART_SendLine 或 SYS_USART_Printf 打印启动横幅；以后每个模块初始化后都打一行“xxx ok”。",
-        "#include \"sys_usart.h\"\n\nSYS_USART_Init(SYS_USART_1, 115200);\nSYS_USART_SendLine(SYS_USART_1, \"=== board1 boot ===\");\nSYS_USART_Printf(SYS_USART_1, \"tick=%u\\r\\n\", (unsigned)SYS_TICK_GetTick());",
+        "初始化 USART1（PA9/PA10，115200），用 SYS_USART_SendLine 或 SYS_USART_Printf 打印启动横幅；以后每个模块初始化后都打一行“xxx ok”。\n\n→ 放在：#include 进 ①；SYS_USART_Init 与打印语句进 ⑤ main 的初始化段（时钟之后、外设之前）。",
+        "/* 放在：#include 进 ① */\n#include \"sys_usart.h\"\n\nSYS_USART_Init(SYS_USART_1, 115200);\nSYS_USART_SendLine(SYS_USART_1, \"=== board1 boot ===\");\nSYS_USART_Printf(SYS_USART_1, \"tick=%u\\r\\n\", (unsigned)SYS_TICK_GetTick());",
         "电脑串口助手 115200 8N1 能看到 “=== board1 boot ===”；复位一次就重新打印一次。",
         "USB 转 TTL 的 TX 接板子 PA10(RX)、RX 接 PA9(TX)，地必须共；打印乱码先查波特率，再查是不是接成了 USB-TTL 的 3.3V 供电不足。",
         "SYS_USART_Init / SYS_USART_SendLine / SYS_USART_Printf"
@@ -156,14 +156,14 @@ const STD_BUILD_GUIDE = [
     m: "板1 项目引导",
     _b: "板1",
     d: "把板子的“时间”和“手脚”都配好：168MHz 时钟、1ms 滴答、LED/蜂鸣器/按键/串口收发。",
-    g: "【从哪来 · 到哪去】\n上一阶段交给你的：main.c 骨架 + 可用的调试串口。\n本阶段产出：时钟 168MHz、滴答、LED、按键、蜂鸣器、串口中断接收，全部落在 ⑤ 初始化段；这些初始化往后一直保留。\n下一阶段怎么用：阶段 3 原样保留这些初始化，只删 SYS_TICK_Init，并把串口轮询搬进任务。\n\n这一阶段结束后，你手里有一套可复用的“基础件”：LED 能报状态、蜂鸣器能提示、按键能输入、串口能收发。后面传感器采集与 LoRa 通信全靠它们做调试出口。所有引脚都按工程里的宏来，不要背错。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。\n本卡各步落点：\n· 第1步 时钟 → SYS_CLK_ToHighSpeed() 是 ⑤ main 的第一行；hclk/pclk1/pclk2 是局部变量，在 main 开头一起声明，别散在语句之间。\n· 第2步 滴答 → t0 是临时局部变量，放 ⑤ main；上 FreeRTOS 后 SYS_TICK_Init / SYS_TICK_Delay 整段删掉。\n· 第3步 LED → LED_Init() 进 ⑤ 初始化段；ShowHex/BlinkStart 是演示调用，可放 ⑤ 验证段；LED_BlinkUpdate() 要每 1ms 调一次，最终放 ④ Monitor 任务循环里。\n· 第4步 蜂鸣器 → BEEP_Init() 进 ⑤ 初始化段；Beep/BeepEx 演示放 ⑤；按键音最终在 ④ 按键任务里。\n· 第5步 按键 → k 是局部变量，放 ④ 任务函数内（阶段 2 临时验证才放 ⑤ 的 while 循环）；KEY_Init() 进 ⑤。\n· 第6步 串口中断接收 → #include 进 ①；SYS_USART_InitRxIT 进 ⑤ 初始化段；RxRead 轮询循环在上 RTOS 后搬进 ④ LoraRx 任务。",
+    g: "【从哪来 · 到哪去】\n上一阶段交给你的：main.c 骨架 + 可用的调试串口。\n本阶段产出：时钟 168MHz、滴答、LED、按键、蜂鸣器、串口中断接收，全部落在 ⑤ 初始化段；这些初始化往后一直保留。\n下一阶段怎么用：阶段 3 原样保留这些初始化，只删 SYS_TICK_Init，并把串口轮询搬进任务。\n\n这一阶段结束后，你手里有一套可复用的“基础件”：LED 能报状态、蜂鸣器能提示、按键能输入、串口能收发。后面传感器采集与 LoRa 通信全靠它们做调试出口。所有引脚都按工程里的宏来，不要背错。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。",
     k: "板1 时钟 168MHz PCLK 42 84 滴答 延时 LED PF9 蜂鸣器 PF8 按键 PA0 PE2 PE3 PE4 串口中断 115200",
     f: [
       [
         "时钟：确认真的跑在 168MHz",
         "外设频率决定波特率、定时器周期、SPI/I2C 速率，不确认就会“到处差一点”。",
-        "调 SYS_CLK_ToHighSpeed()，再用 SYS_CLK_GetBusFreq 把三路总线频率打出来核对：HCLK 168 MHz、PCLK1 42 MHz、PCLK2 84 MHz。",
-        "uint32_t hclk, pclk1, pclk2;\nSYS_CLK_ToHighSpeed();\nSYS_CLK_GetBusFreq(&hclk, &pclk1, &pclk2);\nSYS_USART_Printf(SYS_USART_1, \"HCLK=%u PCLK1=%u PCLK2=%u\\r\\n\",\n                (unsigned)(hclk / 1000000), (unsigned)(pclk1 / 1000000), (unsigned)(pclk2 / 1000000));",
+        "调 SYS_CLK_ToHighSpeed()，再用 SYS_CLK_GetBusFreq 把三路总线频率打出来核对：HCLK 168 MHz、PCLK1 42 MHz、PCLK2 84 MHz。\n\n→ 放在：SYS_CLK_ToHighSpeed() 是 ⑤ main 的第一行；hclk/pclk1/pclk2 是局部变量，在 main 开头一起声明，别散在语句之间。",
+        "/* 放在：SYS_CLK_ToHighSpeed() 是 ⑤ main 的第一行 */\nuint32_t hclk, pclk1, pclk2;\nSYS_CLK_ToHighSpeed();\nSYS_CLK_GetBusFreq(&hclk, &pclk1, &pclk2);\nSYS_USART_Printf(SYS_USART_1, \"HCLK=%u PCLK1=%u PCLK2=%u\\r\\n\",\n                (unsigned)(hclk / 1000000), (unsigned)(pclk1 / 1000000), (unsigned)(pclk2 / 1000000));",
         "打印 HCLK=168 PCLK1=42 PCLK2=84；改错分频立刻能看出差异。",
         "上限就是这三个数（SYS_CLK_MAX_HCLK 168000000 / MAX_PCLK1 42000000 / MAX_PCLK2 84000000），超了外设会不稳；晶振不是 8MHz 时 HighSpeed 会返回错误码而不是静默降频，记得看返回值。",
         "SYS_CLK_ToHighSpeed / SYS_CLK_GetBusFreq / SYS_CLK_GetFreq"
@@ -171,8 +171,8 @@ const STD_BUILD_GUIDE = [
       [
         "滴答与精确延时",
         "后面所有“等一会儿”“超时判断”“周期任务”都建立在滴答上。",
-        "SYS_TICK_Init() 起 1ms 滴答，用 SYS_TICK_GetTick() 记时间、SYS_TICK_Elapsed() 算间隔、SYS_TICK_Timeout() 做超时、SYS_TICK_Every() 做周期触发。微秒级短延时用 SYS_TICK_Delay_us() 或 delay_us()。",
-        "uint32_t t0 = SYS_TICK_GetTick();\nSYS_TICK_Delay_ms(300);\nSYS_USART_Printf(SYS_USART_1, \"elapsed=%u ms\\r\\n\",\n                (unsigned)SYS_TICK_Elapsed(t0));   /* 期望 300 左右 */",
+        "SYS_TICK_Init() 起 1ms 滴答，用 SYS_TICK_GetTick() 记时间、SYS_TICK_Elapsed() 算间隔、SYS_TICK_Timeout() 做超时、SYS_TICK_Every() 做周期触发。微秒级短延时用 SYS_TICK_Delay_us() 或 delay_us()。\n\n→ 放在：t0 是临时局部变量，放 ⑤ main；上 FreeRTOS 后 SYS_TICK_Init / SYS_TICK_Delay 整段删掉。",
+        "/* 放在：t0 是临时局部变量，放 ⑤ main */\nuint32_t t0 = SYS_TICK_GetTick();\nSYS_TICK_Delay_ms(300);\nSYS_USART_Printf(SYS_USART_1, \"elapsed=%u ms\\r\\n\",\n                (unsigned)SYS_TICK_Elapsed(t0));   /* 期望 300 左右 */",
         "打印 elapsed 在 298~302 之间（±1 滴答属正常）。",
         "SYS_TICK_Delay_ms 是忙等（会占住 CPU），进了 FreeRTOS 后任务里要改用 vTaskDelay；delay_us 依赖主频，主频没配对会整体偏差。",
         "SYS_TICK_Init / SYS_TICK_GetTick / SYS_TICK_Elapsed / SYS_TICK_Delay_us"
@@ -180,8 +180,8 @@ const STD_BUILD_GUIDE = [
       [
         "LED：把“看不见的状态”变成看得见",
         "板子跑起来却没现象时，LED 是唯一不需要电脑的调试手段。",
-        "LED0 PF9 / LED1 PF10 / LED2 PE13 / LED3 PE14（低电平点亮）。先 LED_Init()，用 LED_On/Off/Toggle 做单灯；用 LED_OnTo(n) 做“进度条”；用 LED_ShowHex(v) 显示一个字节的状态码。闪烁类接口要点亮后每 1ms 调一次 LED_BlinkUpdate()。",
-        "LED_Init();\nLED_ShowHex(0x0A);          /* 二进制 1010：LED1、LED3 亮（低电平点亮）*/\nSYS_TICK_Delay_ms(800);\nLED_BlinkStart(0, 200, 500);\n/* 之后主循环或 1ms 滴答里反复调用 */\nLED_BlinkUpdate();",
+        "LED0 PF9 / LED1 PF10 / LED2 PE13 / LED3 PE14（低电平点亮）。先 LED_Init()，用 LED_On/Off/Toggle 做单灯；用 LED_OnTo(n) 做“进度条”；用 LED_ShowHex(v) 显示一个字节的状态码。闪烁类接口要点亮后每 1ms 调一次 LED_BlinkUpdate()。\n\n→ 放在：LED_Init() 进 ⑤ 初始化段；ShowHex/BlinkStart 是演示调用，可放 ⑤ 验证段；LED_BlinkUpdate() 要每 1ms 调一次，最终放 ④ Monitor 任务循环里。",
+        "/* 放在：LED_Init() 进 ⑤ 初始化段 */\nLED_Init();\nLED_ShowHex(0x0A);          /* 二进制 1010：LED1、LED3 亮（低电平点亮）*/\nSYS_TICK_Delay_ms(800);\nLED_BlinkStart(0, 200, 500);\n/* 之后主循环或 1ms 滴答里反复调用 */\nLED_BlinkUpdate();",
         "LED_ShowHex(0x0A) 时 LED1 与 LED3 亮；BlinkStart 后 LED0 以 200ms 周期、50% 占空比闪。",
         "LED_ShowHex 是“低位对应 LED0”，看到的亮法可能和你直觉相反；BlinkUpdate 漏调就不会闪（它不是中断驱动的）。",
         "LED_Init / LED_On / LED_Toggle / LED_ShowHex / LED_BlinkStart / LED_BlinkUpdate"
@@ -189,8 +189,8 @@ const STD_BUILD_GUIDE = [
       [
         "蜂鸣器：加一路“听得见”的提示",
         "调试时你常常离板子很远，声音比灯光更容易察觉。",
-        "蜂鸣器在 PF8（高电平响）。BEEP_Init() 后用 BEEP_Beep(times) 简单响几声，BEEP_BeepEx(times, on_ms, off_ms) 控制节奏，BEEP_KeySound() 做按键音。想让它边跑边响用 BEEP_AsyncStart()，同样要每 1ms 调 BEEP_Update()。",
-        "BEEP_Init();\nBEEP_Beep(2);                       /* 响两声 */\nBEEP_BeepEx(1, 100, 100);\nBEEP_KeySound();",
+        "蜂鸣器在 PF8（高电平响）。BEEP_Init() 后用 BEEP_Beep(times) 简单响几声，BEEP_BeepEx(times, on_ms, off_ms) 控制节奏，BEEP_KeySound() 做按键音。想让它边跑边响用 BEEP_AsyncStart()，同样要每 1ms 调 BEEP_Update()。\n\n→ 放在：BEEP_Init() 进 ⑤ 初始化段；Beep/BeepEx 演示放 ⑤；按键音最终在 ④ 按键任务里。",
+        "/* 放在：BEEP_Init() 进 ⑤ 初始化段 */\nBEEP_Init();\nBEEP_Beep(2);                       /* 响两声 */\nBEEP_BeepEx(1, 100, 100);\nBEEP_KeySound();",
         "蜂鸣器按你给的次数与节奏响；无源蜂鸣器只会“咔”一声是正常的（需要 PWM 才有音调）。",
         "BEEP_AsyncStart 之后忘记调 BEEP_Update 会一直响；BEEP_ACTIVE_LOW 是 0，接线反了会常响不停。",
         "BEEP_Init / BEEP_Beep / BEEP_BeepEx / BEEP_AsyncStart / BEEP_Update"
@@ -198,8 +198,8 @@ const STD_BUILD_GUIDE = [
       [
         "按键：4 个键 + 消抖 + 长按",
         "按键是最容易“看起来能用、实际会连发”的外设。",
-        "按键 KEY1 PA0 / KEY2 PE2 / KEY3 PE3 / KEY4 PE4（低电平按下，内部上拉）。KEY_Init() 后：KEY_Read(id) 读电平、KEY_Scan() 扫一次、KEY_ReadAll() 一次读 4 个位、KEY_WaitPress() 阻塞等按键、KEY_LongPress(id, ms) 判断长按。",
-        "uint8_t k;\nKEY_Init();\nwhile (1) {\n    if ((k = KEY_Scan()) != KEY_NONE) {   /* KEY_NONE = 0xFF */\n        SYS_USART_Printf(SYS_USART_1, \"key id=%u\\r\\n\", (unsigned)k);\n        BEEP_KeySound();\n    }\n    SYS_TICK_Delay_ms(5);\n}",
+        "按键 KEY1 PA0 / KEY2 PE2 / KEY3 PE3 / KEY4 PE4（低电平按下，内部上拉）。KEY_Init() 后：KEY_Read(id) 读电平、KEY_Scan() 扫一次、KEY_ReadAll() 一次读 4 个位、KEY_WaitPress() 阻塞等按键、KEY_LongPress(id, ms) 判断长按。\n\n→ 放在：k 是局部变量，放 ④ 任务函数内（阶段 2 临时验证才放 ⑤ 的 while 循环）；KEY_Init() 进 ⑤。",
+        "/* 放在：k 是局部变量，放 ④ 任务函数内（阶段 2 临时验证才放 ⑤ 的 while 循环） */\nuint8_t k;\nKEY_Init();\nwhile (1) {\n    if ((k = KEY_Scan()) != KEY_NONE) {   /* KEY_NONE = 0xFF */\n        SYS_USART_Printf(SYS_USART_1, \"key id=%u\\r\\n\", (unsigned)k);\n        BEEP_KeySound();\n    }\n    SYS_TICK_Delay_ms(5);\n}",
         "按哪个键就打印哪个 id（0~3），且只打印一次不连发；按住 1 秒用 KEY_LongPress 能判成长按。",
         "KEY_Scan 需要被周期性调用（推荐 5~10ms 一次），放在超长延时里会漏按键；消抖时间由 KEY_DEBOUNCE_MS=10 决定，改动要连带验证。",
         "KEY_Init / KEY_Scan / KEY_Read / KEY_LongPress / KEY_NONE"
@@ -207,8 +207,8 @@ const STD_BUILD_GUIDE = [
       [
         "串口中断接收：为后面的协议帧做准备",
         "板1 既要发数据也要收指令，轮询会丢字节。",
-        "用 SYS_USART_InitRxIT(id, baud) 打开接收中断，主循环里轮询 SYS_USART_Available(id) 拿到字节数，再用 SYS_USART_RxRead(id) 逐字节取或 SYS_USART_ReadBuf() 批量取；SYS_USART_RxFlush() 清空。",
-        "int c;\nSYS_USART_InitRxIT(SYS_USART_1, 115200);\nwhile (1) {\n    while ((c = SYS_USART_RxRead(SYS_USART_1)) >= 0) {\n        SYS_USART_SendByte(SYS_USART_1, (uint8_t)c);   /* 回显，验证收得到 */\n    }\n    SYS_TICK_Delay_ms(1);\n}",
+        "用 SYS_USART_InitRxIT(id, baud) 打开接收中断，主循环里轮询 SYS_USART_Available(id) 拿到字节数，再用 SYS_USART_RxRead(id) 逐字节取或 SYS_USART_ReadBuf() 批量取；SYS_USART_RxFlush() 清空。\n\n→ 放在：#include 进 ①；SYS_USART_InitRxIT 进 ⑤ 初始化段；RxRead 轮询循环在上 RTOS 后搬进 ④ LoraRx 任务。",
+        "/* 放在：#include 进 ① */\nint c;\nSYS_USART_InitRxIT(SYS_USART_1, 115200);\nwhile (1) {\n    while ((c = SYS_USART_RxRead(SYS_USART_1)) >= 0) {\n        SYS_USART_SendByte(SYS_USART_1, (uint8_t)c);   /* 回显，验证收得到 */\n    }\n    SYS_TICK_Delay_ms(1);\n}",
         "串口助手发什么字符就回显什么；连发一长串（几百字节）不丢字符。",
         "RxRead 返回 int 且无数据时返回负值——不要用 uint8_t 接，否则 -1 会变成 0xFF 被当成真数据。",
         "SYS_USART_InitRxIT / SYS_USART_Available / SYS_USART_RxRead / SYS_USART_ReadBuf"
@@ -220,7 +220,7 @@ const STD_BUILD_GUIDE = [
     m: "板1 项目引导",
     _b: "板1",
     d: "把 while(1) 单循环拆成多个任务：采样、处理、通信、下行接收、监控，数据用队列在任务间传递。",
-    g: "【从哪来 · 到哪去】\n上一阶段交给你的：一套写好的外设初始化 + while 单循环。\n本阶段产出：5 个任务 + 2 条队列 + 调度器：任务函数在 ④，创建在 ⑤；Main 里不再有业务循环。\n下一阶段怎么用：阶段 4 只往 vTaskSensor 的函数体里填采集，任务框架不再重写。\n\n板1 的工程形态是 FreeRTOS 抢占式调度：tick 1ms、优先级 0~7（数字大=优先级高）、堆 30KB 用 heap_4、只支持动态分配。参考划分（与参考实现一致，旧 main.c 已备份在 D:\GitHub_Project\_参考实现备份）：Sensor(pri3,512 字) 周期采样 → s_q_sensor → Process(pri3,512) 换算与判阈 → s_q_result → Comm(pri4,512) 组帧经 LoRa 发出；LoraRx(pri3,512) 收下行指令；Monitor(pri5,256) 管看门狗与栈水位。【阶段 3 动手前必做】先调一次 SYS_NVIC_Init()：它只干一件事 —— NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4)，即 4 位全抢占（本库默认就该是这个分组）。必须在使能任何中断、起 FreeRTOS 之前调；不调就沿用复位默认分组（PriorityGroup_0，2 位抢占），FreeRTOS 的 configASSERT 会抓，但库不会替你调。本库 FreeRTOSConfig.h 的注释里也标了这件事（并给出写完整 main.c 后的位置：板1 第 989 行 / 板2 第 1581 行）。注意：阶段判定的判据里没有这一条，机器不会替你抓，得自己记得。【队列名对照，别混】参考实现里这条队列叫 `s_q_frame`，装的是组好的 20 字节帧（组帧在 Process 里做）；本路线把组帧放到 Comm，队列装的是 `ProcResult_t` 结果结构体，所以叫 `s_q_result`。两个名字**不是同一条队列的两次改名**，是两种分工下的两条不同队列 —— 照本路线走就用 `s_q_result`。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。\n本卡各步落点：\n· 第3步 两个任务+队列 → QueueHandle_t 句柄进 ②（你现在放在 ④ 区里，能编过但建议挪到 ②）；任务函数进 ④，必须写在 main 之前；xQueueCreate 在前、xTaskCreate 在后，都放 ⑤ 的建任务段，且在 vTaskStartScheduler() 之前。\n· 第4步 优先级与栈 → 只改 ⑤ 里 xTaskCreate 的实参，不新增位置；栈单位是字（512 就是 2KB）。\n· 第5步 周期节拍 → period/last 是任务内局部变量，放 ④ 对应任务函数的 for 之前，别提到 ② 做全局。\n· 第6步 丢帧计数 → s_dropCnt 必须进 ②（Monitor 也要读，写进任务函数里会报未定义）；xQueueSend 的实参在 ④ 任务函数内改；打印放 ④ Monitor 的 for 里；跨任务读建议加 volatile。\n· 第7步 堆与栈 → 不在 main.c：改 FreeRTOS/port/FreeRTOSConfig.h 的 configTOTAL_HEAP_SIZE / configTICK_RATE_HZ / configMAX_PRIORITIES，改完全量重编。",
+    g: "【从哪来 · 到哪去】\n上一阶段交给你的：一套写好的外设初始化 + while 单循环。\n本阶段产出：5 个任务 + 2 条队列 + 调度器：任务函数在 ④，创建在 ⑤；Main 里不再有业务循环。\n下一阶段怎么用：阶段 4 只往 vTaskSensor 的函数体里填采集，任务框架不再重写。\n\n板1 的工程形态是 FreeRTOS 抢占式调度：tick 1ms、优先级 0~7（数字大=优先级高）、堆 30KB 用 heap_4、只支持动态分配。参考划分（与参考实现一致，旧 main.c 已备份在 D:\GitHub_Project\_参考实现备份）：Sensor(pri3,512 字) 周期采样 → s_q_sensor → Process(pri3,512) 换算与判阈 → s_q_result → Comm(pri4,512) 组帧经 LoRa 发出；LoraRx(pri3,512) 收下行指令；Monitor(pri5,256) 管看门狗与栈水位。【阶段 3 动手前必做】先调一次 SYS_NVIC_Init()：它只干一件事 —— NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4)，即 4 位全抢占（本库默认就该是这个分组）。必须在使能任何中断、起 FreeRTOS 之前调；不调就沿用复位默认分组（PriorityGroup_0，2 位抢占），FreeRTOS 的 configASSERT 会抓，但库不会替你调。本库 FreeRTOSConfig.h 的注释里也标了这件事（并给出写完整 main.c 后的位置：板1 第 989 行 / 板2 第 1581 行）。注意：阶段判定的判据里没有这一条，机器不会替你抓，得自己记得。【队列名对照，别混】参考实现里这条队列叫 `s_q_frame`，装的是组好的 20 字节帧（组帧在 Process 里做）；本路线把组帧放到 Comm，队列装的是 `ProcResult_t` 结果结构体，所以叫 `s_q_result`。两个名字**不是同一条队列的两次改名**，是两种分工下的两条不同队列 —— 照本路线走就用 `s_q_result`。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。",
     k: "FreeRTOS 任务 队列 xQueueCreate xTaskCreate 优先级 栈大小 堆 30KB vTaskDelay pdMS_TO_TICKS 任务划分 抢占 板1",
     f: [
       [
@@ -244,8 +244,8 @@ const STD_BUILD_GUIDE = [
       [
         "最小可跑：两个任务 + 一个队列",
         "先证明调度器和队列真的在跑，再往里塞业务，出问题时才好定位。",
-        "建一个深度 4 的队列，两个任务：A 每 500ms 放一个递增的数，B 收到就用串口打印。队列和任务都要在 vTaskStartScheduler() 之前创建。",
-        "QueueHandle_t q;\n\nvoid taskA(void *p) {\n    uint32_t v = 0;\n    for (;;) {\n        v++;\n        xQueueSend(q, &v, portMAX_DELAY);\n        vTaskDelay(pdMS_TO_TICKS(500));\n    }\n}\n\nvoid taskB(void *p) {\n    uint32_t got;\n    for (;;) {\n        if (xQueueReceive(q, &got, portMAX_DELAY) == pdPASS) {\n            SYS_USART_Printf(SYS_USART_1, \"B got %lu\\r\\n\", (unsigned long)got);\n        }\n    }\n}\n\nint main(void) {\n    SYS_CLK_ToHighSpeed();\n    SYS_USART_Init(SYS_USART_1, 115200);\n    SYS_FAULT_Init();\n    q = xQueueCreate(4, sizeof(uint32_t));\n    xTaskCreate(taskA, \"A\", 512, NULL, 3, NULL);\n    xTaskCreate(taskB, \"B\", 512, NULL, 3, NULL);\n    vTaskStartScheduler();\n    for (;;) { }\n}",
+        "建一个深度 4 的队列，两个任务：A 每 500ms 放一个递增的数，B 收到就用串口打印。队列和任务都要在 vTaskStartScheduler() 之前创建。\n\n→ 放在：QueueHandle_t 句柄进 ②（你现在放在 ④ 区里，能编过但建议挪到 ②）；任务函数进 ④，必须写在 main 之前；xQueueCreate 在前、xTaskCreate 在后，都放 ⑤ 的建任务段，且在 vTaskStartScheduler() 之前。",
+        "/* 放在：QueueHandle_t 句柄进 ②（你现在放在 ④ 区里，能编过但建议挪到 ②） */\nQueueHandle_t q;\n\nvoid taskA(void *p) {\n    uint32_t v = 0;\n    for (;;) {\n        v++;\n        xQueueSend(q, &v, portMAX_DELAY);\n        vTaskDelay(pdMS_TO_TICKS(500));\n    }\n}\n\nvoid taskB(void *p) {\n    uint32_t got;\n    for (;;) {\n        if (xQueueReceive(q, &got, portMAX_DELAY) == pdPASS) {\n            SYS_USART_Printf(SYS_USART_1, \"B got %lu\\r\\n\", (unsigned long)got);\n        }\n    }\n}\n\nint main(void) {\n    SYS_CLK_ToHighSpeed();\n    SYS_USART_Init(SYS_USART_1, 115200);\n    SYS_FAULT_Init();\n    q = xQueueCreate(4, sizeof(uint32_t));\n    xTaskCreate(taskA, \"A\", 512, NULL, 3, NULL);\n    xTaskCreate(taskB, \"B\", 512, NULL, 3, NULL);\n    vTaskStartScheduler();\n    for (;;) { }\n}",
         "串口每 0.5 秒一行，数字连续不跳号；B 的打印不会被 A 的延时卡住。",
         "栈大小的单位是“字”（4 字节），512 就是 2KB；xQueueSend 传的是值不是指针，结构体必须定长；上 FreeRTOS 后不要调 SYS_TICK_Init()。",
         "xQueueCreate / xTaskCreate / xQueueSend / xQueueReceive / vTaskStartScheduler"
@@ -253,8 +253,8 @@ const STD_BUILD_GUIDE = [
       [
         "把优先级和栈大小定成本工程能用的值",
         "优先级就是抢占顺序，配错了会出现“发送饿死采样”或“监控任务醒不过来”。",
-        "照本工程取值：Sensor / Process / LoraRx 用 3，Comm / Forward 用 4，Monitor 用 5；栈 512 字（2KB），Monitor 256 字（1KB）。空闲任务是内核建的，不要占用 0/1。",
-        "xTaskCreate(vTaskSensor,  \"Sensor\",  512, NULL, 3, NULL);\nxTaskCreate(vTaskProcess, \"Process\", 512, NULL, 3, NULL);\nxTaskCreate(vTaskComm,    \"Comm\",    512, NULL, 4, NULL);\nxTaskCreate(vTaskLoraRx,  \"LoraRx\",  512, NULL, 3, NULL);\nxTaskCreate(vTaskMonitor, \"Monitor\", 256, NULL, 5, NULL);",
+        "照本工程取值：Sensor / Process / LoraRx 用 3，Comm / Forward 用 4，Monitor 用 5；栈 512 字（2KB），Monitor 256 字（1KB）。空闲任务是内核建的，不要占用 0/1。\n\n→ 放在：只改 ⑤ 里 xTaskCreate 的实参，不新增位置；栈单位是字（512 就是 2KB）。",
+        "/* 放在：只改 ⑤ 里 xTaskCreate 的实参，不新增位置 */\nxTaskCreate(vTaskSensor,  \"Sensor\",  512, NULL, 3, NULL);\nxTaskCreate(vTaskProcess, \"Process\", 512, NULL, 3, NULL);\nxTaskCreate(vTaskComm,    \"Comm\",    512, NULL, 4, NULL);\nxTaskCreate(vTaskLoraRx,  \"LoraRx\",  512, NULL, 3, NULL);\nxTaskCreate(vTaskMonitor, \"Monitor\", 256, NULL, 5, NULL);",
         "在 Monitor 里打印每个任务的剩余栈：uxTaskGetStackHighWaterMark(NULL)，稳定运行后剩余 >50 字。",
         "优先级只差 1 就会抢占；低优先级任务里不要写“不阻塞的死循环”，否则高优先级任务拿不到 CPU。",
         "xTaskCreate / uxTaskGetStackHighWaterMark / configMAX_PRIORITIES"
@@ -262,8 +262,8 @@ const STD_BUILD_GUIDE = [
       [
         "周期节拍：vTaskDelay 与 pdMS_TO_TICKS",
         "RTOS 下延时写错，轻则曲线抖动，重则整个任务被自己的等待锁住。",
-        "采样任务用 vTaskDelay(pdMS_TO_TICKS(2000))；发送间隔 pdMS_TO_TICKS(20)；需要严格周期改用 vTaskDelayUntil()，以当前 tick 为基准累加。",
-        "void vTaskSensor(void *p) {\n    const TickType_t period = pdMS_TO_TICKS(2000);\n    TickType_t last = xTaskGetTickCount();\n    float t, h;\n    SensorMsg_t msg;                    /* 结构体在阶段 4 定义，这里先占位 */\n    for (;;) {\n        SYS_DHT11_Read(&t, &h);\n        msg.temp_x100 = (int16_t)(t * 100.0f);   /* 其余字段阶段 4 补 */\n        xQueueSend(s_q_sensor, &msg, pdMS_TO_TICKS(5));\n        vTaskDelayUntil(&last, period);\n    }\n}",
+        "采样任务用 vTaskDelay(pdMS_TO_TICKS(2000))；发送间隔 pdMS_TO_TICKS(20)；需要严格周期改用 vTaskDelayUntil()，以当前 tick 为基准累加。\n\n→ 放在：period/last 是任务内局部变量，放 ④ 对应任务函数的 for 之前，别提到 ② 做全局。",
+        "/* 放在：period/last 是任务内局部变量，放 ④ 对应任务函数的 for 之前，别提到 ② 做全局 */\nvoid vTaskSensor(void *p) {\n    const TickType_t period = pdMS_TO_TICKS(2000);\n    TickType_t last = xTaskGetTickCount();\n    float t, h;\n    SensorMsg_t msg;                    /* 结构体在阶段 4 定义，这里先占位 */\n    for (;;) {\n        SYS_DHT11_Read(&t, &h);\n        msg.temp_x100 = (int16_t)(t * 100.0f);   /* 其余字段阶段 4 补 */\n        xQueueSend(s_q_sensor, &msg, pdMS_TO_TICKS(5));\n        vTaskDelayUntil(&last, period);\n    }\n}",
         "任务里用 xTaskGetTickCount() 打时间戳，相邻两行间隔稳定在 2000ms±1 tick。",
         "任务里不要用 SYS_TICK_Delay_ms(2000) 这类长阻塞；微秒级延时用 delay_us()，但必须先 delay_dwt_init()；毫秒换算一律走 pdMS_TO_TICKS。",
         "vTaskDelay / vTaskDelayUntil / pdMS_TO_TICKS / xTaskGetTickCount / delay_dwt_init / delay_us"
@@ -271,8 +271,8 @@ const STD_BUILD_GUIDE = [
       [
         "队列满了、数据来晚了：超时与丢帧计数",
         "真实系统一定会遇到消费者变慢，没有超时策略就会死等或者悄悄丢数据。",
-        "发送侧统一用带超时的 xQueueSend(q, &m, pdMS_TO_TICKS(5))，返回非 pdPASS 就累加丢帧计数；只在确定一直有数据时才用 portMAX_DELAY。",
-        "if (xQueueSend(s_q_sensor, &msg, pdMS_TO_TICKS(5)) != pdPASS) {\n    s_dropCnt++;\n}",
+        "发送侧统一用带超时的 xQueueSend(q, &m, pdMS_TO_TICKS(5))，返回非 pdPASS 就累加丢帧计数；只在确定一直有数据时才用 portMAX_DELAY。\n\n→ 放在：s_dropCnt 必须进 ②（Monitor 也要读，写进任务函数里会报未定义）；xQueueSend 的实参在 ④ 任务函数内改；打印放 ④ Monitor 的 for 里；跨任务读建议加 volatile。",
+        "/* 放在：s_dropCnt 必须进 ②（Monitor 也要读，写进任务函数里会报未定义） */\nif (xQueueSend(s_q_sensor, &msg, pdMS_TO_TICKS(5)) != pdPASS) {\n    s_dropCnt++;\n}",
         "人为把 Process 任务的延时放大到 5 秒，能看到丢帧计数增长，但系统不死锁、Monitor 仍在跑。",
         "队列深度是“最多存几个元素”不是字节数；元素按值拷贝，结构体里不要放指向临时变量的指针。",
         "xQueueSend / xQueueReceive / portMAX_DELAY / pdPASS"
@@ -280,7 +280,7 @@ const STD_BUILD_GUIDE = [
       [
         "算一遍堆和栈：30KB 够不够",
         "vTaskStartScheduler() 返回就是堆不够，现象是“程序不跑也没有 HardFault”，很迷惑人。",
-        "估算：5 个 512 字 + 1 个 256 字的任务栈约 11KB；两个队列（4×20 字节帧 + 4×sizeof(SensorMsg_t)）几百字节；每个 TCB 约 100 字节；合计 12~13KB，30KB 堆有余量。确认 FreeRTOSConfig.h 里 configTOTAL_HEAP_SIZE = 30*1024。",
+        "估算：5 个 512 字 + 1 个 256 字的任务栈约 11KB；两个队列（4×20 字节帧 + 4×sizeof(SensorMsg_t)）几百字节；每个 TCB 约 100 字节；合计 12~13KB，30KB 堆有余量。确认 FreeRTOSConfig.h 里 configTOTAL_HEAP_SIZE = 30*1024。\n\n→ 放在：不在 main.c：改 FreeRTOS/port/FreeRTOSConfig.h 的 configTOTAL_HEAP_SIZE / configTICK_RATE_HZ / configMAX_PRIORITIES，改完全量重编。",
         "/* FreeRTOSConfig.h */\n#define configTOTAL_HEAP_SIZE   (30 * 1024)\n#define configTICK_RATE_HZ      1000\n#define configMAX_PRIORITIES    8\n#define configSUPPORT_STATIC_ALLOCATION 0",
         "上电后程序持续运行，vTaskStartScheduler() 之后的死循环永远不执行。",
         "别把 4KB 大缓存放任务栈里，改成 static 或全局；configSUPPORT_STATIC_ALLOCATION 为 0 时只能用动态创建。",
