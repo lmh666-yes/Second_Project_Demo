@@ -17,7 +17,7 @@ const STD_BUILD_B1 = [
     m: "板1 项目引导",
     _b: "板1",
     d: "把 6 路环境量读上来：先扫 I2C 认器件，再逐个打通 BMP280 / BH1750 / CCS811 / DHT11 / MQ-135 / 光敏，并且做到“读不到就不填数”。",
-    g: "本阶段的产物：每一路都有一个“读一次、返回成功与否”的函数，成功给值、失败给无效标记，绝不用上一次的旧值或 0 冒充真值。6 路分别是：BMP280（气压 + 温度，I2C1 0x76）、BH1750（光照 lx，I2C1 0x23）、CCS811（eCO2/TVOC，I2C1 0x5A）、DHT11（温度 + 湿度，PG9 单总线）、MQ-135（空气质量原始 ADC）、光敏（ADC3_IN5 = PF7）。做完这一阶段，你手里应有一个“采集任务每 2 秒打完 6 路、串口能逐路看到成功/失败与数值”的可验证状态。",
+    g: "本阶段的产物：每一路都有一个“读一次、返回成功与否”的函数，成功给值、失败给无效标记，绝不用上一次的旧值或 0 冒充真值。6 路分别是：BMP280（气压 + 温度，I2C1 0x76）、BH1750（光照 lx，I2C1 0x23）、CCS811（eCO2/TVOC，I2C1 0x5A）、DHT11（温度 + 湿度，PG9 单总线）、MQ-135（空气质量原始 ADC）、光敏（ADC3_IN5 = PF7）。做完这一阶段，你手里应有一个“采集任务每 2 秒打完 6 路、串口能逐路看到成功/失败与数值”的可验证状态。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。\n本卡各步落点：\n· 第1步 I2C 扫描 → #include 进 ①；found/n/i 是局部变量，放 ④ vTaskSensor 内（临时验证才放 ⑤）。\n· 第2步 BMP280 → #include 进 ①；SYS_BMP280_Data_t d 与 id 是局部，放 ④ vTaskSensor 内；类型来自库头，别自己再 typedef。\n· 第3步 BH1750 → 同第2步：include 进 ①，raw/lux/r 局部放 ④ vTaskSensor。\n· 第4步 CCS811 → 同第2步：include 进 ①，d/s 局部放 ④ vTaskSensor；SetEnvData 每 60s 喂一次。\n· 第5步 DHT11 → #include 进 ①；SYS_DHT11_Init 进 ⑤ 初始化段（单总线只初始化一次）；t/h/raw/r 局部放 ④ vTaskSensor。\n· 第6步 ADC 两路 → #include 进 ①；SYS_ADC_Init 进 ⑤ 初始化段；light/mq135 局部放 ④ vTaskSensor。\n· 第7步 统一采集接口 → SensorMsg_t 进 ③（队列和下游都要用，必须在任务函数之前）；填 msg 的采集函数写成 static 辅助函数放 ④，置于 vTaskSensor 之前。",
     k: "板1 传感器采集 I2C 扫描 BMP280 BH1750 CCS811 DHT11 MQ-135 光敏 PF7 ADC3_IN5 0x76 0x23 0x5A 0x3C 单位换算 无效值 重试",
     f: [
       [
@@ -92,7 +92,7 @@ const STD_BUILD_B1 = [
     m: "板1 项目引导",
     _b: "板1",
     d: "把采集来的原始值做滤波、去野值、判阈值、打包告警位，并把量纲换算成整数（温度湿度 ×100、气压 ×10）。",
-    g: "本阶段的产物：一个纯计算的“处理任务”——输入是阶段 4 的 SensorMsg_t，输出是 6 个定点整数 + 1 个告警位字节。它必须做到：不阻塞、不访问硬件、读不到的数不进结果；超限置位、回到阈值以下（带回差）才清位，避免在阈值上下抖动时告警疯狂翻转。做完这一阶段，你可以在不动任何硬件的情况下，用“注入一个假值”把告警路径完整走一遍。",
+    g: "本阶段的产物：一个纯计算的“处理任务”——输入是阶段 4 的 SensorMsg_t，输出是 6 个定点整数 + 1 个告警位字节。它必须做到：不阻塞、不访问硬件、读不到的数不进结果；超限置位、回到阈值以下（带回差）才清位，避免在阈值上下抖动时告警疯狂翻转。做完这一阶段，你可以在不动任何硬件的情况下，用“注入一个假值”把告警路径完整走一遍。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。\n本卡各步落点：\n· 第1步 滤波 → FILT_N 宏进 ②；Filt_t 进 ③；滤波函数进 ④；滤波器实例只有 Process 用，就做成 ④ 的 static 变量，别做全局。\n· 第2步 野值剔除 → 跳变宏进 ②；is_outlier 写成 static 函数放 ④；上次值状态用 ④ 的 static 变量。\n· 第3步 量纲与倍率 → 不新增声明：直接在 ④ vTaskProcess 里写结果结构体的字段（x100/x10 是约定，不是变量）。\n· 第4步 阈值与回差 → 阈值宏进 ②；s_alarm_t 状态进 ②（跨周期保持）；判定函数进 ④。\n· 第5步 告警位打包 → AL_ 前缀宏全进 ②；用法在 ④ vTaskProcess。\n· 第6步 处理任务 → s_q_sensor/s_q_result 进 ②；vTaskProcess 进 ④（改已有函数体）；两条 xQueueCreate 进 ⑤ 建队列段，先于建任务。",
     k: "板1 数据处理 滑动平均 中值滤波 野值剔除 阈值 回差 迟滞 告警位 打包 量纲 倍率 ×100 ×10 定点",
     f: [
       [
@@ -158,7 +158,7 @@ const STD_BUILD_B1 = [
     m: "板1 项目引导",
     _b: "板1",
     d: "把处理好的 6 个整数按固定格式拼成 20 字节帧，算出 CRC16-MODBUS，并学会用库里的组帧/校验/拆包接口自检。",
-    g: "帧格式（《检测数据端设计.md》§5）：`AA 55 | CMD | LEN | DATA(12) | CRC16-MODBUS(2) | 55 AA`，整帧 20 字节。CMD = `SYS_FRAME_CMD_ENV` 0x01，LEN = `SYS_FRAME_ENV_LEN` 0x0C。数据段全部大端，段内偏移 `SYS_FRAME_ENV_TEMP_OFF` 0 / `HUMI_OFF` 2 / `PRESS_OFF` 4 / `LIGHT_OFF` 6 / `TVOC_OFF` 8 / `MQ135_OFF` 10，对应整帧 4/6/8/10/12/14；CRC 在整帧 16/17（**低字节在前**），帧尾 18/19。本阶段的产物：一个 `SYS_FRAME_BuildEnv` 组出来的帧，以及一段能证明“它自洽、能被重新拆开”的自我验收代码。",
+    g: "帧格式（《检测数据端设计.md》§5）：`AA 55 | CMD | LEN | DATA(12) | CRC16-MODBUS(2) | 55 AA`，整帧 20 字节。CMD = `SYS_FRAME_CMD_ENV` 0x01，LEN = `SYS_FRAME_ENV_LEN` 0x0C。数据段全部大端，段内偏移 `SYS_FRAME_ENV_TEMP_OFF` 0 / `HUMI_OFF` 2 / `PRESS_OFF` 4 / `LIGHT_OFF` 6 / `TVOC_OFF` 8 / `MQ135_OFF` 10，对应整帧 4/6/8/10/12/14；CRC 在整帧 16/17（**低字节在前**），帧尾 18/19。本阶段的产物：一个 `SYS_FRAME_BuildEnv` 组出来的帧，以及一段能证明“它自洽、能被重新拆开”的自我验收代码。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。\n本卡各步落点：\n· 第1步 认清帧 → #include 进 ①；本步是认知，不新增代码。\n· 第2步 BuildEnv → 临时验证放 ⑤；正式用法在 ④ vTaskComm 的 for 里。\n· 第3步 自己拼+CRC → put_be16 这类 static 辅助函数放 ④，必须在 vTaskComm 之前。\n· 第4步 Verify 自检 → 放 ④ vTaskComm 内，组完帧立刻验。\n· 第5步 组帧位置 → 直接改 ④ 已有的 vTaskComm 函数体，不要再写第二个 main 或新任务。\n· 第6步 收侧状态机 → 放 ④ vTaskLoraRx 内；cmd/payload/plen 都是函数内局部。",
     k: "板1 协议 组帧 20 字节 AA55 55AA CRC16 MODBUS CMD_ENV 0x01 ENV_LEN 0x0C 偏移 TEMP HUMI PRESS LIGHT TVOC MQ135 大端 低字节在前 状态机 重同步 SYS_FRAME",
     f: [
       [
@@ -224,7 +224,7 @@ const STD_BUILD_B1 = [
     m: "板1 项目引导",
     _b: "板1",
     d: "把组好的 20 字节帧通过 E22 模块发出去：认准 UART、控制脚与模式，按节奏发、出错要能重试、别把模块灌爆。",
-    g: "本阶段的产物：发送任务里一句 `LORA_E22_Send(f, 20)` 能把帧发出去，并且你有一套“看得见”的验收方式（对着板2 或示波器/逻辑分析仪）。关键约束：LoRa 走 `SYS_LORA_UART` = `SYS_USART_3`（PB10/PB11），控制脚 M0/M1/AUX = PB0/PB1/PB2，波特率 `SYS_LORA_BAUD` = 9600 8N1；业务收发前模块必须处于 `LORA_E22_MODE_TRANSPARENT`。",
+    g: "本阶段的产物：发送任务里一句 `LORA_E22_Send(f, 20)` 能把帧发出去，并且你有一套“看得见”的验收方式（对着板2 或示波器/逻辑分析仪）。关键约束：LoRa 走 `SYS_LORA_UART` = `SYS_USART_3`（PB10/PB11），控制脚 M0/M1/AUX = PB0/PB1/PB2，波特率 `SYS_LORA_BAUD` = 9600 8N1；业务收发前模块必须处于 `LORA_E22_MODE_TRANSPARENT`。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。\n本卡各步落点：\n· 第1步 初始化与模式 → #include 进 ①；LORA_E22_Init() 进 ⑤ 初始化段（只调一次）；cfg 这类缓冲区是临时局部，需要就放 ④。\n· 第2步 发送 → 放 ④ vTaskComm 内（WaitReady 判断 + Send）。\n· 第3步 发送节奏 → SEND_PERIOD_MS 宏进 ②；周期在 ④ vTaskComm 里改。\n· 第4步 丢包与超时 → s_last_rx_tick/s_link_down 进 ②（跨任务跨周期保持）；轮询放 ④ vTaskLoraRx。\n· 第5步 调试出口 → 打印语句放 ④ vTaskComm，跟发送同一处，别另开任务。",
     k: "板1 LoRa E22 UART3 PB10 PB11 M0 PB0 M1 PB1 AUX PB2 9600 8N1 透传 配置模式 AT 发送节奏 帧间隔 丢包 超时 重试",
     f: [
       [
@@ -281,7 +281,7 @@ const STD_BUILD_B1 = [
     m: "板1 项目引导",
     _b: "板1",
     d: "把处理结果交给 OLED 显示任务、用 4 个按键翻页、超限时用蜂鸣器报警；界面排版由 AI 完成，你负责数据通路、按键事件与验收。",
-    g: "本阶段的产物：一个独立的显示任务——它从共享快照里取最新一行数据、按页显示、按键翻页、告警时响蜂鸣器。硬件事实（照库里的宏）：OLED 走 I2C1，SCL = PB8、SDA = PB9，地址 `SYS_OLED_I2C_ADDR` = 0x3C，初始化 `SYS_OLED_Init(SYS_I2C_1, 0x3C)`；按键 `KEY1` = PA0、`KEY2` = PE2、`KEY3` = PE3、`KEY4` = PE4（`KEY_Scan` 返回 id 0~3，无按键返回 `KEY_NONE`）；蜂鸣器 `BEEP_PORT` = GPIOF、`BEEP_PIN` = GPIO_Pin_8。**注意：I2C2 的 PB10/PB11 与 LoRa 的 USART3 同脚，OLED 只能用 I2C1。**",
+    g: "本阶段的产物：一个独立的显示任务——它从共享快照里取最新一行数据、按页显示、按键翻页、告警时响蜂鸣器。硬件事实（照库里的宏）：OLED 走 I2C1，SCL = PB8、SDA = PB9，地址 `SYS_OLED_I2C_ADDR` = 0x3C，初始化 `SYS_OLED_Init(SYS_I2C_1, 0x3C)`；按键 `KEY1` = PA0、`KEY2` = PE2、`KEY3` = PE3、`KEY4` = PE4（`KEY_Scan` 返回 id 0~3，无按键返回 `KEY_NONE`）；蜂鸣器 `BEEP_PORT` = GPIOF、`BEEP_PIN` = GPIO_Pin_8。**注意：I2C2 的 PB10/PB11 与 LoRa 的 USART3 同脚，OLED 只能用 I2C1。**\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。\n本卡各步落点：\n· 第1步 OLED → #include 进 ①；SYS_OLED_Init 进 ⑤ 初始化段。\n· 第2步 数据交给显示任务 → s_disp_dirty/s_snap 进 ②（跨任务共享，加 volatile）；写快照在 ④ vTaskProcess，读在 ④ 显示任务。\n· 第3步 按键翻页 → PAGE_NUM 宏进 ②；page/k 放 ④ 按键任务内局部，不建议塞回 main。\n· 第4步 蜂鸣器告警 → s_mute 进 ②；BEEP_Update() 必须周期调，放 ④ 对应任务循环里（1ms 或最小周期任务）。\n· 第5步 显示验收写法 → 放 ④ 显示任务里（按 valid 位决定显示数值还是占位符）。\n· 第6步 显示任务调度 → xTaskCreate 调用进 ⑤ 建任务段，跟其它任务排在一起，调度器之前。",
     k: "板1 OLED SSD1306 I2C1 PB8 PB9 0x3C SYS_OLED_Init ShowString ShowNum RefreshDirty 按键 KEY1 PA0 KEY2 PE2 KEY3 PE3 KEY4 PE4 KEY_Scan 蜂鸣器 PF8 BEEP 显示任务 翻页 验收",
     f: [
       [
@@ -347,7 +347,7 @@ const STD_BUILD_B1 = [
     m: "板1 项目引导",
     _b: "板1",
     d: "把板1 与板2 接起来跑通整条链路，开看门狗与故障现场记录，连续跑 30 分钟看水位与丢帧，最后按清单逐条签收。",
-    g: "本阶段的产物不是新功能，而是**证据**：板2 能收到板1 的每一帧并转发给上位机（Qt 曲线连续、无断点）；连续 30 分钟运行不重启、不卡死、丢帧率在可接受范围；一旦硬件层出问题能留下现场（`SYS_FAULT_*`）与复位来源（`SYS_WDG_ResetCause`）。这一阶段最忌讳“看着还行就算过了”——每条验收都要能指出“这一行打印/这一条曲线/这一个计数器”作为证据。",
+    g: "本阶段的产物不是新功能，而是**证据**：板2 能收到板1 的每一帧并转发给上位机（Qt 曲线连续、无断点）；连续 30 分钟运行不重启、不卡死、丢帧率在可接受范围；一旦硬件层出问题能留下现场（`SYS_FAULT_*`）与复位来源（`SYS_WDG_ResetCause`）。这一阶段最忌讳“看着还行就算过了”——每条验收都要能指出“这一行打印/这一条曲线/这一个计数器”作为证据。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。\n本卡各步落点：\n· 第1步 两板对接 → s_seq 进 ②；打印放 ④ vTaskComm。\n· 第2步 连续跑 30 分钟 → 统计打印语句放 ④ Monitor，别在 main 里打。\n· 第3步 看门狗 → APP_WDG_TIMEOUT_MS 进 ②；SYS_WDG_Init 进 ⑤ 初始化段；各任务的心跳调用放各自 ④ 任务循环里。\n· 第4步 故障现场 → s_fault_buf 进 ②；fault_cb 是回调函数放 ④；SYS_FAULT_Init/SetCallback 进 ⑤ 初始化段。\n· 第5步 验收清单 → 汇总打印放 ④ Monitor，一行签收摘要跟统计一起打。",
     k: "板1 联调验收 板2 对接 上位机 Qt 30 分钟 水位 丢帧 看门狗 SYS_WDG 心跳 SYS_FAULT 故障现场 复位原因 验收清单",
     f: [
       [

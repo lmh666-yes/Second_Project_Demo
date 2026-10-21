@@ -51,7 +51,7 @@ const STD_BUILD_GUIDE = [
     m: "板1 项目引导",
     _b: "板1",
     d: "动手前先搞清楚：哪些必须你写、哪些已经给你、板1 一共几个阶段、每一步怎么算过。",
-    g: "板1 的最终形态：main.c 里跑 FreeRTOS，6 路传感器采上来 → 处理后组帧 → 经 LoRa 发给板2。你要自己设计的是 main.c 与任务划分（谁采、谁处理、谁发、谁管缓存与显示）。FWLIB 里的 SYS_* 驱动已写好，直接用、不要改。OLED 的界面由 AI 完成。",
+    g: "板1 的最终形态：main.c 里跑 FreeRTOS，6 路传感器采上来 → 处理后组帧 → 经 LoRa 发给板2。你要自己设计的是 main.c 与任务划分（谁采、谁处理、谁发、谁管缓存与显示）。FWLIB 里的 SYS_* 驱动已写好，直接用、不要改。OLED 的界面由 AI 完成。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。\n本卡各步落点：\n· 本卡是认路卡，本身不写代码；先把上面 ①~⑤ 五个分区记熟，后面每张卡都用这套代号。",
     k: "板1 分工 阶段地图 路线 验收习惯 项目引导 main.c FreeRTOS 任务划分",
     f: [
       [
@@ -99,7 +99,7 @@ const STD_BUILD_GUIDE = [
     m: "板1 项目引导",
     _b: "板1",
     d: "把工程打开、认准目录、写出第一个能编译能下载的 main.c，并把串口打印通道打通。",
-    g: "本阶段的产物：① 你能说清工程里每个目录是干什么的；② 你自己的 main.c 能编译（0 Error 0 Warning）、能下载、LED 会按你的意思闪；③ 串口 115200 能打印出你自己写的字。做完这三样，后面所有调试都有眼睛了。",
+    g: "本阶段的产物：① 你能说清工程里每个目录是干什么的；② 你自己的 main.c 能编译（0 Error 0 Warning）、能下载、LED 会按你的意思闪；③ 串口 115200 能打印出你自己写的字。做完这三样，后面所有调试都有眼睛了。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。\n本卡各步落点：\n· 第1步 打开工程并认准目录 → 无代码：只确认 uvprojx 与 main.c 的路径。\n· 第2步 最小可编译 main.c → 整份文件按 ①~⑤ 建五个横幅；初始化一律写在 ⑤ main 开头，别写到 main 之后。\n· 第4步 打通串口打印 → #include 进 ①；SYS_USART_Init 与打印语句进 ⑤ main 的初始化段（时钟之后、外设之前）。",
     k: "板1 工程骨架 Keil 打开 目录 main.c 最小工程 LED 串口打印 115200 0 Error 0 Warning",
     f: [
       [
@@ -156,7 +156,7 @@ const STD_BUILD_GUIDE = [
     m: "板1 项目引导",
     _b: "板1",
     d: "把板子的“时间”和“手脚”都配好：168MHz 时钟、1ms 滴答、LED/蜂鸣器/按键/串口收发。",
-    g: "这一阶段结束后，你手里有一套可复用的“基础件”：LED 能报状态、蜂鸣器能提示、按键能输入、串口能收发。后面传感器采集与 LoRa 通信全靠它们做调试出口。所有引脚都按工程里的宏来，不要背错。",
+    g: "这一阶段结束后，你手里有一套可复用的“基础件”：LED 能报状态、蜂鸣器能提示、按键能输入、串口能收发。后面传感器采集与 LoRa 通信全靠它们做调试出口。所有引脚都按工程里的宏来，不要背错。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。\n本卡各步落点：\n· 第1步 时钟 → SYS_CLK_ToHighSpeed() 是 ⑤ main 的第一行；hclk/pclk1/pclk2 是局部变量，在 main 开头一起声明，别散在语句之间。\n· 第2步 滴答 → t0 是临时局部变量，放 ⑤ main；上 FreeRTOS 后 SYS_TICK_Init / SYS_TICK_Delay 整段删掉。\n· 第3步 LED → LED_Init() 进 ⑤ 初始化段；ShowHex/BlinkStart 是演示调用，可放 ⑤ 验证段；LED_BlinkUpdate() 要每 1ms 调一次，最终放 ④ Monitor 任务循环里。\n· 第4步 蜂鸣器 → BEEP_Init() 进 ⑤ 初始化段；Beep/BeepEx 演示放 ⑤；按键音最终在 ④ 按键任务里。\n· 第5步 按键 → k 是局部变量，放 ④ 任务函数内（阶段 2 临时验证才放 ⑤ 的 while 循环）；KEY_Init() 进 ⑤。\n· 第6步 串口中断接收 → #include 进 ①；SYS_USART_InitRxIT 进 ⑤ 初始化段；RxRead 轮询循环在上 RTOS 后搬进 ④ LoraRx 任务。",
     k: "板1 时钟 168MHz PCLK 42 84 滴答 延时 LED PF9 蜂鸣器 PF8 按键 PA0 PE2 PE3 PE4 串口中断 115200",
     f: [
       [
@@ -220,17 +220,26 @@ const STD_BUILD_GUIDE = [
     m: "板1 项目引导",
     _b: "板1",
     d: "把 while(1) 单循环拆成多个任务：采样、处理、通信、下行接收、监控，数据用队列在任务间传递。",
-    g: "板1 的工程形态是 FreeRTOS 抢占式调度：tick 1ms、优先级 0~7（数字大=优先级高）、堆 30KB 用 heap_4、只支持动态分配。参考划分（与参考实现一致，旧 main.c 已备份在 D:\GitHub_Project\_参考实现备份）：Sensor(pri3,512 字) 周期采样 → s_q_sensor → Process(pri3,512) 换算与判阈 → s_q_frame → Comm(pri4,512) 组帧经 LoRa 发出；LoraRx(pri3,512) 收下行指令；Monitor(pri5,256) 管看门狗与栈水位。【阶段 3 动手前必做】先调一次 SYS_NVIC_Init()：它只干一件事 —— NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4)，即 4 位全抢占（本库默认就该是这个分组）。必须在使能任何中断、起 FreeRTOS 之前调；不调就沿用复位默认分组（PriorityGroup_0，2 位抢占），FreeRTOS 的 configASSERT 会抓，但库不会替你调。本库 FreeRTOSConfig.h 的注释里也标了这件事（并给出写完整 main.c 后的位置：板1 第 989 行 / 板2 第 1581 行）。注意：阶段判定的判据里没有这一条，机器不会替你抓，得自己记得。",
+    g: "板1 的工程形态是 FreeRTOS 抢占式调度：tick 1ms、优先级 0~7（数字大=优先级高）、堆 30KB 用 heap_4、只支持动态分配。参考划分（与参考实现一致，旧 main.c 已备份在 D:\GitHub_Project\_参考实现备份）：Sensor(pri3,512 字) 周期采样 → s_q_sensor → Process(pri3,512) 换算与判阈 → s_q_result → Comm(pri4,512) 组帧经 LoRa 发出；LoraRx(pri3,512) 收下行指令；Monitor(pri5,256) 管看门狗与栈水位。【阶段 3 动手前必做】先调一次 SYS_NVIC_Init()：它只干一件事 —— NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4)，即 4 位全抢占（本库默认就该是这个分组）。必须在使能任何中断、起 FreeRTOS 之前调；不调就沿用复位默认分组（PriorityGroup_0，2 位抢占），FreeRTOS 的 configASSERT 会抓，但库不会替你调。本库 FreeRTOSConfig.h 的注释里也标了这件事（并给出写完整 main.c 后的位置：板1 第 989 行 / 板2 第 1581 行）。注意：阶段判定的判据里没有这一条，机器不会替你抓，得自己记得。【队列名对照，别混】参考实现里这条队列叫 `s_q_frame`，装的是组好的 20 字节帧（组帧在 Process 里做）；本路线把组帧放到 Comm，队列装的是 `ProcResult_t` 结果结构体，所以叫 `s_q_result`。两个名字**不是同一条队列的两次改名**，是两种分工下的两条不同队列 —— 照本路线走就用 `s_q_result`。\n\n【代码放哪 · 按你 main.c 的五个分区】\n区块：① 引用定义区（只放 #include）｜② 宏定义与全局声明区（#define + 任务间共享的变量/句柄/计数器）｜③ 结构体定义声明区（typedef struct/enum/union）｜④ 任务函数区（任务函数 + 只在本文件用的 static 辅助函数，必须写在 main 之前）｜⑤ main 函数（初始化 → 建队列/互斥量 → 建任务 → vTaskStartScheduler()，调度器永远最后）\n判断口诀：类型进③、共享变量进②、函数进④、调用进⑤、include 进①；凡在 main 之后新写的函数，xTaskCreate 都会报未定义。\n本卡各步落点：\n· 第3步 两个任务+队列 → QueueHandle_t 句柄进 ②（你现在放在 ④ 区里，能编过但建议挪到 ②）；任务函数进 ④，必须写在 main 之前；xQueueCreate 在前、xTaskCreate 在后，都放 ⑤ 的建任务段，且在 vTaskStartScheduler() 之前。\n· 第4步 优先级与栈 → 只改 ⑤ 里 xTaskCreate 的实参，不新增位置；栈单位是字（512 就是 2KB）。\n· 第5步 周期节拍 → period/last 是任务内局部变量，放 ④ 对应任务函数的 for 之前，别提到 ② 做全局。\n· 第6步 丢帧计数 → s_dropCnt 必须进 ②（Monitor 也要读，写进任务函数里会报未定义）；xQueueSend 的实参在 ④ 任务函数内改；打印放 ④ Monitor 的 for 里；跨任务读建议加 volatile。\n· 第7步 堆与栈 → 不在 main.c：改 FreeRTOS/port/FreeRTOSConfig.h 的 configTOTAL_HEAP_SIZE / configTICK_RATE_HZ / configMAX_PRIORITIES，改完全量重编。",
     k: "FreeRTOS 任务 队列 xQueueCreate xTaskCreate 优先级 栈大小 堆 30KB vTaskDelay pdMS_TO_TICKS 任务划分 抢占 板1",
     f: [
       [
         "先把任务与数据流画在纸上",
         "任务怎么划分，决定了后面所有代码长什么样；板1 的坑几乎都出在“谁等谁”。",
-        "写一张表，每行一个任务：任务名 / 优先级 / 栈（字） / 周期 / 输入 / 输出。参考本工程：Sensor 每 2s 采 6 路 → 队列 s_q_sensor；Process 收队列做换算与判阈 → 队列 s_q_frame；Comm 从队列取帧发 LoRa；LoraRx 收板2 下行；Monitor 每 1s 喂狗并打印栈水位。",
+        "写一张表，每行一个任务：任务名 / 优先级 / 栈（字） / 周期 / 输入 / 输出。参考本工程：Sensor 每 2s 采 6 路 → 队列 s_q_sensor；Process 收队列做换算与判阈 → 队列 s_q_result；Comm 从队列取结果组帧发 LoRa；LoraRx 收板2 下行；Monitor 每 1s 喂狗并打印栈水位。",
         "",
         "你的表能回答四个问题就算过：谁产生数据、谁消费、队列满了怎么办、谁最急（优先级最高）。",
         "不要“一个任务干全部”：采样要 2s 一次、发送要 20ms 一次，塞进同一个任务只会互相拖，而且一处卡死全系统停摆。",
         "xTaskCreate / xQueueCreate"
+      ],
+      [
+        "阶段 2 的代码：哪些留、哪些删、哪些改",
+        "跨进 RTOS 是整条路线里唯一一次「结构性重写」——不是阶段 2 白写，是主循环换了主人。先照这张表对一遍，再动手写任务，能省掉「我到底该删哪些」的纠结。",
+        "【原样保留，一行都别删】\n  SYS_CLK_ToHighSpeed()                  时钟 168MHz\n  SYS_USART_Init() + Printf / SendString 调试口\n  LED_Init() / KEY_Init() / BEEP_Init()  外设初始化\n\n【保留，但搬进任务】\n  SYS_USART_InitRxIT() + RxRead 回显   →  收帧任务（LoraRx / 命令任务）\n  KEY_Scan() + BEEP_KeySound()         →  按键任务（阶段 8 还在用）\n\n【改写】\n  LED_ShowHex / LED_BlinkStart / LED_BlinkUpdate  →  LED 任务 + vTaskDelay\n  （BlinkUpdate 要求每 1ms 调一次，任务化后直接用 vTaskDelay 更省事）\n\n【删除】\n  SYS_TICK_Init()      RTOS 接管 SysTick，调了会抢\n  SYS_TICK_Delay_ms()  →  vTaskDelay(pdMS_TO_TICKS(ms))\n  while(1) { ... }     →  vTaskStartScheduler()",
+        "",
+        "迁移完自查两条：① main 里还能找到 SYS_CLK_ToHighSpeed / SYS_USART_Init / LED_Init / KEY_Init / BEEP_Init；② SYS_TICK_Init 与 while(1) 已经不在文件里了。",
+        "删 SYS_TICK_Init 不是「建议」是「必须」：RTOS 下它会重写 SysTick 的 LOAD/CTRL，把内核节拍抢走，现象是调度器不跑、或者 vTaskDelay 完全不准。别因为「阶段 2 调了没事」就留着。",
+        "SYS_CLK_ToHighSpeed / SYS_USART_Init / LED_Init / KEY_Init / BEEP_Init / SYS_TICK_Init / vTaskDelay / vTaskStartScheduler"
       ],
       [
         "最小可跑：两个任务 + 一个队列",
@@ -254,7 +263,7 @@ const STD_BUILD_GUIDE = [
         "周期节拍：vTaskDelay 与 pdMS_TO_TICKS",
         "RTOS 下延时写错，轻则曲线抖动，重则整个任务被自己的等待锁住。",
         "采样任务用 vTaskDelay(pdMS_TO_TICKS(2000))；发送间隔 pdMS_TO_TICKS(20)；需要严格周期改用 vTaskDelayUntil()，以当前 tick 为基准累加。",
-        "void vTaskSensor(void *p) {\n    const TickType_t period = pdMS_TO_TICKS(2000);\n    TickType_t last = xTaskGetTickCount();\n    float t, h;\n    for (;;) {\n        SYS_DHT11_Read(&t, &h);\n        xQueueSend(s_q_sensor, &msg, pdMS_TO_TICKS(5));\n        vTaskDelayUntil(&last, period);\n    }\n}",
+        "void vTaskSensor(void *p) {\n    const TickType_t period = pdMS_TO_TICKS(2000);\n    TickType_t last = xTaskGetTickCount();\n    float t, h;\n    SensorMsg_t msg;                    /* 结构体在阶段 4 定义，这里先占位 */\n    for (;;) {\n        SYS_DHT11_Read(&t, &h);\n        msg.temp_x100 = (int16_t)(t * 100.0f);   /* 其余字段阶段 4 补 */\n        xQueueSend(s_q_sensor, &msg, pdMS_TO_TICKS(5));\n        vTaskDelayUntil(&last, period);\n    }\n}",
         "任务里用 xTaskGetTickCount() 打时间戳，相邻两行间隔稳定在 2000ms±1 tick。",
         "任务里不要用 SYS_TICK_Delay_ms(2000) 这类长阻塞；微秒级延时用 delay_us()，但必须先 delay_dwt_init()；毫秒换算一律走 pdMS_TO_TICKS。",
         "vTaskDelay / vTaskDelayUntil / pdMS_TO_TICKS / xTaskGetTickCount / delay_dwt_init / delay_us"

@@ -431,6 +431,10 @@ def parse_prototypes(headers):
     out = {}
     for h in headers:
         text = strip_comments(read_text(h))
+        # **必须先去掉预处理指令**：`#define SYS_WDG_RST_POR (1UL << 0)` 这种宏长得像函数调用，
+        # 而参数段 `([^;{}]*?)` 允许跨行，于是它会把后面的 `);` 一路吞进来 ——
+        # 实测把 `void SYS_WDG_Init(uint32_t timeout_ms);` 整条吃掉了（C2 因此漏报）。
+        text = re.sub(r'^[ \t]*#.*$', '', text, flags=re.M)
         # 抓 "type name(args);"（允许跨行）
         for m in re.finditer(r'([A-Za-z_][\w \t\*]*?)\b([A-Za-z_]\w*)\s*\(([^;{}]*?)\)\s*;',
                              text, re.S):
@@ -635,6 +639,10 @@ uint8_t SYS_USART_Init(int id, uint32_t baud);
 uint8_t SYS_ADC_Read(uint16_t *out, uint8_t ch);
 void    SYS_Log(const char *fmt, ...);
 uint8_t SYS_DHT11_Read(float *t, float *h);
+/* 宏长得像函数调用：曾经把后面的原型整条吞掉（见下方断言） */
+#define SYS_WDG_RST_POR   (1UL << 0)
+#define SYS_WDG_RST_PIN   (1UL << 1)
+void    SYS_WDG_Init(uint32_t timeout_ms);
 #endif
 '''
 
@@ -696,6 +704,15 @@ def selftest():
            protos.get('SYS_USART_Init'))
         ck('解析原型：变参标记', protos.get('SYS_Log', {}).get('variadic') is True)
         ck('解析原型：注释里的原型不算', 'NotAReal' not in protos)
+        # 宏 `#define X (1UL << 0)` 长得像函数调用；参数段允许跨行，会把后面的原型整条吞掉。
+        # 实测在 sys_wdg.h 上吞掉了 `void SYS_WDG_Init(uint32_t)`，C2 因此漏报。
+        ck('解析原型：宏后面的原型不被吞掉', 'SYS_WDG_Init' in protos,
+           '缺 SYS_WDG_Init')
+        ck('解析原型：宏本身不被当成函数', 'SYS_WDG_RST_POR' not in protos,
+           [k for k in protos if 'RST_' in k])
+        ck('解析原型：宏后面的原型参数对',
+           len(protos.get('SYS_WDG_Init', {}).get('params', [])) == 1,
+           protos.get('SYS_WDG_Init'))
 
         global ROOT
         old = ROOT
