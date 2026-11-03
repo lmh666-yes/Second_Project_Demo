@@ -1,0 +1,20 @@
+device STM32F407ZE
+si SWD
+speed 1000
+connect
+halt
+mem8  0x20000090 1
+mem32 0x20000094 1
+mem32 0x200000C0 1
+mem8  0x2000009C 1
+mem32 0x20000008 1
+mem32 0x40021014 1
+mem32 0x40021414 1
+regs
+g
+sleep 1000
+halt
+mem32 0x200000C0 1
+mem32 0x20000094 1
+g
+exit

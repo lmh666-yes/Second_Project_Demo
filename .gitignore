@@ -1,0 +1,28 @@
+# 编译产物
+build/
+dist/
+Objects/
+Listings/
+Debug/
+Release/
+*.o
+*.d
+*.crf
+*.axf
+*.hex
+*.bin
+*.map
+*.lst
+*.idx
+*.dll
+*.exe
+
+# 备份
+*.bak
+*.bak_thr
+*.stub_bak
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store

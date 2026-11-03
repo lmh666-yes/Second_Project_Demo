@@ -1,0 +1,27 @@
+板2 烧写步骤（ST-Link，不用 J-Link）
+====================================
+
+1. 接线：ST-Link 的 SWDIO→板2 SWDIO、SWCLK→SWCLK、GND→GND，
+   3.3V 只接"参考电压"那根（板2 自己用 DC/USB 供电，别用 ST-Link 的电带整板）。
+2. Keil 打开 000标准模板库.uvprojx
+   Options for Target → Debug → 右侧下拉选 "ST-Link Debugger"
+   → Settings → Port: SW，Max Clock 先给 1MHz（跑稳了再升 4MHz）
+   → Flash Download → 勾 Reset and Run；Erase 选 "Erase Sectors"（别用 Full Chip）
+3. F7 编译 → F8（Load）下载。
+4. 下载完按一下板2 复位键，或勾了 Reset and Run 会自动跑。
+
+正常现象（本次固件）
+--------------------
+串口 115200（USART1 / CH340）应打印：
+  [board2] boot...
+  [board2] LCD 320x480 ok
+LCD 出现 "Board2  Gateway" + 五行启动菜单，每行末尾 OK。
+之后 LED0 每 1 秒闪 100ms（RUN 心跳）。
+
+异常对照
+--------
+两个灯 200ms 同步快闪  = FAULT（心跳超时/栈溢出/堆失败）
+                        看串口有没有 "[FreeRTOS] !! STACK OVERFLOW"
+完全无串口输出         = 没跑起来（供电/晶振/复位），先量 3.3V
+屏幕黑但背光亮         = FSMC 或初始化序列问题，LCD 本体通着电
+屏幕连背光都不亮       = 背光 PB15 或供电问题

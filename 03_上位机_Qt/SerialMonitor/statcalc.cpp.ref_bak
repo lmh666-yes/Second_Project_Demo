@@ -1,0 +1,93 @@
+#include "statcalc.h"
+
+#include <cmath>
+
+namespace StatCalc {
+
+const int kWindow = 50;
+
+QVector<double> tailValues(const QVector<double> &values, int window)
+{
+    const int w = (window > 0) ? window : kWindow;
+    QVector<double> out;
+    out.reserve(qMin(w, values.size()));
+    for (int i = values.size() - 1; i >= 0 && out.size() < w; --i) {
+        const double v = values.at(i);
+        if (std::isnan(v)) continue;        /* 无效点不计入窗口 */
+        out.prepend(v);                     /* 从末尾往前取，保持时间先后 */
+    }
+    return out;
+}
+
+WindowStat compute(const QVector<double> &values, int window)
+{
+    WindowStat st;
+
+    const QVector<double> win = tailValues(values, window);
+    const int n = win.size();
+    if (n == 0) return st;
+
+    st.n = n;
+
+    /* 极值：重复出现的极点各占一个位置，最小值与最大值本身都不受剔除影响 */
+    double lo = win.at(0);
+    double hi = win.at(0);
+    for (int i = 1; i < n; ++i) {
+        const double v = win.at(i);
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+    }
+    st.min = lo;
+    st.max = hi;
+
+    /* 平均值口径：点数不少于 3 时，从平均值里剔除 1 个最大值与 1 个最小值。
+     * 只各剔一个：极点重复出现时，其余相同值照常参与平均。
+     * 窗口内全部点相同时，最小值与最大值是同一个数，此时按位置剔掉两个点，
+     * 分母取 n-2，两个剔除位都记为 1。 */
+    if (n >= 3) {
+        st.trimmedLow = 1;
+        st.trimmedHigh = 1;
+
+        const bool same = (lo == hi);
+        double sum = 0.0;
+        bool lowGone = false;
+        bool highGone = false;
+        for (int i = 0; i < n; ++i) {
+            const double v = win.at(i);
+            const bool dropLow = (!lowGone && v == lo);
+            const bool dropHigh = (!highGone && v == hi && (lowGone || !same));
+            if (dropLow) {
+                lowGone = true;
+            } else if (dropHigh) {
+                highGone = true;
+            } else {
+                sum += v;
+            }
+        }
+
+        const int kept = n - 2;
+        st.avg = (kept > 0) ? (sum / double(kept)) : 0.0;
+        return st;
+    }
+
+    /* 点数不足 3：不剔除，平均值取全部点的算术平均 */
+    double sum = 0.0;
+    for (int i = 0; i < n; ++i) sum += win.at(i);
+    st.avg = sum / double(n);
+    return st;
+}
+
+WindowStat compute(const QPointF *points, int count, int window)
+{
+    const int w = (window > 0) ? window : kWindow;
+    QVector<double> win;
+    win.reserve(qMin(w, count > 0 ? count : 0));
+    for (int i = count - 1; i >= 0 && win.size() < w; --i) {
+        const double v = points[i].y();
+        if (std::isnan(v)) continue;
+        win.prepend(v);
+    }
+    return compute(win, w);
+}
+
+}   /* namespace StatCalc */
